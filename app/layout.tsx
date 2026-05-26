@@ -1,19 +1,28 @@
-import type { Metadata } from 'next';
-import './globals.css';
+import type { Metadata } from 'next'
+import { Geist, Geist_Mono } from 'next/font/google'
+import './globals.css'
+
+const _geist = Geist({ subsets: ["latin"] });
+const _geistMono = Geist_Mono({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: 'MaiinSight Dashboard',
-  description: 'AI-powered marketing analytics and segmentation insights',
-};
+  title: 'MaiinSight - Decision Support System',
+  description: 'Analytics dashboard and decision support system for Maiin Gandaria',
+  icons: {
+    icon: '/icon.svg',
+  },
+}
 
 export default function RootLayout({
   children,
-}: {
-  children: React.ReactNode;
-}) {
+}: Readonly<{
+  children: React.ReactNode
+}>) {
   return (
-    <html lang="en">
-      <body>{children}</body>
+    <html lang="id" className="bg-background">
+      <body className="font-sans antialiased min-h-screen">
+        {children}
+      </body>
     </html>
-  );
+  )
 }

@@ -1,5 +1,16 @@
-const nextConfig = {
-  reactStrictMode: true,
-};
+import { dirname } from "node:path"
+import { fileURLToPath } from "node:url"
 
-export default nextConfig;
+const projectRoot = dirname(fileURLToPath(import.meta.url))
+
+/** @type {import('next').NextConfig} */
+const nextConfig = {
+  turbopack: {
+    root: projectRoot,
+  },
+  images: {
+    unoptimized: true,
+  },
+}
+
+export default nextConfig

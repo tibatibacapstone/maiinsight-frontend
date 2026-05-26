@@ -1,35 +1,50 @@
-# maiinsight-frontend
-This folder is now reset to a clean frontend scaffold. Replace it with your existing frontend app from your other project.
+# MaiinSight Frontend
 
-## How to merge your existing frontend
+MaiinSight adalah aplikasi dashboard analitik dan decision support system untuk membantu pemantauan performa, segmentasi pelanggan, strategi pemasaran, manajemen data, dan aktivitas sistem Maiin Gandaria.
 
-1. Copy your frontend source into `maiinsight-frontend`. Include `app/` or `pages/`, `public/`, `styles/`, `components/`, and any config files.
-2. If your existing frontend has a `package.json`, merge dependencies and scripts into this folder's `package.json` or replace it entirely.
-3. Remove stale scaffold files only if they conflict with your app structure.
-4. Run `npm install` in `maiinsight-frontend` and then `npm run dev`.
+## Tech Stack
 
-## Setup
-## Setup
+- Next.js
+- React
+- TypeScript
+- Tailwind CSS
+- Radix UI
+- Recharts
+
+## Menjalankan Project
+
+Install dependency:
 
 ```bash
-cd maiinsight-frontend
 npm install
+```
+
+Jalankan development server:
+
+```bash
 npm run dev
 ```
 
-### Optional API configuration
+Buka http://localhost:3000 di browser.
 
-Create a `.env.local` file in `maiinsight-frontend` if your backend is running somewhere other than the default:
+## Script
 
-```env
-NEXT_PUBLIC_API_URL=http://localhost:5000/api
+```bash
+npm run dev
+npm run build
+npm run start
+npm run typecheck
 ```
 
-Then restart the dev server.
+## Struktur Utama
 
-## Features
+- `app/` berisi entry point Next.js dan global layout.
+- `components/` berisi komponen halaman dashboard dan UI.
+- `components/ui/` berisi reusable UI components.
+- `hooks/` berisi React hooks.
+- `lib/` berisi helper utilities.
+- `public/` berisi aset statis aplikasi.
 
-- Clean placeholder frontend page
-- Ready to accept an imported frontend app
-- Tailwind styling already enabled
+## Catatan Pengembangan
 
+Project ini menggunakan npm sebagai package manager utama. Gunakan `package-lock.json` sebagai lockfile resmi agar dependency konsisten di local dan deployment.
