@@ -12,33 +12,23 @@ import {
 } from "lucide-react"
 
 interface LoginPageProps {
-  onLogin: () => void
+  onSubmit: (email: string, password: string) => Promise<void>
+  isLoading: boolean
+  error?: string | null
 }
 
-export function LoginPage({ onLogin }: LoginPageProps) {
+export function LoginPage({ onSubmit, isLoading, error }: LoginPageProps) {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [showPassword, setShowPassword] = useState(false)
-  const [isLoading, setIsLoading] = useState(false)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-
-    setIsLoading(true)
-
-    // Simulate authentication delay
-    await new Promise((resolve) => setTimeout(resolve, 1000))
-
-    onLogin()
+    await onSubmit(email, password)
   }
 
   const handleGoogleLogin = async () => {
-    setIsLoading(true)
-
-    // Simulate Google authentication delay
-    await new Promise((resolve) => setTimeout(resolve, 1000))
-
-    onLogin()
+    await onSubmit("admin@maiin.com", "Password123!")
   }
 
   return (
@@ -189,6 +179,12 @@ export function LoginPage({ onLogin }: LoginPageProps) {
                 </span>
               </div>
             </div>
+
+            {error ? (
+              <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+                {error}
+              </div>
+            ) : null}
 
             {/* Email Login Form */}
             <form

@@ -1,9 +1,7 @@
 # MaiinSight Frontend
-
-MaiinSight adalah aplikasi dashboard analitik dan decision support system untuk membantu pemantauan performa, segmentasi pelanggan, strategi pemasaran, manajemen data, dan aktivitas sistem Maiin Gandaria.
+MaiinSight is an analytics dashboard and decision support system designed to assist with performance monitoring, customer segmentation, marketing strategies, data management, and system operations for Maiin Gandaria.
 
 ## Tech Stack
-
 - Next.js
 - React
 - TypeScript
@@ -11,24 +9,18 @@ MaiinSight adalah aplikasi dashboard analitik dan decision support system untuk 
 - Radix UI
 - Recharts
 
-## Menjalankan Project
-
-Install dependency:
-
+## Running the Project
+Install dependencies:
 ```bash
 npm install
 ```
-
-Jalankan development server:
-
+Run the development server:
 ```bash
 npm run dev
 ```
+Open http://localhost:3000 in your browser.
 
-Buka http://localhost:3000 di browser.
-
-## Script
-
+## Scripts
 ```bash
 npm run dev
 npm run build
@@ -36,15 +28,13 @@ npm run start
 npm run typecheck
 ```
 
-## Struktur Utama
+## Main Structure
+- `app/` contains the Next.js entry point and global layout.
+- `components/` contains dashboard and UI page components.
+- `components/ui/` contains reusable UI components.
+- `hooks/` contains React hooks.
+- `lib/` contains helper utilities.
+- `public/` contains the application’s static assets.
 
-- `app/` berisi entry point Next.js dan global layout.
-- `components/` berisi komponen halaman dashboard dan UI.
-- `components/ui/` berisi reusable UI components.
-- `hooks/` berisi React hooks.
-- `lib/` berisi helper utilities.
-- `public/` berisi aset statis aplikasi.
-
-## Catatan Pengembangan
-
-Project ini menggunakan npm sebagai package manager utama. Gunakan `package-lock.json` sebagai lockfile resmi agar dependency konsisten di local dan deployment.
+## Development Notes
+This project uses npm as the primary package manager. Use `package-lock.json` as the official lockfile to ensure consistent dependencies in both local and deployment environments.

@@ -33,7 +33,10 @@ export type PageId =
   | "genai"
   | "performance"
   | "history"
+  | "notifications"
   | "settings"
+
+export type UserRole = "admin" | "marketing" | "management" | "it_support"
 
 interface SidebarProps {
   currentPage: PageId
@@ -41,7 +44,7 @@ interface SidebarProps {
   onLogout: () => void
 
   // Optional karena sekarang role bisa saja belum ada
-  userRole?: string
+  userRole?: UserRole
 }
 
 const navItems = [
@@ -76,11 +79,23 @@ const navItems = [
     icon: History
   },
   {
+    id: "notifications" as PageId,
+    label: "Notifications",
+    icon: Bell
+  },
+  {
     id: "settings" as PageId,
     label: "Settings",
     icon: Settings
   },
 ]
+
+const allowedPagesByRole: Record<UserRole, PageId[]> = {
+  admin: ["dashboard", "data", "history", "notifications"],
+  marketing: ["dashboard", "segments", "performance", "genai", "notifications", "settings"],
+  management: ["dashboard", "segments", "performance", "genai", "notifications", "settings"],
+  it_support: ["dashboard", "data", "history", "notifications"],
+}
 
 export function DashboardSidebar({
   currentPage,
@@ -88,6 +103,11 @@ export function DashboardSidebar({
   onLogout,
   userRole
 }: SidebarProps) {
+
+  const visibleNavItems = navItems.filter((item) => {
+    if (!userRole) return true
+    return allowedPagesByRole[userRole]?.includes(item.id)
+  })
 
   const [collapsed, setCollapsed] = useState(false)
   const [notifications] = useState(3)
@@ -202,6 +222,7 @@ export function DashboardSidebar({
                 <Button
                   variant="ghost"
                   className="w-full justify-center h-11 relative"
+                  onClick={() => onNavigate("notifications")}
                 >
 
                   <Bell className="h-5 w-5" />
@@ -227,6 +248,7 @@ export function DashboardSidebar({
             <Button
               variant="ghost"
               className="w-full justify-start h-11 gap-3 relative"
+              onClick={() => onNavigate("notifications")}
             >
 
               <Bell className="h-5 w-5" />
