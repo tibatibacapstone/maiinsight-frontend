@@ -17,13 +17,12 @@ interface DashboardLayoutProps {
   userRole: UserRole
 }
 
-export type UserRole = "admin" | "marketing" | "management" | "it_support"
+export type UserRole = "admin" | "management" | "it_support"
 
 const pagePermissions: Record<UserRole, PageId[]> = {
-  admin: ["dashboard", "data", "history", "notifications"],
-  marketing: ["dashboard", "segments", "performance", "genai", "notifications", "settings"],
+  admin: ["dashboard", "segments", "performance", "genai", "notifications", "settings", "data", "history", "notifications"],
   management: ["dashboard", "segments", "performance", "genai", "notifications", "settings"],
-  it_support: ["dashboard", "data", "history", "notifications"],
+  it_support: ["dashboard", "segments", "performance", "genai", "notifications", "settings", "data", "history", "notifications"],
 }
 
 export function DashboardLayout({ currentPage, onNavigate, onLogout, userRole }: DashboardLayoutProps) {

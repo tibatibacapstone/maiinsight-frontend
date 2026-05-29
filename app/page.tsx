@@ -5,7 +5,7 @@ import { LoginPage } from "@/components/login-page"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import type { PageId } from "@/components/dashboard-sidebar"
 
-type UserRole = "admin" | "marketing" | "management" | "it_support"
+type UserRole = "admin" | "management" | "it_support"
 
 type LoginResponse = {
   token: string
@@ -33,21 +33,40 @@ export default function Home() {
     }
   }, [])
 
-  const handleLogin = (token: string, role: UserRole) => {
-    setIsAuthenticated(true)
-    setUserRole(role)
-    setCurrentPage("dashboard")
-    localStorage.setItem("maiinToken", token)
-    localStorage.setItem("maiinRole", role)
-  }
+  const handleLogin = (token: string, user: LoginResponse["user"]) => {
+  setIsAuthenticated(true)
+  setUserRole(user.role)
+  setCurrentPage("dashboard")
+
+  localStorage.setItem("maiinToken", token)
+  localStorage.setItem("maiinRole", user.role)
+  localStorage.setItem("maiinUser", JSON.stringify(user))
+
+  // bersihkan key lama agar tidak bentrok
+  localStorage.removeItem("token")
+  localStorage.removeItem("authToken")
+  localStorage.removeItem("accessToken")
+  localStorage.removeItem("maiinsight_token")
+  localStorage.removeItem("user")
+  localStorage.removeItem("maiinsight_user")
+}
 
   const handleLogout = () => {
-    setIsAuthenticated(false)
-    setCurrentPage("dashboard")
-    setAuthError(null)
-    localStorage.removeItem("maiinToken")
-    localStorage.removeItem("maiinRole")
-  }
+  setIsAuthenticated(false)
+  setCurrentPage("dashboard")
+  setAuthError(null)
+
+  localStorage.removeItem("maiinToken")
+  localStorage.removeItem("maiinRole")
+  localStorage.removeItem("maiinUser")
+
+  localStorage.removeItem("token")
+  localStorage.removeItem("authToken")
+  localStorage.removeItem("accessToken")
+  localStorage.removeItem("maiinsight_token")
+  localStorage.removeItem("user")
+  localStorage.removeItem("maiinsight_user")
+}
 
   const handleNavigate = (page: PageId) => {
     setCurrentPage(page)
@@ -75,7 +94,7 @@ export default function Home() {
       }
 
       const loginData = data as LoginResponse
-      handleLogin(loginData.token, loginData.user.role)
+      handleLogin(loginData.token, loginData.user)
     } catch (error) {
       setAuthError("Unable to connect to the API. Please try again.")
     } finally {

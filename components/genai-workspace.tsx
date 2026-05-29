@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import {
   Card,
   CardContent,
@@ -22,6 +22,8 @@ import {
   Copy,
   Megaphone,
   Gift,
+  ShieldAlert,
+  Lock,
 } from "lucide-react"
 
 interface StrategyCardType {
@@ -35,6 +37,10 @@ interface StrategyCardType {
   tone: string
   channel: string
   variant: "blue" | "pink"
+}
+
+interface GenAIWorkspaceProps {
+  userRole?: string | null
 }
 
 const venueTypes = ["All Venue", "Mini Soccer", "Basket"] as const
@@ -62,8 +68,125 @@ const copywritingTones = [
   "Professional Corporate Tone (Email Newsletter)",
 ]
 
-export function GenAIWorkspace() {
+const normalizeRole = (role?: string | null) => {
+  const value = role?.toLowerCase().trim()
+
+  if (value === "admin") return "admin"
+  if (value === "management") return "management"
+  if (value === "it" || value === "it_support" || value === "it support") {
+    return "it"
+  }
+
+  return value || "unknown"
+}
+
+const decodeJwtPayload = (token: string) => {
+  try {
+    const base64Url = token.split(".")[1]
+
+    if (!base64Url) return null
+
+    const base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/")
+    const jsonPayload = decodeURIComponent(
+      atob(base64)
+        .split("")
+        .map((char) => {
+          return `%${`00${char.charCodeAt(0).toString(16)}`.slice(-2)}`
+        })
+        .join("")
+    )
+
+    return JSON.parse(jsonPayload)
+  } catch {
+    return null
+  }
+}
+
+const getStoredUserRole = () => {
+  if (typeof window === "undefined") return null
+
+  const directRoleKeys = [
+    "maiinRole",
+    "role",
+    "userRole",
+    "maiinsight_role",
+  ]
+
+  for (const key of directRoleKeys) {
+    const role = localStorage.getItem(key)
+
+    if (role) return role
+  }
+
+  const userStorageKeys = [
+    "maiinUser",
+    "user",
+    "authUser",
+    "currentUser",
+    "maiinsight_user",
+  ]
+
+  for (const key of userStorageKeys) {
+    const rawValue = localStorage.getItem(key)
+
+    if (!rawValue) continue
+
+    try {
+      const parsed = JSON.parse(rawValue)
+
+      if (parsed?.role) return parsed.role
+      if (parsed?.user?.role) return parsed.user.role
+    } catch {
+      continue
+    }
+  }
+
+  const tokenStorageKeys = [
+    "maiinToken",
+    "token",
+    "accessToken",
+    "authToken",
+    "maiinsight_token",
+  ]
+
+  for (const key of tokenStorageKeys) {
+    const token = localStorage.getItem(key)
+
+    if (!token) continue
+
+    const payload = decodeJwtPayload(token)
+
+    if (payload?.role) return payload.role
+  }
+
+  return null
+}
+
+export function GenAIWorkspace({ userRole: userRoleFromProps }: GenAIWorkspaceProps) {
+  const [storedUserRole, setStoredUserRole] = useState<string | null>(null)
+  const [isRoleReady, setIsRoleReady] = useState(false)
   const [isGenerating, setIsGenerating] = useState(false)
+  const [accessMessage, setAccessMessage] = useState("")
+
+  useEffect(() => {
+    if (userRoleFromProps) {
+      setStoredUserRole(userRoleFromProps)
+    } else {
+      setStoredUserRole(getStoredUserRole())
+    }
+
+    setIsRoleReady(true)
+  }, [userRoleFromProps])
+
+  const activeRole = userRoleFromProps || storedUserRole
+  const normalizedRole = normalizeRole(activeRole)
+
+  const isAdmin = normalizedRole === "admin"
+  const isManagement = normalizedRole === "management"
+  const isIT = normalizedRole === "it"
+
+  const canViewPage = isAdmin || isIT
+  const canGenerateAi = isAdmin
 
   const [selectedVenueType, setSelectedVenueType] =
     useState<VenueType>("All Venue")
@@ -187,9 +310,7 @@ export function GenAIWorkspace() {
     }
 
     const venueText =
-      selectedVenueType === "All Venue"
-        ? "all venue types"
-        : selectedVenueType
+      selectedVenueType === "All Venue" ? "all venue types" : selectedVenueType
 
     return `${selectedSegment} segment analysis for ${venueText}: ${segmentMap[selectedSegment]} ${objectiveMap[selectedObjective]} ${incentiveMap[selectedIncentive]} ${toneMap[selectedTone]}`
   }
@@ -284,6 +405,13 @@ export function GenAIWorkspace() {
   }
 
   const handleGenerateStrategy = async () => {
+    setAccessMessage("")
+
+    if (!canGenerateAi) {
+      setAccessMessage("Access denied. Only admin can generate AI strategy.")
+      return
+    }
+
     setIsGenerating(true)
 
     await new Promise((resolve) => setTimeout(resolve, 1000))
@@ -296,10 +424,43 @@ export function GenAIWorkspace() {
     setIsGenerating(false)
   }
 
+  if (!isRoleReady) {
+    return (
+      <div className="flex min-h-[60vh] items-center justify-center">
+        <div className="text-center">
+          <RefreshCw className="mx-auto mb-3 h-6 w-6 animate-spin text-muted-foreground" />
+          <p className="text-sm text-muted-foreground">Checking access...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (!canViewPage || isManagement) {
+    return (
+      <div className="flex min-h-[60vh] items-center justify-center">
+        <Card className="max-w-md border-red-200 bg-red-50">
+          <CardContent className="p-8 text-center">
+            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-red-100">
+              <ShieldAlert className="h-6 w-6 text-red-600" />
+            </div>
+
+            <h2 className="mb-2 text-xl font-bold text-red-700">
+              Access Denied
+            </h2>
+
+            <p className="text-sm text-red-600">
+              Management role cannot access GenAI Workspace. This page is only
+              available for Admin and IT.
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-7">
-      {/* HEADER */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-3xl font-bold">GenAI Strategy Workspace</h1>
 
@@ -311,17 +472,43 @@ export function GenAIWorkspace() {
         <Button variant="outline" size="sm" className="gap-2 text-sm">
           <Bell className="h-4 w-4" />
           Alerts
-          <Badge className="ml-1 h-5 w-5 rounded-full p-0 flex items-center justify-center text-xs">
-            {alerts.filter((a) => a.unread).length}
+          <Badge className="ml-1 flex h-5 w-5 items-center justify-center rounded-full p-0 text-xs">
+            {alerts.filter((alert) => alert.unread).length}
           </Badge>
         </Button>
       </div>
 
-      {/* ALERT */}
-      <Card className="bg-primary/5 border-primary/20">
+      {isIT && (
+        <Card className="border-amber-200 bg-amber-50">
+          <CardContent className="flex items-start gap-3 p-5">
+            <Lock className="mt-1 h-5 w-5 text-amber-600" />
+
+            <div>
+              <h3 className="font-semibold text-amber-800">
+                Limited Access for IT Role
+              </h3>
+
+              <p className="text-sm text-amber-700">
+                You can view this page, but Generate AI Strategy and Refresh
+                Strategy are disabled for IT role.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {accessMessage && (
+        <Card className="border-red-200 bg-red-50">
+          <CardContent className="p-4">
+            <p className="text-sm text-red-600">{accessMessage}</p>
+          </CardContent>
+        </Card>
+      )}
+
+      <Card className="border-primary/20 bg-primary/5">
         <CardContent className="py-5">
           <div className="flex items-start gap-4">
-            <div className="h-11 w-11 rounded-lg bg-primary/10 flex items-center justify-center">
+            <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-primary/10">
               <Sparkles className="h-5 w-5 text-primary" />
             </div>
 
@@ -329,6 +516,7 @@ export function GenAIWorkspace() {
               <h3 className="text-lg font-semibold text-primary">
                 AI Draft Ready
               </h3>
+
               <p className="text-base text-muted-foreground">
                 {alerts[0].message}
               </p>
@@ -336,7 +524,7 @@ export function GenAIWorkspace() {
 
             <Badge
               variant="outline"
-              className="text-sm text-primary border-primary/30"
+              className="border-primary/30 text-sm text-primary"
             >
               {alerts[0].time}
             </Badge>
@@ -344,8 +532,7 @@ export function GenAIWorkspace() {
         </CardContent>
       </Card>
 
-      {/* FILTERS */}
-      <Card className="bg-card border-border shadow-sm">
+      <Card className="border-border bg-card shadow-sm">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-xl">
             <Sparkles className="h-5 w-5 text-primary" />
@@ -358,15 +545,14 @@ export function GenAIWorkspace() {
         </CardHeader>
 
         <CardContent className="space-y-5">
-          <div className="grid grid-cols-[180px_220px_280px_280px_320px] gap-x-4 gap-y-5 items-end max-w-full">
-            {/* 1. VENUE TYPE */}
+          <div className="grid max-w-full grid-cols-[180px_220px_280px_280px_320px] items-end gap-x-4 gap-y-5">
             <div className="min-w-0 space-y-2">
               <label className="text-base font-semibold">1. Venue Type</label>
 
               <select
                 value={selectedVenueType}
-                onChange={(e) =>
-                  setSelectedVenueType(e.target.value as VenueType)
+                onChange={(event) =>
+                  setSelectedVenueType(event.target.value as VenueType)
                 }
                 className="w-full rounded-xl border border-border bg-background px-4 py-3 text-base shadow-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
               >
@@ -378,7 +564,6 @@ export function GenAIWorkspace() {
               </select>
             </div>
 
-            {/* 2. TARGET CUSTOMER SEGMENT */}
             <div className="min-w-0 space-y-2">
               <label className="text-base font-semibold">
                 2. Target Customer Segment
@@ -386,18 +571,17 @@ export function GenAIWorkspace() {
 
               <select
                 value={selectedSegment}
-                onChange={(e) => setSelectedSegment(e.target.value)}
+                onChange={(event) => setSelectedSegment(event.target.value)}
                 className="w-full rounded-xl border border-border bg-background px-4 py-3 text-base shadow-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
               >
-                {targetSegments.map((item) => (
-                  <option key={item} value={item}>
-                    {item}
+                {targetSegments.map((segment) => (
+                  <option key={segment} value={segment}>
+                    {segment}
                   </option>
                 ))}
               </select>
             </div>
 
-            {/* 3. CAMPAIGN OBJECTIVE */}
             <div className="min-w-0 space-y-2">
               <label className="text-base font-semibold">
                 3. Campaign Objective
@@ -405,18 +589,17 @@ export function GenAIWorkspace() {
 
               <select
                 value={selectedObjective}
-                onChange={(e) => setSelectedObjective(e.target.value)}
+                onChange={(event) => setSelectedObjective(event.target.value)}
                 className="w-full rounded-xl border border-border bg-background px-4 py-3 text-base shadow-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
               >
-                {campaignObjectives.map((item) => (
-                  <option key={item} value={item}>
-                    {item}
+                {campaignObjectives.map((objective) => (
+                  <option key={objective} value={objective}>
+                    {objective}
                   </option>
                 ))}
               </select>
             </div>
 
-            {/* 4. INCENTIVE */}
             <div className="min-w-0 space-y-2">
               <label className="text-base font-semibold">
                 4. Incentive & Promo Framework
@@ -424,18 +607,17 @@ export function GenAIWorkspace() {
 
               <select
                 value={selectedIncentive}
-                onChange={(e) => setSelectedIncentive(e.target.value)}
+                onChange={(event) => setSelectedIncentive(event.target.value)}
                 className="w-full rounded-xl border border-border bg-background px-4 py-3 text-base shadow-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
               >
-                {incentiveFrameworks.map((item) => (
-                  <option key={item} value={item}>
-                    {item}
+                {incentiveFrameworks.map((incentive) => (
+                  <option key={incentive} value={incentive}>
+                    {incentive}
                   </option>
                 ))}
               </select>
             </div>
 
-            {/* 5. COPYWRITING */}
             <div className="min-w-0 space-y-2">
               <label className="text-base font-semibold">
                 5. Copywriting Tone & Channel
@@ -443,12 +625,12 @@ export function GenAIWorkspace() {
 
               <select
                 value={selectedTone}
-                onChange={(e) => setSelectedTone(e.target.value)}
+                onChange={(event) => setSelectedTone(event.target.value)}
                 className="w-full rounded-xl border border-border bg-background px-4 py-3 text-base shadow-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
               >
-                {copywritingTones.map((item) => (
-                  <option key={item} value={item}>
-                    {item}
+                {copywritingTones.map((tone) => (
+                  <option key={tone} value={tone}>
+                    {tone}
                   </option>
                 ))}
               </select>
@@ -458,7 +640,7 @@ export function GenAIWorkspace() {
           <div className="flex flex-wrap items-center gap-3">
             <Button
               onClick={handleGenerateStrategy}
-              disabled={isGenerating}
+              disabled={!canGenerateAi || isGenerating}
               className="gap-2 text-base"
             >
               {isGenerating ? (
@@ -477,7 +659,7 @@ export function GenAIWorkspace() {
             <Button
               variant="outline"
               onClick={handleGenerateStrategy}
-              disabled={isGenerating}
+              disabled={!canGenerateAi || isGenerating}
               className="gap-2 text-base"
             >
               <RefreshCw className="h-4 w-4" />
@@ -487,9 +669,8 @@ export function GenAIWorkspace() {
         </CardContent>
       </Card>
 
-      {/* AI EXECUTIVE ANALYSIS + PERFORMANCE */}
       <div className="grid gap-6 lg:grid-cols-3">
-        <Card className="lg:col-span-2 bg-orange-50 border-orange-200 shadow-sm">
+        <Card className="border-orange-200 bg-orange-50 shadow-sm lg:col-span-2">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-lg">
               <Sparkles className="h-5 w-5 text-orange-600" />
@@ -510,15 +691,19 @@ export function GenAIWorkspace() {
               <Badge variant="secondary" className="text-sm">
                 {selectedVenueType}
               </Badge>
+
               <Badge variant="secondary" className="text-sm">
                 {selectedSegment}
               </Badge>
+
               <Badge variant="secondary" className="text-sm">
                 {selectedObjective}
               </Badge>
+
               <Badge variant="secondary" className="text-sm">
                 {selectedIncentive}
               </Badge>
+
               <Badge variant="secondary" className="text-sm">
                 {selectedTone}
               </Badge>
@@ -526,60 +711,68 @@ export function GenAIWorkspace() {
           </CardContent>
         </Card>
 
-        <Card className="bg-card border-border shadow-sm">
+        <Card className="border-border bg-card shadow-sm">
           <CardHeader>
             <CardTitle className="text-xl">AI Performance</CardTitle>
+
             <CardDescription className="text-base">
               Strategy generation metrics
             </CardDescription>
           </CardHeader>
 
           <CardContent className="space-y-4">
-            <div className="flex items-center justify-between p-4 rounded-lg bg-secondary/30">
+            <div className="flex items-center justify-between rounded-lg bg-secondary/30 p-4">
               <div className="flex items-center gap-3">
-                <div className="h-9 w-9 rounded-lg bg-primary/10 flex items-center justify-center">
+                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10">
                   <Target className="h-4 w-4 text-primary" />
                 </div>
+
                 <span className="text-base">Strategies Generated</span>
               </div>
+
               <span className="text-lg font-bold">24</span>
             </div>
 
-            <div className="flex items-center justify-between p-4 rounded-lg bg-secondary/30">
+            <div className="flex items-center justify-between rounded-lg bg-secondary/30 p-4">
               <div className="flex items-center gap-3">
-                <div className="h-9 w-9 rounded-lg bg-chart-1/10 flex items-center justify-center">
+                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-chart-1/10">
                   <CheckCircle2 className="h-4 w-4 text-chart-1" />
                 </div>
+
                 <span className="text-base">Deployed</span>
               </div>
+
               <span className="text-lg font-bold">18</span>
             </div>
 
-            <div className="flex items-center justify-between p-4 rounded-lg bg-secondary/30">
+            <div className="flex items-center justify-between rounded-lg bg-secondary/30 p-4">
               <div className="flex items-center gap-3">
-                <div className="h-9 w-9 rounded-lg bg-chart-3/10 flex items-center justify-center">
+                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-chart-3/10">
                   <TrendingUp className="h-4 w-4 text-chart-3" />
                 </div>
+
                 <span className="text-base">Avg. Accuracy</span>
               </div>
+
               <span className="text-lg font-bold">84%</span>
             </div>
 
-            <div className="flex items-center justify-between p-4 rounded-lg bg-secondary/30">
+            <div className="flex items-center justify-between rounded-lg bg-secondary/30 p-4">
               <div className="flex items-center gap-3">
-                <div className="h-9 w-9 rounded-lg bg-chart-2/10 flex items-center justify-center">
+                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-chart-2/10">
                   <Clock className="h-4 w-4 text-chart-2" />
                 </div>
+
                 <span className="text-base">Pending Review</span>
               </div>
+
               <span className="text-lg font-bold">3</span>
             </div>
           </CardContent>
         </Card>
       </div>
 
-      {/* STRATEGY CARDS */}
-      <Card className="bg-card border-border shadow-sm">
+      <Card className="border-border bg-card shadow-sm">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-xl">
             <Megaphone className="h-5 w-5 text-primary" />
@@ -601,8 +794,8 @@ export function GenAIWorkspace() {
                   key={card.id}
                   className={`rounded-2xl border p-5 shadow-sm ${
                     isBlue
-                      ? "bg-sky-50 border-sky-200"
-                      : "bg-pink-50 border-pink-200"
+                      ? "border-sky-200 bg-sky-50"
+                      : "border-pink-200 bg-pink-50"
                   }`}
                 >
                   <div className="space-y-4">
@@ -611,32 +804,31 @@ export function GenAIWorkspace() {
                         {card.title}
                       </h3>
 
-                      <p className="text-base mt-1 text-slate-700">
+                      <p className="mt-1 text-base text-slate-700">
                         <span className="font-semibold">Objective:</span>{" "}
                         {card.objective}
                       </p>
-               
                     </div>
 
                     <div>
-                      <p className="text-base font-semibold text-slate-900 mb-2">
+                      <p className="mb-2 text-base font-semibold text-slate-900">
                         Action Plan
                       </p>
 
                       <div className="space-y-2">
-                        {card.actionPlans.map((plan, idx) => (
+                        {card.actionPlans.map((plan, index) => (
                           <div
-                            key={idx}
+                            key={index}
                             className="flex items-start gap-2 text-base text-slate-700"
                           >
-                            <CheckCircle2 className="h-4 w-4 mt-1 text-primary shrink-0" />
+                            <CheckCircle2 className="mt-1 h-4 w-4 shrink-0 text-primary" />
                             <span>{plan}</span>
                           </div>
                         ))}
                       </div>
                     </div>
 
-                    <div className="rounded-xl bg-white/80 border border-white p-3">
+                    <div className="rounded-xl border border-white bg-white/80 p-3">
                       <p className="text-base text-slate-800">
                         <span className="font-semibold">Incentive:</span>{" "}
                         {card.incentive}
@@ -644,7 +836,7 @@ export function GenAIWorkspace() {
                     </div>
 
                     <div className="rounded-xl border bg-white/70 p-4">
-                      <div className="flex items-center gap-2 mb-2">
+                      <div className="mb-2 flex items-center gap-2">
                         <Gift className="h-4 w-4 text-primary" />
 
                         <p className="text-base font-semibold text-slate-900">
@@ -652,7 +844,7 @@ export function GenAIWorkspace() {
                         </p>
                       </div>
 
-                      <p className="text-base text-slate-700 leading-relaxed">
+                      <p className="text-base leading-relaxed text-slate-700">
                         {card.readyToUseCopy}
                       </p>
 
@@ -678,4 +870,3 @@ export function GenAIWorkspace() {
     </div>
   )
 }
-
