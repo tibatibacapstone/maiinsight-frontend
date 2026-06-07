@@ -53,28 +53,26 @@ interface UserAccount {
   id: string
   name: string
   email: string
-  role: "admin" | "marketing" | "it_support"
+  role: "admin" | "management" | "it_support"
   status: "active" | "inactive"
   lastLogin: string
 }
 
 const apiTokens: APIToken[] = [
-  { id: "1", name: "POS System API", key: "pos_api_key_xxxx", status: "active", lastUsed: "2 min ago", createdAt: "Jan 15, 2024" },
-  { id: "2", name: "CRM Integration", key: "crm_api_key_yyyy", status: "active", lastUsed: "5 min ago", createdAt: "Feb 3, 2024" },
-  { id: "3", name: "Marketing Platform", key: "mkt_api_key_zzzz", status: "active", lastUsed: "1 hour ago", createdAt: "Mar 20, 2024" },
-  { id: "4", name: "Legacy System", key: "legacy_key_aaaa", status: "expired", lastUsed: "30 days ago", createdAt: "Nov 10, 2023" },
+  { id: "1", name: "Gemini System API", key: "pos_api_key_xxxx", status: "active", lastUsed: "2 min ago", createdAt: "Jan 15, 2024" },
+  { id: "2", name: "Meta Graph API", key: "crm_api_key_yyyy", status: "active", lastUsed: "5 min ago", createdAt: "Feb 3, 2024" },
 ]
 
 const userAccounts: UserAccount[] = [
-  { id: "1", name: "John Doe", email: "john@maiin.com", role: "admin", status: "active", lastLogin: "2 hours ago" },
-  { id: "2", name: "Jane Smith", email: "jane@maiin.com", role: "marketing", status: "active", lastLogin: "5 min ago" },
-  { id: "3", name: "Bob Wilson", email: "bob@maiin.com", role: "it_support", status: "active", lastLogin: "1 day ago" },
-  { id: "4", name: "Sarah Connor", email: "sarah@maiin.com", role: "marketing", status: "inactive", lastLogin: "2 weeks ago" },
+  { id: "1", name: "Arrief Hardian", email: "arrief.Hardian@triaysa.co.id", role: "admin", status: "active", lastLogin: "2 hours ago" },
+  { id: "2", name: "Nizar Muharram", email: "nizar.muharram@triyasa.co.id", role: "admin", status: "active", lastLogin: "5 min ago" },
+  { id: "3", name: "Sabri Kurniadi", email: "sabri.kurniadi@triyasa.co.id", role: "it_support", status: "active", lastLogin: "1 day ago" },
+  { id: "4", name: "Iqbal Utomo", email: "iqbal.utomo@triyasa.co.id", role: "management", status: "inactive", lastLogin: "2 weeks ago" },
 ]
 
 const roleConfig = {
   admin: { color: "text-chart-5", bg: "bg-chart-5/10", label: "Admin" },
-  marketing: { color: "text-chart-1", bg: "bg-chart-1/10", label: "Marketing" },
+  management: { color: "text-chart-1", bg: "bg-chart-1/10", label: "management" },
   it_support: { color: "text-chart-2", bg: "bg-chart-2/10", label: "IT Support" },
 }
 

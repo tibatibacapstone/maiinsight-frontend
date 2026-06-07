@@ -4,8 +4,8 @@ export function Notifications() {
   const notifications = [
     {
       id: 1,
-      title: "Campaign ready for review",
-      description: "A new marketing campaign has been queued for approval.",
+      title: "Config Meta Graph Api",
+      description: "The MetaGraph API will expire in 7 days. Please renew your token immediately.",
       time: "2 hours ago",
     },
     {

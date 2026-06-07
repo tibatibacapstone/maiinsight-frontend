@@ -9,6 +9,9 @@ import { PerformanceHub } from "./performance-hub"
 import { ActivityLogs } from "./activity-logs"
 import { Notifications } from "./notifications"
 import { SystemSettings } from "./system-settings"
+import { useState } from "react"
+import { MetaAudience } from "./meta.audiance"
+
 
 interface DashboardLayoutProps {
   currentPage: PageId
@@ -27,7 +30,10 @@ const pagePermissions: Record<UserRole, PageId[]> = {
 
 export function DashboardLayout({ currentPage, onNavigate, onLogout, userRole }: DashboardLayoutProps) {
   const permittedPages = pagePermissions[userRole] ?? ["dashboard"]
-
+ 
+  const [performanceView, setPerformanceView] = useState<"performance" | "audience">(
+  "performance"
+)
   const renderPage = () => {
     if (!permittedPages.includes(currentPage)) {
       return (
@@ -50,7 +56,11 @@ export function DashboardLayout({ currentPage, onNavigate, onLogout, userRole }:
       case "genai":
         return <GenAIWorkspace />
       case "performance":
-        return <PerformanceHub />
+          return performanceView === "audience" ? (
+            <MetaAudience onBack={() => setPerformanceView("performance")} />
+          ) : (
+            <PerformanceHub onViewAudience={() => setPerformanceView("audience")} />
+          )
       case "history":
         return <ActivityLogs />
       case "notifications":

@@ -117,19 +117,11 @@ interface RawRowsResponse {
   data: RawTransactionRow[]
 }
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api"
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000"
 
 const dataSources: DataSource[] = [
   {
     id: "1",
-    name: "Gelora Transaction Data",
-    type: "api",
-    status: "connected",
-    lastSync: "Manual CSV upload",
-    records: 0,
-  },
-  {
-    id: "2",
     name: "MaiinSight Database",
     type: "database",
     status: "connected",
@@ -137,7 +129,7 @@ const dataSources: DataSource[] = [
     records: 0,
   },
   {
-    id: "3",
+    id: "2",
     name: "Meta Graph API",
     type: "api",
     status: "connected",
@@ -145,7 +137,7 @@ const dataSources: DataSource[] = [
     records: 0,
   },
   {
-    id: "4",
+    id: "3",
     name: "AI Strategy Engine",
     type: "api",
     status: "connected",
@@ -391,7 +383,7 @@ const canManageCsv = userRole === "admin"
   try {
     setIsLoadingJobs(true)
 
-    const response = await fetch(`${API_URL}/imports/jobs`, {
+    const response = await fetch(`${API_URL}/api/imports/jobs`, {
       method: "GET",
       cache: "no-store",
       headers: {
@@ -534,7 +526,7 @@ const canManageCsv = userRole === "admin"
 
       setUploadProgress(40)
 
-      const response = await fetch(`${API_URL}/imports/upload-csv`, {
+      const response = await fetch(`${API_URL}/api/imports/upload-csv`, {
       method: "POST",
       headers: getAuthHeaders(),
       body: formData,
@@ -591,7 +583,7 @@ const handleViewRawRows= async (job: SyncJob) => {
     setRawRows([])
     setRawHeaders([])
 
-    const response = await fetch(`${API_URL}/imports/batches/${job.id}/rows`, {
+    const response = await fetch(`${API_URL}/api/imports/batches/${job.id}/rows`, {
   method: "GET",
   cache: "no-store",
   headers: getAuthHeaders(),
@@ -623,8 +615,6 @@ const handleViewRawRows= async (job: SyncJob) => {
     setIsLoadingRawRows(false)
   }
 }
-  const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api"
 
 const handleRemoveJob = async (job: SyncJob) => {
   if (!canManageCsv) {
@@ -641,7 +631,7 @@ const handleRemoveJob = async (job: SyncJob) => {
   try {
     setRemovingJobId(job.id)
 
-    const response = await fetch(`${API_URL}/imports/jobs/${job.id}`, {
+    const response = await fetch(`${API_URL}/api/imports/jobs/${job.id}`, {
   method: "DELETE",
   headers: getAuthHeaders(),
 })
