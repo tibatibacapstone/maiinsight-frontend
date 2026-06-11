@@ -90,7 +90,7 @@ export function ActivityLogs() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold">Activity Logs</h1>
+          <h1 className="text-2xl font-bold">History</h1>
           <p className="text-muted-foreground">Task history and system activity monitoring</p>
         </div>
         <Button variant="outline" className="gap-2">

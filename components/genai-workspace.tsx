@@ -25,6 +25,14 @@ import {
   ShieldAlert,
   Lock,
 } from "lucide-react"
+import { AccessDenied } from "@/components/access-denied"
+import {
+  getStoredRole,
+  getStoredToken,
+  getAuthHeaders,
+  canAccessFeature,
+  normalizeRole,
+} from "@/lib/roles"
 
 interface StrategyCardType {
   id: string
@@ -68,125 +76,29 @@ const copywritingTones = [
   "Professional Corporate Tone (Email Newsletter)",
 ]
 
-const normalizeRole = (role?: string | null) => {
-  const value = role?.toLowerCase().trim()
-
-  if (value === "admin") return "admin"
-  if (value === "management") return "management"
-  if (value === "it" || value === "it_support" || value === "it support") {
-    return "it"
-  }
-
-  return value || "unknown"
-}
-
-const decodeJwtPayload = (token: string) => {
-  try {
-    const base64Url = token.split(".")[1]
-
-    if (!base64Url) return null
-
-    const base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/")
-    const jsonPayload = decodeURIComponent(
-      atob(base64)
-        .split("")
-        .map((char) => {
-          return `%${`00${char.charCodeAt(0).toString(16)}`.slice(-2)}`
-        })
-        .join("")
-    )
-
-    return JSON.parse(jsonPayload)
-  } catch {
-    return null
-  }
-}
-
-const getStoredUserRole = () => {
-  if (typeof window === "undefined") return null
-
-  const directRoleKeys = [
-    "maiinRole",
-    "role",
-    "userRole",
-    "maiinsight_role",
-  ]
-
-  for (const key of directRoleKeys) {
-    const role = localStorage.getItem(key)
-
-    if (role) return role
-  }
-
-  const userStorageKeys = [
-    "maiinUser",
-    "user",
-    "authUser",
-    "currentUser",
-    "maiinsight_user",
-  ]
-
-  for (const key of userStorageKeys) {
-    const rawValue = localStorage.getItem(key)
-
-    if (!rawValue) continue
-
-    try {
-      const parsed = JSON.parse(rawValue)
-
-      if (parsed?.role) return parsed.role
-      if (parsed?.user?.role) return parsed.user.role
-    } catch {
-      continue
-    }
-  }
-
-  const tokenStorageKeys = [
-    "maiinToken",
-    "token",
-    "accessToken",
-    "authToken",
-    "maiinsight_token",
-  ]
-
-  for (const key of tokenStorageKeys) {
-    const token = localStorage.getItem(key)
-
-    if (!token) continue
-
-    const payload = decodeJwtPayload(token)
-
-    if (payload?.role) return payload.role
-  }
-
-  return null
-}
-
 export function GenAIWorkspace({ userRole: userRoleFromProps }: GenAIWorkspaceProps) {
-  const [storedUserRole, setStoredUserRole] = useState<string | null>(null)
-  const [isRoleReady, setIsRoleReady] = useState(false)
   const [isGenerating, setIsGenerating] = useState(false)
   const [accessMessage, setAccessMessage] = useState("")
 
-  useEffect(() => {
-    if (userRoleFromProps) {
-      setStoredUserRole(userRoleFromProps)
-    } else {
-      setStoredUserRole(getStoredUserRole())
-    }
+  const userRole = normalizeRole(
+    userRoleFromProps ?? getStoredRole()
+  )
 
-    setIsRoleReady(true)
-  }, [userRoleFromProps])
+  const isIT = userRole === "it_support"
+  const canGenerateAi = canAccessFeature(userRole, "generateAiStrategy")
 
-  const activeRole = userRoleFromProps || storedUserRole
-  const normalizedRole = normalizeRole(activeRole)
-
-  const isAdmin = normalizedRole === "admin"
-  const isManagement = normalizedRole === "management"
-  const isIT = normalizedRole === "it"
-
-  const canViewPage = isAdmin || isIT
-  const canGenerateAi = isAdmin
+  // Early return for unauthorized users
+  if (!canGenerateAi) {
+    return (
+      <AccessDenied
+        title="Feature Not Available"
+        message="AI Strategy Generation is restricted to administrators."
+        feature="GenAI Workspace"
+        requiredRole="Admin only"
+        showButton={false}
+      />
+    )
+  }
 
   const [selectedVenueType, setSelectedVenueType] =
     useState<VenueType>("All Venue")
@@ -405,13 +317,6 @@ export function GenAIWorkspace({ userRole: userRoleFromProps }: GenAIWorkspacePr
   }
 
   const handleGenerateStrategy = async () => {
-    setAccessMessage("")
-
-    if (!canGenerateAi) {
-      setAccessMessage("Access denied. Only admin can generate AI strategy.")
-      return
-    }
-
     setIsGenerating(true)
 
     await new Promise((resolve) => setTimeout(resolve, 1000))
@@ -422,40 +327,6 @@ export function GenAIWorkspace({ userRole: userRoleFromProps }: GenAIWorkspacePr
     setAiSummary(summary)
     setStrategyCards(cards)
     setIsGenerating(false)
-  }
-
-  if (!isRoleReady) {
-    return (
-      <div className="flex min-h-[60vh] items-center justify-center">
-        <div className="text-center">
-          <RefreshCw className="mx-auto mb-3 h-6 w-6 animate-spin text-muted-foreground" />
-          <p className="text-sm text-muted-foreground">Checking access...</p>
-        </div>
-      </div>
-    )
-  }
-
-  if (!canViewPage || isManagement) {
-    return (
-      <div className="flex min-h-[60vh] items-center justify-center">
-        <Card className="max-w-md border-red-200 bg-red-50">
-          <CardContent className="p-8 text-center">
-            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-red-100">
-              <ShieldAlert className="h-6 w-6 text-red-600" />
-            </div>
-
-            <h2 className="mb-2 text-xl font-bold text-red-700">
-              Access Denied
-            </h2>
-
-            <p className="text-sm text-red-600">
-              Management role cannot access GenAI Workspace. This page is only
-              available for Admin and IT.
-            </p>
-          </CardContent>
-        </Card>
-      </div>
-    )
   }
 
   return (

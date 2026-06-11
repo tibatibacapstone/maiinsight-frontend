@@ -4,8 +4,7 @@ import { useEffect, useState } from "react"
 import { LoginPage } from "@/components/login-page"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import type { PageId } from "@/components/dashboard-sidebar"
-
-type UserRole = "admin" | "management" | "it_support"
+import type { UserRole } from "@/lib/roles"
 
 type LoginResponse = {
   token: string

@@ -13,6 +13,14 @@ import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Progress } from "@/components/ui/progress"
+import { AccessDenied } from "@/components/access-denied"
+import {
+  getStoredRole,
+  getStoredToken,
+  getAuthHeaders,
+  canAccessFeature,
+  USER_ROLES,
+} from "@/lib/roles"
 import {
   Dialog,
   DialogContent,
@@ -296,82 +304,14 @@ export function DataManagement() {
   const [rawHeaders, setRawHeaders] = useState<string[]>([])
   const [isLoadingRawRows, setIsLoadingRawRows] = useState(false)
   const [rawRowsError, setRawRowsError] = useState("")
-  type UserRole = "admin" | "management" | "it_support"
-  const normalizeRole = (role?: string | null): UserRole | null => {
-  const value = role?.toLowerCase().trim()
 
-  if (value === "admin") return "admin"
-  if (value === "management") return "management"
+  const userRole = getStoredRole()
+  const canAccessDataCenter =
+    userRole === USER_ROLES.ADMIN || userRole === USER_ROLES.IT_SUPPORT
+  const canManageCsv = canAccessFeature(userRole, "uploadCsv")
 
-  if (
-    value === "it" ||
-    value === "it_support" ||
-    value === "it support" ||
-    value === "it-support"
-  ) {
-    return "it_support"
-  }
-
-  return null
-}
-
-const getStoredToken = () => {
-  if (typeof window === "undefined") return null
-
-  return (
-    localStorage.getItem("maiinToken") ||
-    localStorage.getItem("token") ||
-    localStorage.getItem("authToken") ||
-    localStorage.getItem("accessToken") ||
-    localStorage.getItem("maiinsight_token")
-  )
-}
-
-const getAuthHeaders = (): Record<string, string> => {
-  if (typeof window === "undefined") return {}
-
-  const token =
-    localStorage.getItem("maiinToken") ||
-    localStorage.getItem("token") ||
-    localStorage.getItem("authToken") ||
-    localStorage.getItem("accessToken") ||
-    localStorage.getItem("maiinsight_token")
-
-  if (!token) return {}
-
-  return {
-    Authorization: `Bearer ${token}`,
-  }
-}
-
-const getStoredRole = (): UserRole | null => {
-  if (typeof window === "undefined") return null
-
-  const storedRole = localStorage.getItem("maiinRole")
-  const normalizedStoredRole = normalizeRole(storedRole)
-
-  if (normalizedStoredRole) return normalizedStoredRole
-
-  const storedUser =
-    localStorage.getItem("maiinUser") ||
-    localStorage.getItem("user") ||
-    localStorage.getItem("maiinsight_user")
-
-  if (!storedUser) return null
-
-  try {
-    const parsedUser = JSON.parse(storedUser)
-    return normalizeRole(parsedUser?.role)
-  } catch {
-    return null
-  }
-}
-
-const userRole = getStoredRole()
-
-const canAccessDataCenter = userRole === "admin" || userRole === "it_support"
-const canManageCsv = userRole === "admin"
   const fetchSyncJobs = useCallback(async () => {
+  const userRole = getStoredRole()
   const token = getStoredToken()
 
   if (!token) {
@@ -381,7 +321,8 @@ const canManageCsv = userRole === "admin"
     return
   }
 
-  if (!canAccessDataCenter) {
+  const canAccess = userRole === USER_ROLES.ADMIN || userRole === USER_ROLES.IT_SUPPORT
+  if (!canAccess) {
     console.warn("User does not have access to Data Center.")
     setSyncJobs(initialSyncJobs)
     setIsLoadingJobs(false)
@@ -422,7 +363,7 @@ const canManageCsv = userRole === "admin"
   } finally {
     setIsLoadingJobs(false)
   }
-}, [canAccessDataCenter])
+}, [])
 
   useEffect(() => {
     fetchSyncJobs()
@@ -495,8 +436,9 @@ const canManageCsv = userRole === "admin"
   }
 
   const handleUploadCsv = async () => {
-  if (!canManageCsv) {
-    setUploadError("Access denied. Only admin can upload CSV files.")
+  const userRole = getStoredRole()
+  if (!canAccessFeature(userRole, "uploadCsv")) {
+    setUploadError("Access denied: Only administrators can upload CSV files.")
     return
   }
 
@@ -627,8 +569,9 @@ const handleViewRawRows= async (job: SyncJob) => {
   process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api"
 
 const handleRemoveJob = async (job: SyncJob) => {
-  if (!canManageCsv) {
-    alert("Access denied. Only admin can delete import history.")
+  const userRole = getStoredRole()
+  if (!canAccessFeature(userRole, "deleteImport")) {
+    alert("Access denied: Only administrators can delete import history.")
     return
   }
 

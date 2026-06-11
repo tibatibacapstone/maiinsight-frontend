@@ -9,6 +9,9 @@ import { PerformanceHub } from "./performance-hub"
 import { ActivityLogs } from "./activity-logs"
 import { Notifications } from "./notifications"
 import { SystemSettings } from "./system-settings"
+import { ManagementReport } from "./management-report"
+import { AccessDenied } from "./access-denied"
+import { PAGE_PERMISSIONS, UserRole } from "@/lib/roles"
 
 interface DashboardLayoutProps {
   currentPage: PageId
@@ -17,26 +20,20 @@ interface DashboardLayoutProps {
   userRole: UserRole
 }
 
-export type UserRole = "admin" | "management" | "it_support"
-
-const pagePermissions: Record<UserRole, PageId[]> = {
-  admin: ["dashboard", "segments", "performance", "genai", "notifications", "settings", "data", "history", "notifications"],
-  management: ["dashboard", "segments", "performance", "genai", "notifications", "settings"],
-  it_support: ["dashboard", "segments", "performance", "genai", "notifications", "settings", "data", "history", "notifications"],
-}
-
 export function DashboardLayout({ currentPage, onNavigate, onLogout, userRole }: DashboardLayoutProps) {
-  const permittedPages = pagePermissions[userRole] ?? ["dashboard"]
+  const permittedPages = PAGE_PERMISSIONS[userRole] ?? ["dashboard"]
 
   const renderPage = () => {
     if (!permittedPages.includes(currentPage)) {
       return (
-        <div className="rounded-3xl border border-border/70 bg-card/80 p-10 text-center shadow-sm">
-          <h2 className="text-2xl font-semibold">Access denied</h2>
-          <p className="mt-3 text-sm text-muted-foreground">
-            You do not have access to this section for the current role.
-          </p>
-        </div>
+        <AccessDenied
+          title="Access Denied"
+          message="You do not have permission to access this section."
+          feature={currentPage}
+          requiredRole="Check with your administrator"
+          onGoBack={() => onNavigate("dashboard")}
+          showButton={true}
+        />
       )
     }
 
@@ -51,6 +48,8 @@ export function DashboardLayout({ currentPage, onNavigate, onLogout, userRole }:
         return <GenAIWorkspace />
       case "performance":
         return <PerformanceHub />
+      case "reports":
+        return <ManagementReport />
       case "history":
         return <ActivityLogs />
       case "notifications":

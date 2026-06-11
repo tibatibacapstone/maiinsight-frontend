@@ -9,6 +9,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
+import { UserRole } from "@/lib/roles"
 
 import {
   BarChart3,
@@ -23,7 +24,8 @@ import {
   ChevronRight,
   LogOut,
   Bell,
-  GitGraph
+  GitGraph,
+  FileText
 } from "lucide-react"
 
 export type PageId =
@@ -35,8 +37,7 @@ export type PageId =
   | "history"
   | "notifications"
   | "settings"
-
-export type UserRole = "admin" | "marketing" | "management" | "it_support"
+  | "reports"
 
 interface SidebarProps {
   currentPage: PageId
@@ -75,7 +76,7 @@ const navItems = [
   },
   {
     id: "history" as PageId,
-    label: "Activity Logs",
+    label: "History",
     icon: History
   },
   {
@@ -88,12 +89,17 @@ const navItems = [
     label: "Settings",
     icon: Settings
   },
+  {
+    id: "reports" as PageId,
+    label: "Management Reports",
+    icon: FileText,
+  },
 ]
 
 const allowedPagesByRole: Record<UserRole, PageId[]> = {
-  admin: ["dashboard", "data", "history", "notifications"],
-  marketing: ["dashboard", "segments", "performance", "genai", "notifications", "settings"],
-  management: ["dashboard", "segments", "performance", "genai", "notifications", "settings"],
+  admin: ["dashboard", "data", "history", "notifications", "settings"],
+  marketing: ["dashboard", "segments", "performance", "genai", "notifications"],
+  management: ["dashboard", "segments", "performance", "genai", "notifications", "reports"],
   it_support: ["dashboard", "data", "history", "notifications"],
 }
 
