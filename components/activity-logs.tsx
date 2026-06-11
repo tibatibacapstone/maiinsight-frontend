@@ -37,10 +37,10 @@ interface Activity {
 }
 
 const activities: Activity[] = [
-  { id: "1", type: "auth", action: "Login", user: "John Doe", role: "Admin", details: "Logged in from 192.168.1.100", timestamp: "2 min ago", status: "success" },
-  { id: "2", type: "data", action: "Data Sync", user: "System", role: "System", details: "POS API synchronized 4,520 records", timestamp: "5 min ago", status: "success" },
-  { id: "3", type: "ai", action: "Strategy Generated", user: "Jane Smith", role: "Marketing", details: "Created Weekend Flash Sale campaign", timestamp: "15 min ago", status: "success" },
-  { id: "4", type: "config", action: "Settings Updated", user: "Admin User", role: "Admin", details: "Updated API token for CRM integration", timestamp: "30 min ago", status: "success" },
+  { id: "1", type: "auth", action: "Login", user: "Sabri Kurniadi", role: "Admin", details: "Logged in from 192.168.1.100", timestamp: "2 min ago", status: "success" },
+  { id: "2", type: "data", action: "Data Sync", user: "System", role: "System", details: "Gemini API synchronized 4,520 records", timestamp: "5 min ago", status: "success" },
+  { id: "3", type: "ai", action: "Strategy Generated", user: "Arrief Hardian", role: "Admin", details: "Created Weekend Flash Sale campaign", timestamp: "15 min ago", status: "success" },
+  { id: "4", type: "config", action: "Settings Updated", user: "Sabri Kurniadi", role: "it_support", details: "Updated API token for CRM integration", timestamp: "30 min ago", status: "success" },
   { id: "5", type: "data", action: "CSV Import", user: "Jane Smith", role: "Marketing", details: "Imported customer_data_may.csv (2,340 rows)", timestamp: "1 hour ago", status: "success" },
   { id: "6", type: "report", action: "Report Generated", user: "John Doe", role: "Admin", details: "Monthly performance report exported", timestamp: "2 hours ago", status: "success" },
   { id: "7", type: "data", action: "Data Sync", user: "System", role: "System", details: "Inventory API sync failed - connection timeout", timestamp: "3 hours ago", status: "error" },
