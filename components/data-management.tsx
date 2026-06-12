@@ -299,7 +299,7 @@ export function DataManagement() {
 
   const userRole = getStoredRole()
   const canAccessDataCenter =
-    userRole === USER_ROLES.ADMIN || userRole === USER_ROLES.IT_SUPPORT
+    userRole === USER_ROLES.MARKETING || userRole === USER_ROLES.IT_SUPPORT
   const canManageCsv = canAccessFeature(userRole, "uploadCsv")
 
   const fetchSyncJobs = useCallback(async () => {
@@ -313,7 +313,7 @@ export function DataManagement() {
     return
   }
 
-  const canAccess = userRole === USER_ROLES.ADMIN || userRole === USER_ROLES.IT_SUPPORT
+  const canAccess = userRole === USER_ROLES.MARKETING || userRole === USER_ROLES.IT_SUPPORT
   if (!canAccess) {
     console.warn("User does not have access to Data Center.")
     setSyncJobs(initialSyncJobs)
@@ -430,7 +430,7 @@ export function DataManagement() {
   const handleUploadCsv = async () => {
   const userRole = getStoredRole()
   if (!canAccessFeature(userRole, "uploadCsv")) {
-    setUploadError("Access denied: Only administrators can upload CSV files.")
+    setUploadError("Access denied: Upload is available to Marketing and IT Support only.")
     return
   }
 
@@ -561,7 +561,7 @@ const handleViewRawRows= async (job: SyncJob) => {
 const handleRemoveJob = async (job: SyncJob) => {
   const userRole = getStoredRole()
   if (!canAccessFeature(userRole, "deleteImport")) {
-    alert("Access denied: Only administrators can delete import history.")
+    alert("Access denied: Delete is available to Marketing and IT Support only.")
     return
   }
 

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -39,6 +39,7 @@ import {
   Info,
   Save
 } from "lucide-react"
+import { canAccessFeature, getStoredRole, type UserRole } from "@/lib/roles"
 
 interface APIToken {
   id: string
@@ -53,7 +54,7 @@ interface UserAccount {
   id: string
   name: string
   email: string
-  role: "admin" | "management" | "it_support"
+  role: "marketing" | "management" | "it_support"
   status: "active" | "inactive"
   lastLogin: string
 }
@@ -64,15 +65,15 @@ const apiTokens: APIToken[] = [
 ]
 
 const userAccounts: UserAccount[] = [
-  { id: "1", name: "Arrief Hardian", email: "arrief.Hardian@triaysa.co.id", role: "admin", status: "active", lastLogin: "2 hours ago" },
-  { id: "2", name: "Nizar Muharram", email: "nizar.muharram@triyasa.co.id", role: "admin", status: "active", lastLogin: "5 min ago" },
+  { id: "1", name: "Arrief Hardian", email: "arrief.Hardian@triaysa.co.id", role: "marketing", status: "active", lastLogin: "2 hours ago" },
+  { id: "2", name: "Nizar Muharram", email: "nizar.muharram@triyasa.co.id", role: "marketing", status: "active", lastLogin: "5 min ago" },
   { id: "3", name: "Sabri Kurniadi", email: "sabri.kurniadi@triyasa.co.id", role: "it_support", status: "active", lastLogin: "1 day ago" },
   { id: "4", name: "Iqbal Utomo", email: "iqbal.utomo@triyasa.co.id", role: "management", status: "inactive", lastLogin: "2 weeks ago" },
 ]
 
 const roleConfig = {
-  admin: { color: "text-chart-5", bg: "bg-chart-5/10", label: "Admin" },
-  management: { color: "text-chart-1", bg: "bg-chart-1/10", label: "management" },
+  marketing: { color: "text-chart-5", bg: "bg-chart-5/10", label: "Marketing" },
+  management: { color: "text-chart-1", bg: "bg-chart-1/10", label: "Management" },
   it_support: { color: "text-chart-2", bg: "bg-chart-2/10", label: "IT Support" },
 }
 
@@ -81,6 +82,7 @@ export function SystemSettings() {
   const [users, setUsers] = useState(userAccounts)
   const [showKey, setShowKey] = useState<string | null>(null)
   const [copiedKey, setCopiedKey] = useState<string | null>(null)
+  const [userRole, setUserRole] = useState<UserRole | null>(null)
   const [notifications, setNotifications] = useState({
     aiAlerts: true,
     syncAlerts: true,
@@ -88,6 +90,13 @@ export function SystemSettings() {
     weeklyReports: true,
     performanceAlerts: false,
   })
+
+  useEffect(() => {
+    setUserRole(getStoredRole())
+  }, [])
+
+  const canModifySettings = canAccessFeature(userRole, "modifySettings")
+  const showReadOnlyNotice = userRole === "marketing" && !canModifySettings
 
   const copyToClipboard = (key: string, tokenId: string) => {
     navigator.clipboard.writeText(key)
@@ -120,6 +129,16 @@ export function SystemSettings() {
           <p className="text-muted-foreground">Manage API tokens, users, and system settings</p>
         </div>
 
+        {showReadOnlyNotice && (
+          <div className="flex items-start gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-950 dark:text-amber-100">
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+            <div>
+              <p className="font-medium">Read-only access</p>
+              <p>You can view system settings, but only IT Support can modify tokens, users, and notifications.</p>
+            </div>
+          </div>
+        )}
+
         <div className="grid gap-6 lg:grid-cols-2">
           {/* API Tokens */}
           <Card className="bg-card border-border shadow-sm">
@@ -132,33 +151,35 @@ export function SystemSettings() {
                   </CardTitle>
                   <CardDescription>Manage integration API keys</CardDescription>
                 </div>
-                <Dialog>
-                  <DialogTrigger asChild>
-                    <Button size="sm" className="gap-2">
-                      <Plus className="h-4 w-4" />
-                      Add Token
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent>
-                    <DialogHeader>
-                      <DialogTitle>Create New API Token</DialogTitle>
-                      <DialogDescription>
-                        Generate a new API token for integration
-                      </DialogDescription>
-                    </DialogHeader>
-                    <div className="space-y-4 pt-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="token-name">Token Name</Label>
-                        <Input id="token-name" placeholder="e.g., Analytics API" />
+                {canModifySettings && (
+                  <Dialog>
+                    <DialogTrigger asChild>
+                      <Button size="sm" className="gap-2">
+                        <Plus className="h-4 w-4" />
+                        Add Token
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent>
+                      <DialogHeader>
+                        <DialogTitle>Create New API Token</DialogTitle>
+                        <DialogDescription>
+                          Generate a new API token for integration
+                        </DialogDescription>
+                      </DialogHeader>
+                      <div className="space-y-4 pt-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="token-name">Token Name</Label>
+                          <Input id="token-name" placeholder="e.g., Analytics API" />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="token-desc">Description</Label>
+                          <Input id="token-desc" placeholder="What this token is used for" />
+                        </div>
+                        <Button className="w-full">Generate Token</Button>
                       </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="token-desc">Description</Label>
-                        <Input id="token-desc" placeholder="What this token is used for" />
-                      </div>
-                      <Button className="w-full">Generate Token</Button>
-                    </div>
-                  </DialogContent>
-                </Dialog>
+                    </DialogContent>
+                  </Dialog>
+                )}
               </div>
             </CardHeader>
             <CardContent className="space-y-3">
@@ -212,16 +233,18 @@ export function SystemSettings() {
                     <Switch
                       checked={token.status === "active"}
                       onCheckedChange={() => toggleTokenStatus(token.id)}
-                      disabled={token.status === "expired"}
+                      disabled={token.status === "expired" || !canModifySettings}
                     />
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive">
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>Delete Token</TooltipContent>
-                    </Tooltip>
+                    {canModifySettings && (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive">
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>Delete Token</TooltipContent>
+                      </Tooltip>
+                    )}
                   </div>
                 </div>
               ))}
@@ -239,43 +262,45 @@ export function SystemSettings() {
                   </CardTitle>
                   <CardDescription>Manage user access and roles</CardDescription>
                 </div>
-                <Dialog>
-                  <DialogTrigger asChild>
-                    <Button size="sm" className="gap-2">
-                      <Plus className="h-4 w-4" />
-                      Add User
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent>
-                    <DialogHeader>
-                      <DialogTitle>Create New User</DialogTitle>
-                      <DialogDescription>
-                        Add a new user to the system
-                      </DialogDescription>
-                    </DialogHeader>
-                    <div className="space-y-4 pt-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="user-name">Full Name</Label>
-                        <Input id="user-name" placeholder="John Doe" />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="user-email">Email</Label>
-                        <Input id="user-email" type="email" placeholder="john@maiin.com" />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Role</Label>
-                        <div className="flex gap-2">
-                          {Object.entries(roleConfig).map(([role, config]) => (
-                            <Button key={role} variant="outline" size="sm" className="flex-1">
-                              {config.label}
-                            </Button>
-                          ))}
+                {canModifySettings && (
+                  <Dialog>
+                    <DialogTrigger asChild>
+                      <Button size="sm" className="gap-2">
+                        <Plus className="h-4 w-4" />
+                        Add User
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent>
+                      <DialogHeader>
+                        <DialogTitle>Create New User</DialogTitle>
+                        <DialogDescription>
+                          Add a new user to the system
+                        </DialogDescription>
+                      </DialogHeader>
+                      <div className="space-y-4 pt-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="user-name">Full Name</Label>
+                          <Input id="user-name" placeholder="John Doe" />
                         </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="user-email">Email</Label>
+                          <Input id="user-email" type="email" placeholder="john@maiin.com" />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Role</Label>
+                          <div className="flex gap-2">
+                            {Object.entries(roleConfig).map(([role, config]) => (
+                              <Button key={role} variant="outline" size="sm" className="flex-1">
+                                {config.label}
+                              </Button>
+                            ))}
+                          </div>
+                        </div>
+                        <Button className="w-full">Create User</Button>
                       </div>
-                      <Button className="w-full">Create User</Button>
-                    </div>
-                  </DialogContent>
-                </Dialog>
+                    </DialogContent>
+                  </Dialog>
+                )}
               </div>
             </CardHeader>
             <CardContent className="space-y-3">
@@ -304,18 +329,22 @@ export function SystemSettings() {
                       <Badge variant={user.status === "active" ? "default" : "secondary"} className="text-xs">
                         {user.status}
                       </Badge>
-                      <Switch
-                        checked={user.status === "active"}
-                        onCheckedChange={() => toggleUserStatus(user.id)}
-                      />
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button variant="ghost" size="icon" className="h-8 w-8">
-                            <Edit className="h-4 w-4" />
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>Edit User</TooltipContent>
-                      </Tooltip>
+                      {canModifySettings && (
+                        <>
+                          <Switch
+                            checked={user.status === "active"}
+                            onCheckedChange={() => toggleUserStatus(user.id)}
+                          />
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button variant="ghost" size="icon" className="h-8 w-8">
+                                <Edit className="h-4 w-4" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>Edit User</TooltipContent>
+                          </Tooltip>
+                        </>
+                      )}
                     </div>
                   </div>
                 )
@@ -350,11 +379,15 @@ export function SystemSettings() {
                     <Label htmlFor={setting.key} className="font-medium">{setting.label}</Label>
                     <p className="text-xs text-muted-foreground">{setting.description}</p>
                   </div>
-                  <Switch
-                    id={setting.key}
-                    checked={notifications[setting.key as keyof typeof notifications]}
-                    onCheckedChange={(checked) => setNotifications(prev => ({ ...prev, [setting.key]: checked }))}
-                  />
+                  {canModifySettings ? (
+                    <Switch
+                      id={setting.key}
+                      checked={notifications[setting.key as keyof typeof notifications]}
+                      onCheckedChange={(checked) => setNotifications(prev => ({ ...prev, [setting.key]: checked }))}
+                    />
+                  ) : (
+                    <Badge variant="secondary" className="shrink-0">Read only</Badge>
+                  )}
                 </div>
               ))}
             </div>

@@ -157,11 +157,11 @@ function getPerformanceLabel(engagementRate: number) {
   return "Low"
 }
 
-type PerformanceHubProps = {
+type InstaSightHubProps = {
   onViewAudience?: () => void
 }
 
-export function PerformanceHub({ onViewAudience }: PerformanceHubProps) {
+export function InstaSightHub({ onViewAudience }: InstaSightHubProps) {
   const [timeRange, setTimeRange] = useState<"week" | "month" | "quarter">("month")
   const [selectedCampaign, setSelectedCampaign] = useState<string | null>(null)
 

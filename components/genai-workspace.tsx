@@ -85,20 +85,9 @@ export function GenAIWorkspace({ userRole: userRoleFromProps }: GenAIWorkspacePr
   )
 
   const isIT = userRole === "it_support"
+  const isManagement = userRole === "management"
+  const canViewAi = canAccessFeature(userRole, "viewAiStrategy")
   const canGenerateAi = canAccessFeature(userRole, "generateAiStrategy")
-
-  // Early return for unauthorized users
-  if (!canGenerateAi) {
-    return (
-      <AccessDenied
-        title="Feature Not Available"
-        message="AI Strategy Generation is restricted to administrators."
-        feature="GenAI Workspace"
-        requiredRole="Admin only"
-        showButton={false}
-      />
-    )
-  }
 
   const [selectedVenueType, setSelectedVenueType] =
     useState<VenueType>("All Venue")
@@ -317,6 +306,8 @@ export function GenAIWorkspace({ userRole: userRoleFromProps }: GenAIWorkspacePr
   }
 
   const handleGenerateStrategy = async () => {
+    if (!canGenerateAi) return
+
     setIsGenerating(true)
 
     await new Promise((resolve) => setTimeout(resolve, 1000))
@@ -327,6 +318,18 @@ export function GenAIWorkspace({ userRole: userRoleFromProps }: GenAIWorkspacePr
     setAiSummary(summary)
     setStrategyCards(cards)
     setIsGenerating(false)
+  }
+
+  if (!canViewAi) {
+    return (
+      <AccessDenied
+        title="Feature Not Available"
+        message="AI Strategy access is not available for your current role."
+        feature="GenAI Workspace"
+        requiredRole="Marketing, Management, or IT Support"
+        showButton={false}
+      />
+    )
   }
 
   return (
@@ -356,12 +359,31 @@ export function GenAIWorkspace({ userRole: userRoleFromProps }: GenAIWorkspacePr
 
             <div>
               <h3 className="font-semibold text-amber-800">
-                Limited Access for IT Role
+                IT Support Technical Access
               </h3>
 
               <p className="text-sm text-amber-700">
-                You can view this page, but Generate AI Strategy and Refresh
-                Strategy are disabled for IT role.
+                AI generation is available for testing and troubleshooting only.
+                Sensitive support actions should be recorded in activity logs.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {isManagement && (
+        <Card className="border-blue-200 bg-blue-50">
+          <CardContent className="flex items-start gap-3 p-5">
+            <ShieldAlert className="mt-1 h-5 w-5 text-blue-600" />
+
+            <div>
+              <h3 className="font-semibold text-blue-800">
+                Management Read-Only Access
+              </h3>
+
+              <p className="text-sm text-blue-700">
+                You can view AI strategy recommendations, but generation and
+                modification actions are disabled.
               </p>
             </div>
           </CardContent>
@@ -425,6 +447,7 @@ export function GenAIWorkspace({ userRole: userRoleFromProps }: GenAIWorkspacePr
                 onChange={(event) =>
                   setSelectedVenueType(event.target.value as VenueType)
                 }
+                disabled={!canGenerateAi}
                 className="w-full rounded-xl border border-border bg-background px-4 py-3 text-base shadow-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
               >
                 {venueTypes.map((venue) => (
@@ -443,6 +466,7 @@ export function GenAIWorkspace({ userRole: userRoleFromProps }: GenAIWorkspacePr
               <select
                 value={selectedSegment}
                 onChange={(event) => setSelectedSegment(event.target.value)}
+                disabled={!canGenerateAi}
                 className="w-full rounded-xl border border-border bg-background px-4 py-3 text-base shadow-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
               >
                 {targetSegments.map((segment) => (
@@ -461,6 +485,7 @@ export function GenAIWorkspace({ userRole: userRoleFromProps }: GenAIWorkspacePr
               <select
                 value={selectedObjective}
                 onChange={(event) => setSelectedObjective(event.target.value)}
+                disabled={!canGenerateAi}
                 className="w-full rounded-xl border border-border bg-background px-4 py-3 text-base shadow-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
               >
                 {campaignObjectives.map((objective) => (
@@ -479,6 +504,7 @@ export function GenAIWorkspace({ userRole: userRoleFromProps }: GenAIWorkspacePr
               <select
                 value={selectedIncentive}
                 onChange={(event) => setSelectedIncentive(event.target.value)}
+                disabled={!canGenerateAi}
                 className="w-full rounded-xl border border-border bg-background px-4 py-3 text-base shadow-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
               >
                 {incentiveFrameworks.map((incentive) => (
@@ -497,6 +523,7 @@ export function GenAIWorkspace({ userRole: userRoleFromProps }: GenAIWorkspacePr
               <select
                 value={selectedTone}
                 onChange={(event) => setSelectedTone(event.target.value)}
+                disabled={!canGenerateAi}
                 className="w-full rounded-xl border border-border bg-background px-4 py-3 text-base shadow-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
               >
                 {copywritingTones.map((tone) => (

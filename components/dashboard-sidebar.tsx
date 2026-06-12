@@ -9,7 +9,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
-import { UserRole } from "@/lib/roles"
+import { canAccessPage, UserRole } from "@/lib/roles"
 
 import {
   BarChart3,
@@ -33,7 +33,7 @@ export type PageId =
   | "segments"
   | "data"
   | "genai"
-  | "performance"
+  | "instasight"
   | "history"
   | "notifications"
   | "settings"
@@ -70,7 +70,7 @@ const navItems = [
     icon: Sparkles
   },
   {
-    id: "performance" as PageId,
+    id: "instasight" as PageId,
     label: "InstaSight",
     icon: GitGraph
   },
@@ -96,13 +96,8 @@ const navItems = [
   },
 ]
 
-const allowedPagesByRole: Record<UserRole, PageId[]> = {
-  admin: ["dashboard", "data", "history", "notifications", "settings"],
-  marketing: ["dashboard", "segments", "performance", "genai", "notifications"],
-  management: ["dashboard", "segments", "performance", "genai", "notifications", "reports"],
-  it_support: ["dashboard", "data", "history", "notifications"],
-}
-
+// Mapping allowed pages sudah disentralkan di `@/lib/roles` via PAGE_PERMISSIONS.
+// Di sidebar, kita cukup gunakan filter sederhana saat render.
 export function DashboardSidebar({
   currentPage,
   onNavigate,
@@ -110,13 +105,13 @@ export function DashboardSidebar({
   userRole
 }: SidebarProps) {
 
-  const visibleNavItems = navItems.filter((item) => {
-    if (!userRole) return true
-    return allowedPagesByRole[userRole]?.includes(item.id)
-  })
-
   const [collapsed, setCollapsed] = useState(false)
   const [notifications] = useState(3)
+
+  const visibleNavItems = navItems.filter((item) =>
+    userRole ? canAccessPage(userRole, item.id) : true
+  )
+
 
   return (
     <TooltipProvider delayDuration={0}>
@@ -158,7 +153,7 @@ export function DashboardSidebar({
         {/* Navigation */}
         <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
 
-          {navItems.map((item) => {
+          {visibleNavItems.map((item) => {
 
             const Icon = item.icon
             const isActive = currentPage === item.id

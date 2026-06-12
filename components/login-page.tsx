@@ -28,7 +28,7 @@ export function LoginPage({ onSubmit, isLoading, error }: LoginPageProps) {
   }
 
   const handleGoogleLogin = async () => {
-    await onSubmit("admin@maiin.com", "Password123!")
+    await onSubmit("marketing@maiin.com", "Password123!")
   }
 
   return (

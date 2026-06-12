@@ -4,9 +4,8 @@
  */
 
 export const USER_ROLES = {
-  ADMIN: "admin",
-  MANAGEMENT: "management",
   MARKETING: "marketing",
+  MANAGEMENT: "management",
   IT_SUPPORT: "it_support",
 } as const;
 
@@ -16,57 +15,140 @@ export type UserRole = typeof USER_ROLES[keyof typeof USER_ROLES];
  * Page access permissions by role
  */
 export const PAGE_PERMISSIONS: Record<UserRole, string[]> = {
-  admin: ["dashboard", "data", "history", "notifications", "settings"],
-  marketing: ["dashboard", "segments", "performance", "genai", "notifications"],
-  management: ["dashboard", "segments", "performance", "genai", "notifications", "reports"],
-  it_support: ["dashboard", "data", "history", "notifications"],
+  marketing: [
+    "dashboard",
+    "segments",
+    "data",
+    "genai",
+    "instasight",
+    "notifications",
+    "settings",
+    "reports",
+    "history",
+  ],
+
+  management: [
+    "dashboard",
+    "segments",
+    "instasight",
+    "genai",
+    "notifications",
+    "reports",
+  ],
+
+  it_support: [
+    "dashboard",
+    "segments",
+    "data",
+    "genai",
+    "instasight",
+    "history",
+    "notifications",
+    "settings",
+    "reports",
+  ],
 };
 
 /**
  * Feature access permissions by role
  */
 export const FEATURE_PERMISSIONS: Record<UserRole, Record<string, boolean>> = {
-  admin: {
+  marketing: {
     uploadCsv: true,
     deleteImport: true,
+    viewRawImports: true,
+    viewImportJobs: true,
+    downloadExports: true,
     generateAiStrategy: true,
-    manageUsers: true,
+    viewAiStrategy: true,
+    modifyAiStrategy: true,
+    approveAiStrategy: true,
+    manageUsers: false,
     viewActivityLogs: true,
-    modifySettings: true,
+    viewSettings: true,
+    modifySettings: false,
     viewReports: true,
     downloadPdf: true,
+    downloadMarketingConfidential: true,
+    technicalAccess: false,
+    troubleshootingOnly: false,
+    auditSensitiveActions: false,
+    businessAuthority: true,
+    readOnly: false,
   },
-  marketing: {
-    uploadCsv: false,
-    deleteImport: false,
-    generateAiStrategy: true,
-    manageUsers: false,
-    viewActivityLogs: false,
-    modifySettings: false,
-    viewReports: false,
-    downloadPdf: false,
-  },
+
   management: {
     uploadCsv: false,
     deleteImport: false,
+    viewRawImports: false,
+    viewImportJobs: false,
+    downloadExports: false,
     generateAiStrategy: false,
+    viewAiStrategy: true,
+    modifyAiStrategy: false,
+    approveAiStrategy: false,
     manageUsers: false,
     viewActivityLogs: false,
+    viewSettings: false,
     modifySettings: false,
     viewReports: true,
     downloadPdf: true,
+    downloadMarketingConfidential: true,
+    technicalAccess: false,
+    troubleshootingOnly: false,
+    auditSensitiveActions: false,
+    businessAuthority: true,
+    readOnly: true,
   },
+
   it_support: {
     uploadCsv: true,
     deleteImport: true,
-    generateAiStrategy: false,
-    manageUsers: false,
+    viewRawImports: true,
+    viewImportJobs: true,
+    downloadExports: true,
+    generateAiStrategy: true,
+    viewAiStrategy: true,
+    modifyAiStrategy: true,
+    approveAiStrategy: false,
+    manageUsers: true,
     viewActivityLogs: true,
-    modifySettings: false,
-    viewReports: false,
-    downloadPdf: false,
+    viewSettings: true,
+    modifySettings: true,
+    viewReports: true,
+    downloadPdf: true,
+    downloadMarketingConfidential: true,
+    technicalAccess: true,
+    troubleshootingOnly: true,
+    auditSensitiveActions: true,
+    businessAuthority: false,
+    readOnly: false,
   },
 };
+
+export const SENSITIVE_AUDIT_FEATURES = new Set([
+  "uploadCsv",
+  "deleteImport",
+  "viewRawImports",
+  "downloadExports",
+  "generateAiStrategy",
+  "modifyAiStrategy",
+  "modifySettings",
+  "manageUsers",
+]);
+
+export const requiresAudit = (
+  userRole: UserRole | null,
+  feature: string
+): boolean => {
+  return userRole === USER_ROLES.IT_SUPPORT && SENSITIVE_AUDIT_FEATURES.has(feature);
+};
+
+export const hasBusinessAuthority = (userRole: UserRole | null): boolean => {
+  if (!userRole) return false;
+  return FEATURE_PERMISSIONS[userRole]?.businessAuthority ?? false;
+};
+
 
 /**
  * Normalize user role from various sources
@@ -74,7 +156,6 @@ export const FEATURE_PERMISSIONS: Record<UserRole, Record<string, boolean>> = {
 export const normalizeRole = (role?: string | null): UserRole | null => {
   const value = role?.toLowerCase().trim();
 
-  if (value === USER_ROLES.ADMIN) return USER_ROLES.ADMIN;
   if (value === USER_ROLES.MARKETING) return USER_ROLES.MARKETING;
   if (value === USER_ROLES.MANAGEMENT) return USER_ROLES.MANAGEMENT;
   if (
@@ -187,7 +268,6 @@ export const canAccessFeature = (
  */
 export const getRoleDisplayName = (role: UserRole): string => {
   const displayNames: Record<UserRole, string> = {
-    admin: "Administrator",
     marketing: "Marketing",
     management: "Management",
     it_support: "IT Support",

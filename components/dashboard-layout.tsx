@@ -7,7 +7,7 @@ import { AnalyticsDashboard } from "./analytics-dashboard"
 import { SegmentVisualization } from "./segment-visualization"
 import { DataManagement } from "./data-management"
 import { GenAIWorkspace } from "./genai-workspace"
-import { PerformanceHub } from "./performance-hub"
+import { InstaSightHub } from "./instasight-hub"
 import { ActivityLogs } from "./activity-logs"
 import { Notifications } from "./notifications"
 import { SystemSettings } from "./system-settings"
@@ -42,7 +42,7 @@ export function DashboardLayout({
           title="Access Denied"
           message="You do not have permission to access this section."
           feature={currentPage}
-          requiredRole="Check with your administrator"
+          requiredRole="Check with IT Support"
           onGoBack={() => onNavigate("dashboard")}
           showButton={true}
         />
@@ -62,11 +62,11 @@ export function DashboardLayout({
       case "genai":
         return <GenAIWorkspace />
 
-      case "performance":
+      case "instasight":
         return performanceView === "audience" ? (
           <MetaAudience onBack={() => setPerformanceView("performance")} />
         ) : (
-          <PerformanceHub
+          <InstaSightHub
             onViewAudience={() => setPerformanceView("audience")}
           />
         )
