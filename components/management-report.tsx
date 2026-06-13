@@ -4,7 +4,18 @@ import { useMemo, useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { AlertTriangle, Calendar, Download, FileText, Info } from "lucide-react"
+import { toast } from "sonner"
 import {
   AreaChart,
   Area,
@@ -49,6 +60,7 @@ export function ManagementReport() {
   const [startDate, setStartDate] = useState<string>(firstDataDate)
   const [endDate, setEndDate] = useState<string>(lastDataDate)
   const [reportGenerated, setReportGenerated] = useState(false)
+  const [downloadConfirmOpen, setDownloadConfirmOpen] = useState(false)
 
   const filteredData = useMemo(() => {
     const start = new Date(startDate)
@@ -97,6 +109,14 @@ export function ManagementReport() {
     }
   }
 
+  const handleConfirmDownload = () => {
+    setDownloadConfirmOpen(false)
+    handleDownloadPdf()
+    toast.success("Report ready", {
+      description: "Your management report has been downloaded.",
+    })
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -132,13 +152,35 @@ export function ManagementReport() {
               <Calendar className="h-4 w-4" />
               Refresh Report
             </Button>
-            <Button variant="outline" size="sm" className="gap-2" onClick={handleDownloadPdf}>
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-2"
+              onClick={() => setDownloadConfirmOpen(true)}
+            >
               <Download className="h-4 w-4" />
               Download PDF
             </Button>
           </div>
         </div>
       </div>
+
+      <AlertDialog open={downloadConfirmOpen} onOpenChange={setDownloadConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Download PDF report?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will open the printable version of the current management report.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleConfirmDownload}>
+              Continue
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <div className="grid gap-4 lg:grid-cols-3">
         <Card className="bg-card border-border shadow-sm">

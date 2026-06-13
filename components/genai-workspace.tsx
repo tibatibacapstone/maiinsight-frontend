@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { toast } from "sonner"
 import {
   Sparkles,
   Bell,
@@ -161,9 +162,13 @@ export function GenAIWorkspace({ userRole: userRoleFromProps }: GenAIWorkspacePr
   const copyToClipboard = async (text: string) => {
     try {
       await navigator.clipboard.writeText(text)
-      alert("Copied to clipboard!")
+      toast.success("Copied to clipboard", {
+        description: "The selected copy has been placed in your clipboard.",
+      })
     } catch {
-      alert("Failed to copy")
+      toast.error("Copy failed", {
+        description: "We couldn't copy the text to your clipboard.",
+      })
     }
   }
 

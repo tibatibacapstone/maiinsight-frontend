@@ -13,7 +13,18 @@ import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Progress } from "@/components/ui/progress"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { AccessDenied } from "@/components/access-denied"
+import { toast } from "sonner"
 import {
   getStoredRole,
   getStoredToken,
@@ -21,6 +32,7 @@ import {
   canAccessFeature,
   USER_ROLES,
 } from "@/lib/roles"
+import { getApiUrl } from "@/lib/api"
 import {
   Dialog,
   DialogContent,
@@ -122,18 +134,41 @@ interface RawTransactionRow {
 interface RawRowsResponse {
   success: boolean
   message?: string
-  data: RawTransactionRow[]
+  data?: {
+    batch?: {
+      id: number
+      fileName: string
+      rowCount: number
+    }
+    rows?: RawTransactionRow[]
+  }
 }
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000"
+interface DataCenterResponse {
+  dataCenter: {
+    sources: DataSource[]
+    recentActivities: unknown[]
+    totalNotifications: number
+  }
+}
 
-const dataSources: DataSource[] = [
+interface MetaSyncResponse {
+  success?: boolean
+  message?: string
+}
+
+interface AiStrategyResponse {
+  success?: boolean
+  message?: string
+}
+
+const defaultDataSources: DataSource[] = [
   {
     id: "1",
     name: "MaiinSight Database",
     type: "database",
     status: "connected",
-    lastSync: "Ready",
+    lastSync: "Not synced yet",
     records: 0,
   },
   {
@@ -149,7 +184,7 @@ const dataSources: DataSource[] = [
     name: "AI Strategy Engine",
     type: "api",
     status: "connected",
-    lastSync: "Ready",
+    lastSync: "Not synced yet",
     records: 0,
   },
 ]
@@ -211,6 +246,34 @@ const getCurrentTime = () => {
     hour: "2-digit",
     minute: "2-digit",
   })
+}
+
+const getCurrentSyncTimestamp = () => new Date().toISOString()
+
+const formatDisplaySyncTime = (value?: string | null) => {
+  if (!value) return "Not synced yet"
+
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+
+  return new Intl.DateTimeFormat("en-US", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(date)
+}
+
+const getDisplayNow = () => formatDisplaySyncTime(new Date().toISOString())
+
+const publishLastSyncTime = () => {
+  if (typeof window === "undefined") return
+
+  const timestamp = getCurrentSyncTimestamp()
+  localStorage.setItem("maiinLastDataSyncAt", timestamp)
+  window.dispatchEvent(
+    new CustomEvent("maiin-data-sync-updated", {
+      detail: { timestamp },
+    }),
+  )
 }
 
 const formatBackendTime = (dateValue?: string) => {
@@ -276,7 +339,23 @@ const getRawCellValue = (value: unknown) => {
   return String(value)
 }
 
+const escapeCsvCell = (value: unknown) => {
+  const text = value === null || value === undefined ? "" : String(value)
+  return `"${text.replace(/"/g, '""')}"`
+}
+
+const createSyncJob = (source: DataSource, status: SyncStatus, progress: number): SyncJob => ({
+  id: `sync-${source.id}-${Date.now()}`,
+  name: `${source.name} Sync`,
+  type: "api",
+  status,
+  progress,
+  records: 0,
+  startedAt: getCurrentTime(),
+})
+
 export function DataManagement() {
+  const [dataSources, setDataSources] = useState<DataSource[]>(defaultDataSources)
   const [syncJobs, setSyncJobs] = useState<SyncJob[]>(initialSyncJobs)
 
   const [uploadModalOpen, setUploadModalOpen] = useState(false)
@@ -296,11 +375,50 @@ export function DataManagement() {
   const [rawHeaders, setRawHeaders] = useState<string[]>([])
   const [isLoadingRawRows, setIsLoadingRawRows] = useState(false)
   const [rawRowsError, setRawRowsError] = useState("")
+  const [syncingSourceId, setSyncingSourceId] = useState<string | null>(null)
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
+  const [downloadConfirmOpen, setDownloadConfirmOpen] = useState(false)
+  const [pendingJob, setPendingJob] = useState<SyncJob | null>(null)
 
   const userRole = getStoredRole()
   const canAccessDataCenter =
     userRole === USER_ROLES.MARKETING || userRole === USER_ROLES.IT_SUPPORT
   const canManageCsv = canAccessFeature(userRole, "uploadCsv")
+
+  const fetchDataCenter = useCallback(async () => {
+    const token = getStoredToken()
+
+    if (!token) {
+      setDataSources(defaultDataSources)
+      return
+    }
+
+    try {
+      const response = await fetch(getApiUrl("/dashboard/data-center"), {
+        method: "GET",
+        cache: "no-store",
+        headers: {
+          ...getAuthHeaders(),
+        },
+      })
+
+      const result: DataCenterResponse = await response.json()
+
+      if (!response.ok || !result?.dataCenter?.sources) {
+        throw new Error("Failed to fetch data center summary.")
+      }
+
+      setDataSources(
+        result.dataCenter.sources.map((source) => ({
+          ...source,
+          lastSync: formatDisplaySyncTime(source.lastSync),
+        })),
+      )
+    } catch (error) {
+      console.error("Failed to fetch data center summary:", error)
+      setDataSources(defaultDataSources)
+    }
+  }, [])
 
   const fetchSyncJobs = useCallback(async () => {
   const userRole = getStoredRole()
@@ -324,7 +442,7 @@ export function DataManagement() {
   try {
     setIsLoadingJobs(true)
 
-    const response = await fetch(`${API_URL}/api/imports/jobs`, {
+    const response = await fetch(getApiUrl("/imports/jobs"), {
       method: "GET",
       cache: "no-store",
       headers: {
@@ -349,6 +467,7 @@ export function DataManagement() {
     const mappedJobs = result.data.map(mapImportJobToSyncJob)
 
     setSyncJobs(mappedJobs.length > 0 ? mappedJobs : initialSyncJobs)
+    publishLastSyncTime()
   } catch (error) {
     console.error("Failed to fetch sync jobs:", error)
     setSyncJobs(initialSyncJobs)
@@ -357,9 +476,148 @@ export function DataManagement() {
   }
 }, [])
 
+  const syncSource = useCallback(
+    async (sourceId: string) => {
+      const source = dataSources.find((item) => item.id === sourceId)
+
+      if (!source) return
+
+      const token = getStoredToken()
+      if (!token) {
+        toast.error("Sync unavailable", {
+          description: "Please sign in again to continue syncing data.",
+        })
+        return
+      }
+
+      try {
+        setSyncingSourceId(sourceId)
+
+        const job = createSyncJob(source, "processing", 35)
+        setSyncJobs((prev) => [job, ...prev])
+
+        if (sourceId === "1") {
+          const response = await fetch(getApiUrl("/imports/jobs"), {
+            method: "GET",
+            cache: "no-store",
+            headers: getAuthHeaders(),
+          })
+
+          if (!response.ok) {
+            throw new Error("Failed to refresh MaiinSight Database.")
+          }
+        }
+
+        if (sourceId === "2") {
+          const response = await fetch(getApiUrl("/meta/sync"), {
+            method: "POST",
+            headers: {
+              ...getAuthHeaders(),
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({}),
+          })
+
+          const result: MetaSyncResponse = await response.json()
+
+          if (!response.ok || result.success === false) {
+            throw new Error(result.message || "Failed to sync Meta Graph API.")
+          }
+        }
+
+        if (sourceId === "3") {
+          const response = await fetch(getApiUrl("/ai-strategy/generate"), {
+            method: "POST",
+            headers: {
+              ...getAuthHeaders(),
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              selected_filters: {
+                source: "data-center",
+                sourceName: source.name,
+                triggeredFrom: "Sync Now",
+              },
+              customer_segment_summary: {},
+              business_context: {},
+              promotion_context: {},
+            }),
+          })
+
+          const result: AiStrategyResponse = await response.json()
+
+          if (!response.ok || result.success === false) {
+            throw new Error(result.message || "Failed to generate AI strategy.")
+          }
+        }
+
+        await fetchDataCenter()
+        await fetchSyncJobs()
+        const syncedAt = getDisplayNow()
+        setDataSources((prev) =>
+          prev.map((item) =>
+            item.id === sourceId
+              ? {
+                  ...item,
+                  lastSync: syncedAt,
+                }
+              : item,
+          ),
+        )
+        publishLastSyncTime()
+        toast.success("Sync complete", {
+          description: `${source.name} has been refreshed.`,
+        })
+
+        setSyncJobs((prev) =>
+          prev.map((item) =>
+            item.id === job.id
+              ? {
+                  ...item,
+                  status: "completed",
+                  progress: 100,
+                  records:
+                    sourceId === "1"
+                      ? item.records
+                      : sourceId === "2"
+                        ? item.records
+                        : item.records,
+                  completedAt: getCurrentTime(),
+                }
+              : item,
+          ),
+        )
+      } catch (error) {
+        setSyncJobs((prev) =>
+          prev.map((item) =>
+            item.id.startsWith(`sync-${sourceId}-`)
+              ? {
+                  ...item,
+                  status: "failed",
+                  progress: 0,
+                  error: error instanceof Error ? error.message : "Sync failed.",
+                }
+              : item,
+          ),
+        )
+        toast.error("Sync failed", {
+          description:
+            error instanceof Error ? error.message : `Failed to sync ${source.name}.`,
+        })
+      } finally {
+        setSyncingSourceId(null)
+      }
+    },
+    [dataSources, fetchDataCenter, fetchSyncJobs],
+  )
+
   useEffect(() => {
     fetchSyncJobs()
   }, [fetchSyncJobs])
+
+  useEffect(() => {
+    fetchDataCenter()
+  }, [fetchDataCenter])
 
   const resetUploadState = () => {
     setUploadFile(null)
@@ -430,7 +688,11 @@ export function DataManagement() {
   const handleUploadCsv = async () => {
   const userRole = getStoredRole()
   if (!canAccessFeature(userRole, "uploadCsv")) {
-    setUploadError("Access denied: Upload is available to Marketing and IT Support only.")
+    const message = "Upload is available to Marketing and IT Support only."
+    setUploadError(`Access denied: ${message}`)
+    toast.error("Access denied", {
+      description: message,
+    })
     return
   }
 
@@ -468,7 +730,7 @@ export function DataManagement() {
 
       setUploadProgress(40)
 
-      const response = await fetch(`${API_URL}/api/imports/upload-csv`, {
+      const response = await fetch(getApiUrl("/imports/upload-csv"), {
       method: "POST",
       headers: getAuthHeaders(),
       body: formData,
@@ -479,7 +741,10 @@ export function DataManagement() {
       const result: UploadCsvResponse = await response.json()
 
       if (!response.ok || !result.success || !result.data) {
-        throw new Error(result.message || "Failed to upload CSV file.")
+        throw new Error(
+          result.message ||
+            "Failed to upload CSV file. Please check your login and try again.",
+        )
       }
 
       setUploadProgress(100)
@@ -487,17 +752,26 @@ export function DataManagement() {
       setUploadMessage(
         `Upload success! ${result.data.rowCount.toLocaleString()} rows imported from ${result.data.fileName}.`,
       )
+      toast.success("Upload complete", {
+        description: `${result.data.fileName} has been imported.`,
+      })
 
       await fetchSyncJobs()
+      publishLastSyncTime()
+      await fetchDataCenter()
 
       setTimeout(() => {
         setUploadModalOpen(false)
         resetUploadState()
       }, 1200)
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : "Upload failed."
+      const errorMessage =
+        error instanceof Error ? error.message : "Upload failed."
 
       setUploadError(errorMessage)
+      toast.error("Upload failed", {
+        description: errorMessage,
+      })
 
       setSyncJobs((prev) =>
         prev.map((job) =>
@@ -525,7 +799,7 @@ const handleViewRawRows= async (job: SyncJob) => {
     setRawRows([])
     setRawHeaders([])
 
-    const response = await fetch(`${API_URL}/api/imports/batches/${job.id}/rows`, {
+    const response = await fetch(getApiUrl(`/imports/batches/${job.id}/rows`), {
   method: "GET",
   cache: "no-store",
   headers: getAuthHeaders(),
@@ -558,23 +832,19 @@ const handleViewRawRows= async (job: SyncJob) => {
   }
 }
 
-const handleRemoveJob = async (job: SyncJob) => {
+  const handleRemoveJob = async (job: SyncJob) => {
   const userRole = getStoredRole()
   if (!canAccessFeature(userRole, "deleteImport")) {
-    alert("Access denied: Delete is available to Marketing and IT Support only.")
+    toast.error("Access denied", {
+      description: "Delete is available to Marketing and IT Support only.",
+    })
     return
   }
-
-  const confirmDelete = window.confirm(
-    `Remove "${job.name}" from import history and delete uploaded data?`,
-  )
-
-  if (!confirmDelete) return
 
   try {
     setRemovingJobId(job.id)
 
-    const response = await fetch(`${API_URL}/api/imports/jobs/${job.id}`, {
+    const response = await fetch(getApiUrl(`/imports/jobs/${job.id}`), {
   method: "DELETE",
   headers: getAuthHeaders(),
 })
@@ -585,60 +855,93 @@ const handleRemoveJob = async (job: SyncJob) => {
       throw new Error(result.message || "Failed to delete import history.")
     }
 
-    setSyncJobs((prev) => prev.filter((item) => item.id !== job.id))
-  } catch (error) {
-    alert(error instanceof Error ? error.message : "Failed to delete import history.")
-  } finally {
-    setRemovingJobId(null)
+      setSyncJobs((prev) => prev.filter((item) => item.id !== job.id))
+      toast.success("Import deleted", {
+        description: `"${job.name}" and its uploaded rows have been removed.`,
+      })
+    } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to delete import history."
+    toast.error("Delete failed", {
+      description: message,
+    })
+    } finally {
+      setRemovingJobId(null)
+      }
   }
-}
-  const triggerSync = (sourceId: string) => {
-    const source = dataSources.find((item) => item.id === sourceId)
 
-    if (!source) return
+  const handleConfirmDelete = async () => {
+    if (!pendingJob) return
 
-    const newJob: SyncJob = {
-      id: Date.now().toString(),
-      name: `${source.name} Sync`,
-      type: "api",
-      status: "queued",
-      progress: 0,
-      records: 0,
-      startedAt: "Starting...",
+    const job = pendingJob
+    setDeleteConfirmOpen(false)
+    setPendingJob(null)
+    await handleRemoveJob(job)
+  }
+
+  const handleDownloadReport = async (job: SyncJob) => {
+    const toastId = toast.loading(`Preparing export for "${job.name}"...`)
+
+    try {
+      const response = await fetch(getApiUrl(`/imports/batches/${job.id}/rows`), {
+        method: "GET",
+        cache: "no-store",
+        headers: getAuthHeaders(),
+      })
+
+      const result: RawRowsResponse = await response.json()
+
+      const rows = result.data?.rows ?? []
+
+      if (!response.ok || !Array.isArray(rows)) {
+        throw new Error(result.message || "Failed to prepare download.")
+      }
+
+      const headers = Array.from(
+        new Set(rows.flatMap((row) => Object.keys(row.data || {}))),
+      )
+
+      const csvLines = [
+        ["Row", ...headers].map(escapeCsvCell).join(","),
+        ...rows.map((row) =>
+          [row.rowNumber, ...headers.map((header) => getRawCellValue(row.data?.[header]))]
+            .map(escapeCsvCell)
+            .join(","),
+        ),
+      ]
+
+      const csvBlob = new Blob([csvLines.join("\n")], { type: "text/csv;charset=utf-8;" })
+      const url = URL.createObjectURL(csvBlob)
+      const link = document.createElement("a")
+      link.href = url
+      link.download = `${job.name.replace(/\.csv$/i, "")}_raw_export.csv`
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      URL.revokeObjectURL(url)
+      toast.dismiss(toastId)
+      toast("Please wait while the file is downloading.", {
+        description: `${job.name} is being prepared in the background.`,
+        duration: 4000,
+      })
+      await new Promise((resolve) => window.setTimeout(resolve, 1500))
+      toast.success(`Raw export ready`, {
+        description: `${job.name}_raw_export.csv has been downloaded.`,
+        duration: 8000,
+      })
+    } catch (error) {
+      toast.dismiss(toastId)
+      toast.error("Download failed", {
+        description:
+          error instanceof Error ? error.message : "Unable to prepare the download.",
+        duration: 5000,
+      })
+    } finally {
+      setDownloadConfirmOpen(false)
+      setPendingJob(null)
     }
-
-    setSyncJobs((prev) => [newJob, ...prev])
-
-    setTimeout(() => {
-      setSyncJobs((prev) =>
-        prev.map((job) =>
-          job.id === newJob.id
-            ? {
-                ...job,
-                status: "processing",
-                progress: 30,
-                startedAt: getCurrentTime(),
-              }
-            : job,
-        ),
-      )
-    }, 1000)
-
-    setTimeout(() => {
-      setSyncJobs((prev) =>
-        prev.map((job) =>
-          job.id === newJob.id
-            ? {
-                ...job,
-                status: "completed",
-                progress: 100,
-                records: Math.floor(Math.random() * 10000),
-                completedAt: getCurrentTime(),
-              }
-            : job,
-        ),
-      )
-    }, 4000)
+  }
+  const triggerSync = (sourceId: string) => {
+    void syncSource(sourceId)
   }
 if (!canAccessDataCenter) {
   return (
@@ -674,17 +977,19 @@ if (!canAccessDataCenter) {
               </Button>
             </DialogTrigger>
 
-            <DialogContent className="sm:max-w-md">
-              <DialogHeader>
-                <DialogTitle>Upload Data File</DialogTitle>
-                <DialogDescription>
-                  Upload a CSV file to import transaction data into MaiinSight.
-                </DialogDescription>
-              </DialogHeader>
+            <DialogContent className="w-[min(96vw,48rem)] max-w-none p-0">
+              <div className="border-b px-6 py-5">
+                <DialogHeader className="text-left">
+                  <DialogTitle>Upload Data File</DialogTitle>
+                  <DialogDescription>
+                    Upload a CSV file to import transaction data into MaiinSight.
+                  </DialogDescription>
+                </DialogHeader>
+              </div>
 
-              <div className="space-y-4">
+              <div className="max-h-[calc(85vh-5rem)] space-y-4 overflow-y-auto px-6 py-5">
                 <div
-                  className={`rounded-lg border-2 border-dashed p-8 text-center transition-colors ${
+                  className={`flex min-h-[260px] w-full flex-col items-center justify-center rounded-xl border-2 border-dashed px-6 py-10 text-center transition-colors sm:px-8 ${
                     isDragging
                       ? "border-primary bg-primary/5"
                       : uploadFile
@@ -696,9 +1001,11 @@ if (!canAccessDataCenter) {
                   onDrop={handleDrop}
                 >
                   {uploadFile ? (
-                    <div className="flex flex-col items-center gap-2">
+                    <div className="flex max-w-full flex-col items-center gap-2">
                       <FileSpreadsheet className="h-10 w-10 text-primary" />
-                      <p className="font-medium">{uploadFile.name}</p>
+                      <p className="max-w-full break-all font-medium">
+                        {uploadFile.name}
+                      </p>
                       <p className="text-sm text-muted-foreground">
                         {(uploadFile.size / 1024).toFixed(1)} KB
                       </p>
@@ -763,7 +1070,7 @@ if (!canAccessDataCenter) {
                   </div>
                 )}
                 <Button
-                  className="w-full"
+                  className="w-full shrink-0"
                   disabled={!canManageCsv || !uploadFile || isUploading}
                   onClick={handleUploadCsv}
                 >
@@ -844,15 +1151,17 @@ if (!canAccessDataCenter) {
                   {source.lastSync}
                 </p>
 
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="w-full gap-2"
-                  onClick={() => triggerSync(source.id)}
-                  disabled={source.status === "error"}
-                >
-                  <RefreshCw className="h-4 w-4" />
-                  Sync Now
+    <Button
+      variant="outline"
+      size="sm"
+      className="w-full gap-2"
+      onClick={() => triggerSync(source.id)}
+      disabled={source.status === "error" || syncingSourceId === source.id}
+    >
+                  <RefreshCw
+                    className={`h-4 w-4 ${syncingSourceId === source.id ? "animate-spin" : ""}`}
+                  />
+                  {syncingSourceId === source.id ? "Syncing..." : "Sync Now"}
                 </Button>
               </CardContent>
             </Card>
@@ -988,7 +1297,15 @@ if (!canAccessDataCenter) {
                         {job.status === "completed" && (
                           <Tooltip>
                             <TooltipTrigger asChild>
-                              <Button variant="ghost" size="icon" className="h-8 w-8">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8"
+                                onClick={() => {
+                                  setPendingJob(job)
+                                  setDownloadConfirmOpen(true)
+                                }}
+                              >
                                 <Download className="h-4 w-4" />
                               </Button>
                             </TooltipTrigger>
@@ -1002,8 +1319,11 @@ if (!canAccessDataCenter) {
                               variant="ghost"
                               size="icon"
                               className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                             disabled={!canManageCsv || removingJobId === job.id}
-                              onClick={() => handleRemoveJob(job)}
+                              disabled={!canManageCsv || removingJobId === job.id}
+                              onClick={() => {
+                                setPendingJob(job)
+                                setDeleteConfirmOpen(true)
+                              }}
                             >
                               {removingJobId === job.id ? (
                                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -1022,6 +1342,54 @@ if (!canAccessDataCenter) {
             )}
           </CardContent>
         </Card>
+
+        <AlertDialog open={downloadConfirmOpen} onOpenChange={setDownloadConfirmOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Download report?</AlertDialogTitle>
+              <AlertDialogDescription>
+                A downloadable report will be prepared for the selected job.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel onClick={() => setPendingJob(null)}>
+                Cancel
+              </AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => {
+                  if (pendingJob) {
+                    void handleDownloadReport(pendingJob)
+                  }
+                }}
+              >
+                Continue
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        <AlertDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete this import?</AlertDialogTitle>
+              <AlertDialogDescription>
+                This permanently removes the selected import history and uploaded data.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel onClick={() => setPendingJob(null)}>
+                Cancel
+              </AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => {
+                  void handleConfirmDelete()
+                }}
+              >
+                Delete
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
 
         <Dialog open={rawModalOpen} onOpenChange={setRawModalOpen}>
           <DialogContent className="max-h-[85vh] max-w-[95vw] overflow-hidden sm:max-w-6xl">

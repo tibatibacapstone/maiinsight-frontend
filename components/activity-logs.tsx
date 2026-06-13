@@ -5,6 +5,16 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { 
   Search, 
   Filter,
@@ -22,6 +32,7 @@ import {
   CheckCircle2,
   AlertCircle
 } from "lucide-react"
+import { toast } from "sonner"
 
 type ActivityType = "auth" | "data" | "ai" | "config" | "report"
 
@@ -73,6 +84,7 @@ const actionIcons: Record<string, typeof User> = {
 export function ActivityLogs() {
   const [searchQuery, setSearchQuery] = useState("")
   const [filterType, setFilterType] = useState<ActivityType | "all">("all")
+  const [exportConfirmOpen, setExportConfirmOpen] = useState(false)
 
   const filteredActivities = activities.filter(activity => {
     const matchesSearch = 
@@ -93,11 +105,35 @@ export function ActivityLogs() {
           <h1 className="text-2xl font-bold">History</h1>
           <p className="text-muted-foreground">Task history and system activity monitoring</p>
         </div>
-        <Button variant="outline" className="gap-2">
+        <Button variant="outline" className="gap-2" onClick={() => setExportConfirmOpen(true)}>
           <Download className="h-4 w-4" />
           Export Logs
         </Button>
       </div>
+
+      <AlertDialog open={exportConfirmOpen} onOpenChange={setExportConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Export activity logs?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will prepare a downloadable copy of the current history view.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setExportConfirmOpen(false)
+                toast("Export started", {
+                  description: "Your activity logs export is being prepared.",
+                })
+              }}
+            >
+              Continue
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Filters */}
       <Card className="bg-card border-border shadow-sm">

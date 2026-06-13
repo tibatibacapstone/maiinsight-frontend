@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useState } from "react"
 
 import {
   Card,
@@ -111,6 +111,21 @@ const playTimeSegmentData = [
   { name: "Siang", value: 45, color: "var(--chart-2)" },
   { name: "Malam", value: 25, color: "var(--chart-3)" },
 ]
+
+const LAST_SYNC_KEY = "maiinLastDataSyncAt"
+
+const formatLastUpdated = (value: string | null) => {
+  if (!value) return "No data sync yet"
+
+  const date = new Date(value)
+
+  if (Number.isNaN(date.getTime())) return "No data sync yet"
+
+  return new Intl.DateTimeFormat("en-US", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(date)
+}
 
 /* =========================
    REVENUE GAP DATA
@@ -255,6 +270,8 @@ export function AnalyticsDashboard() {
   const [selectedSegment, setSelectedSegment] = useState<string | null>(null)
   const [viewMode, setViewMode] = useState<"cluster" | "profile" | "radar">("cluster")
   const [periodType, setPeriodType] = useState<"MTD" | "YTD">("MTD")
+  const [lastUpdated, setLastUpdated] = useState("No data sync yet")
+  const [dashboardVersion, setDashboardVersion] = useState(0)
   const periodOptions = ["MTD", "YTD"] as const
 
 const [selectedMonth, setSelectedMonth] = useState("All Month")
@@ -289,6 +306,35 @@ const [openVenue, setOpenVenue] = useState(false)
 
   const venues = ["All Venue", "Mini Soccer", "Basket"]
 
+  useEffect(() => {
+    const syncLabel = () => {
+      const storedTimestamp = localStorage.getItem(LAST_SYNC_KEY)
+      setLastUpdated(formatLastUpdated(storedTimestamp))
+    }
+
+    syncLabel()
+
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === LAST_SYNC_KEY) {
+        syncLabel()
+        setDashboardVersion((current) => current + 1)
+      }
+    }
+
+    const handleSyncUpdate = () => {
+      syncLabel()
+      setDashboardVersion((current) => current + 1)
+    }
+
+    window.addEventListener("storage", handleStorage)
+    window.addEventListener("maiin-data-sync-updated", handleSyncUpdate as EventListener)
+
+    return () => {
+      window.removeEventListener("storage", handleStorage)
+      window.removeEventListener("maiin-data-sync-updated", handleSyncUpdate as EventListener)
+    }
+  }, [])
+
   return (
     <TooltipProvider>
       <div className="space-y-6">
@@ -307,10 +353,12 @@ const [openVenue, setOpenVenue] = useState(false)
           <div className="flex flex-col items-start sm:items-end gap-3">
             <div className="flex items-center gap-2">
               <Badge variant="outline" className="gap-1">
+                <span className="h-2 w-2 rounded-full bg-primary animate-pulse" />
+                Live
               </Badge>
 
               <span className="text-sm text-muted-foreground">
-                Last updated: 2 min ago
+                Last updated: {lastUpdated}
               </span>
             </div>
 
@@ -445,7 +493,7 @@ const [openVenue, setOpenVenue] = useState(false)
 <div className="grid gap-6 lg:grid-cols-2">
 
   {/* REVENUE GAP PERFORMANCE */}
-  <Card className="bg-card border-border shadow-sm">
+  <Card key={`revenue-gap-${dashboardVersion}`} className="bg-card border-border shadow-sm">
     <CardHeader>
       <CardTitle className="flex items-center gap-2">
         Revenue Gap Performance
@@ -512,7 +560,7 @@ const [openVenue, setOpenVenue] = useState(false)
   </Card>
 
   {/* OCCUPANCY RATE TREND */}
-  <Card className="bg-card border-border shadow-sm">
+  <Card key={`occupancy-${dashboardVersion}`} className="bg-card border-border shadow-sm">
     <CardHeader>
       <CardTitle className="flex items-center gap-2">
         Occupancy Rate Trend
@@ -615,7 +663,7 @@ const [openVenue, setOpenVenue] = useState(false)
 <div className="grid gap-6 lg:grid-cols-2">
 
   {/* TREND REVENUE VS TARGET */}
-  <Card className="bg-card border-border shadow-sm">
+  <Card key={`revenue-target-${dashboardVersion}`} className="bg-card border-border shadow-sm">
     <CardHeader>
       <CardTitle>Trend Revenue vs Target</CardTitle>
 
@@ -683,7 +731,7 @@ const [openVenue, setOpenVenue] = useState(false)
   </Card>
 
   {/* TREND REVENUE VS TAYANGAN */}
-  <Card className="bg-card border-border shadow-sm">
+  <Card key={`revenue-view-${dashboardVersion}`} className="bg-card border-border shadow-sm">
     <CardHeader>
       <CardTitle>Trend Revenue vs Tayangan</CardTitle>
 
@@ -765,7 +813,7 @@ const [openVenue, setOpenVenue] = useState(false)
         ========================= */}
         <div className="grid gap-6 lg:grid-cols-2">
           {/* CUSTOMER SEGMENT PIE */}
-          <Card className="bg-card border-border shadow-sm">
+          <Card key={`customer-segment-${dashboardVersion}`} className="bg-card border-border shadow-sm">
             <CardHeader>
               <CardTitle>Customer Segment</CardTitle>
 
@@ -804,7 +852,7 @@ const [openVenue, setOpenVenue] = useState(false)
           </Card>
 
           {/* JAM MAIN SEGMENT PIE */}
-          <Card className="bg-card border-border shadow-sm">
+          <Card key={`playtime-segment-${dashboardVersion}`} className="bg-card border-border shadow-sm">
             <CardHeader>
               <CardTitle>Jam Main Segment</CardTitle>
 
