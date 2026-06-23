@@ -55,6 +55,11 @@ const navItems = [
     icon: LayoutDashboard
   },
   {
+    id: "reports" as PageId,
+    label: "Management Reports",
+    icon: FileText,
+  },
+  {
     id: "segments" as PageId,
     label: "Segments",
     icon: Users
@@ -88,11 +93,6 @@ const navItems = [
     id: "settings" as PageId,
     label: "Settings",
     icon: Settings
-  },
-  {
-    id: "reports" as PageId,
-    label: "Management Reports",
-    icon: FileText,
   },
 ]
 
