@@ -33,10 +33,10 @@ export function Notifications() {
           <Bell className="h-5 w-5" />
         </div>
       </div>
-
       <div className="grid gap-4">
         {notifications.map((notification) => (
-          <div key={notification.id} className="rounded-3xl border border-border/60 bg-card p-6 shadow-sm">
+          <div key={notification.id} className="rounded-3xl border border-border/60 bg-card 
+          p-6 shadow-sm">
             <div className="flex items-center justify-between gap-4">
               <div>
                 <h2 className="text-lg font-semibold">{notification.title}</h2>
