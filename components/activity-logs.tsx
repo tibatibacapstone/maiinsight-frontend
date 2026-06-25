@@ -5,16 +5,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog"
 import { 
   Search, 
   Filter,
@@ -32,7 +22,6 @@ import {
   CheckCircle2,
   AlertCircle
 } from "lucide-react"
-import { toast } from "sonner"
 
 type ActivityType = "auth" | "data" | "ai" | "config" | "report"
 
@@ -48,16 +37,16 @@ interface Activity {
 }
 
 const activities: Activity[] = [
-  { id: "1", type: "auth", action: "Login", user: "Sabri Kurniadi", role: "Admin", details: "Logged in from 192.168.1.100", timestamp: "2 min ago", status: "success" },
+  { id: "1", type: "auth", action: "Login", user: "Sabri Kurniadi", role:"it_Support", details: "Logged in from 192.168.1.100", timestamp: "2 min ago", status: "success" },
   { id: "2", type: "data", action: "Data Sync", user: "System", role: "System", details: "Gemini API synchronized 4,520 records", timestamp: "5 min ago", status: "success" },
-  { id: "3", type: "ai", action: "Strategy Generated", user: "Arrief Hardian", role: "Admin", details: "Created Weekend Flash Sale campaign", timestamp: "15 min ago", status: "success" },
+  { id: "3", type: "ai", action: "Strategy Generated", user: "Arrief Hardian", role: "operatinal", details: "Created Weekend Flash Sale campaign", timestamp: "15 min ago", status: "success" },
   { id: "4", type: "config", action: "Settings Updated", user: "Sabri Kurniadi", role: "it_support", details: "Updated API token for CRM integration", timestamp: "30 min ago", status: "success" },
-  { id: "5", type: "data", action: "CSV Import", user: "Jane Smith", role: "Marketing", details: "Imported customer_data_may.csv (2,340 rows)", timestamp: "1 hour ago", status: "success" },
-  { id: "6", type: "report", action: "Report Generated", user: "John Doe", role: "Admin", details: "Monthly performance report exported", timestamp: "2 hours ago", status: "success" },
+  { id: "5", type: "data", action: "CSV Import", user: "Jane Smith", role: "operational", details: "Imported customer_data_may.csv (2,340 rows)", timestamp: "1 hour ago", status: "success" },
+  { id: "6", type: "report", action: "Report Generated", user: "John Doe", role: "operational", details: "Monthly performance report exported", timestamp: "2 hours ago", status: "success" },
   { id: "7", type: "data", action: "Data Sync", user: "System", role: "System", details: "Inventory API sync failed - connection timeout", timestamp: "3 hours ago", status: "error" },
-  { id: "8", type: "ai", action: "Strategy Approved", user: "Admin User", role: "Admin", details: "Approved Re-engagement Campaign for deployment", timestamp: "4 hours ago", status: "success" },
+  { id: "8", type: "ai", action: "Strategy Approved", user: "Admin User", role: "operational", details: "Approved Re-engagement Campaign for deployment", timestamp: "4 hours ago", status: "success" },
   { id: "9", type: "auth", action: "Login Failed", user: "Unknown", role: "N/A", details: "Failed login attempt from 10.0.0.55", timestamp: "5 hours ago", status: "warning" },
-  { id: "10", type: "config", action: "User Created", user: "Admin User", role: "Admin", details: "Created new Marketing user: sarah@maiin.com", timestamp: "6 hours ago", status: "success" },
+  { id: "10", type: "config", action: "User Created", user: "Admin User", role: "operational", details: "Created new Marketing user: sarah@maiin.com", timestamp: "6 hours ago", status: "success" },
 ]
 
 const typeConfig = {
@@ -84,7 +73,6 @@ const actionIcons: Record<string, typeof User> = {
 export function ActivityLogs() {
   const [searchQuery, setSearchQuery] = useState("")
   const [filterType, setFilterType] = useState<ActivityType | "all">("all")
-  const [exportConfirmOpen, setExportConfirmOpen] = useState(false)
 
   const filteredActivities = activities.filter(activity => {
     const matchesSearch = 
@@ -102,38 +90,14 @@ export function ActivityLogs() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold">History</h1>
+          <h1 className="text-2xl font-bold">Activity Logs</h1>
           <p className="text-muted-foreground">Task history and system activity monitoring</p>
         </div>
-        <Button variant="outline" className="gap-2" onClick={() => setExportConfirmOpen(true)}>
+        <Button variant="outline" className="gap-2">
           <Download className="h-4 w-4" />
           Export Logs
         </Button>
       </div>
-
-      <AlertDialog open={exportConfirmOpen} onOpenChange={setExportConfirmOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Export activity logs?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This will prepare a downloadable copy of the current history view.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => {
-                setExportConfirmOpen(false)
-                toast("Export started", {
-                  description: "Your activity logs export is being prepared.",
-                })
-              }}
-            >
-              Continue
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
 
       {/* Filters */}
       <Card className="bg-card border-border shadow-sm">
@@ -218,8 +182,7 @@ export function ActivityLogs() {
                       {activity.status !== "success" && (
                         <Badge 
                           variant={activity.status === "error" ? "destructive" : "secondary"}
-                          className={activity.status === "warning" ? "bg-chart-3/10 text-chart-3 border-0" : ""}
-                        >
+                          className={activity.status === "warning" ? "bg-chart-3/10 text-chart-3 border-0" : ""}>
                           {activity.status === "error" ? "Failed" : "Warning"}
                         </Badge>
                       )}

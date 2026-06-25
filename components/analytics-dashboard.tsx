@@ -1,6 +1,7 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
+import { getApiUrl } from "@/lib/api"
 
 import {
   Card,
@@ -52,22 +53,152 @@ import {
 /* =========================
    DATA
 ========================= */
+type OccupancyTrendPoint = {
+  label: string
+  displayLabel?: string
+  month?: string
+  date?: string
+  bookedSessions: number
+  availableSessions: number
+  rate: number
+}
 
-const occupancyData = [
-  { time: "Jan", rate: 35 },
-  { time: "Feb", rate: 48 },
-  { time: "Mar", rate: 62 },
-  { time: "Apr", rate: 78 },
-  { time: "May", rate: 85 },
-  { time: "Jun", rate: 82 },
-  { time: "Jul", rate: 75 },
-  { time: "Aug", rate: 88 },
-  { time: "Sept", rate: 92 },
-  { time: "Oct", rate: 95 },
-  { time: "Nov", rate: 89 },
-  { time: "Dec", rate: 72 },
+type OccupancyTrendResponse = {
+  success: boolean
+  message: string
+  data?: OccupancyTrendPoint[]
+}
+type OverviewKpiData = {
+  occupancyRate: number
+  occupancyChange: number
+  totalRevenue: number
+  revenueChange: number
+  lowSessionLabel: string
+  lowSessionCount: number
+  totalBookedSessions: number
+  availableSessions: number
+}
+
+type OverviewKpiResponse = {
+  success: boolean
+  message: string
+  data?: OverviewKpiData
+}
+
+type SessionByTimeItem = {
+  play_time_group?: string
+  playTimeGroup?: string
+  session_count?: number
+  sessionCount?: number
+  value?: number
+}
+
+type HeatmapItem = {
+  day_short?: string
+  dayShort?: string
+  startHour?: number
+  start_hour?: number
+  session_count?: number
+  sessionCount?: number
+}
+
+type SegmentSummary = {
+  id: number
+  playtimeCluster: number
+  playtimeSegment: string
+  totalCustomers: number
+  avgRatioPagi: number
+  avgRatioSiang: number
+  avgRatioMalam: number
+  avgSesiPagi: number
+  avgSesiSiang: number
+  avgSesiMalam: number
+  avgTotalSesi: number
+}
+
+type PlaytimeMlData = {
+  id: number
+  period?: string | null
+  clusterCount: number
+  totalCustomers: number
+  totalSessions: number
+  sessionByTime?: unknown
+  heatmapData?: unknown
+  topHourData?: unknown
+  segmentSummaries?: SegmentSummary[]
+}
+
+type PlaytimeMlResponse = {
+  success: boolean
+  message: string
+  data?: PlaytimeMlData
+}
+const getStoredToken = () => {
+  if (typeof window === "undefined") return null
+
+  return (
+    localStorage.getItem("maiinToken") ||
+    localStorage.getItem("token") ||
+    localStorage.getItem("authToken") ||
+    localStorage.getItem("accessToken") ||
+    localStorage.getItem("maiinsight_token")
+  )
+}
+
+const parseJsonArray = <T,>(value: unknown): T[] => {
+  if (Array.isArray(value)) return value as T[]
+
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value)
+      return Array.isArray(parsed) ? parsed : []
+    } catch {
+      return []
+    }
+  }
+
+  return []
+}
+
+const playtimeColors: Record<string, string> = {
+  Pagi: "var(--chart-1)",
+  Siang: "var(--chart-2)",
+  Malam: "var(--chart-3)",
+}
+
+const segmentColors: Record<string, string> = {
+  "Morning Player": "var(--chart-1)",
+  "Afternoon Player": "var(--chart-2)",
+  "Night Player": "var(--chart-3)",
+}
+const monthShortNames = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sept",
+  "Oct",
+  "Nov",
+  "Dec",
 ]
 
+const formatShortDateLabel = (dateValue?: string) => {
+  if (!dateValue) return ""
+
+  const [yearText, monthText, dayText] = dateValue.split("-")
+
+  const year = Number(yearText)
+  const month = Number(monthText)
+  const day = Number(dayText)
+
+  if (!year || !month || !day) return dateValue
+
+  return `${day} ${monthShortNames[month - 1]} '${String(year).slice(-2)}`
+}
 const revenueTargetTrendData = [
   { month: "Jan", revenue: 35, target: 40 },
   { month: "Feb", revenue: 38, target: 40 },
@@ -106,26 +237,6 @@ const customerSegmentData = [
   { name: "At Risk", value: 310, color: "var(--chart-4)" },
 ]
 
-const playTimeSegmentData = [
-  { name: "Pagi", value: 30, color: "var(--chart-1)" },
-  { name: "Siang", value: 45, color: "var(--chart-2)" },
-  { name: "Malam", value: 25, color: "var(--chart-3)" },
-]
-
-const LAST_SYNC_KEY = "maiinLastDataSyncAt"
-
-const formatLastUpdated = (value: string | null) => {
-  if (!value) return "No data sync yet"
-
-  const date = new Date(value)
-
-  if (Number.isNaN(date.getTime())) return "No data sync yet"
-
-  return new Intl.DateTimeFormat("en-US", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(date)
-}
 
 /* =========================
    REVENUE GAP DATA
@@ -267,20 +378,28 @@ const Dropdown = ({
 ========================= */
 
 export function AnalyticsDashboard() {
+  const [occupancyTrendData, setOccupancyTrendData] = useState<
+  OccupancyTrendPoint[]
+>([])
+
+const [isLoadingOccupancyTrend, setIsLoadingOccupancyTrend] = useState(false)
+  const [overviewKpi, setOverviewKpi] = useState<OverviewKpiData | null>(null)
+const [overviewKpiError, setOverviewKpiError] = useState("")
+  const [playtimeMlData, setPlaytimeMlData] = useState<PlaytimeMlData | null>(null)
+const [isLoadingPlaytimeMl, setIsLoadingPlaytimeMl] = useState(false)
+const [playtimeMlError, setPlaytimeMlError] = useState("")
   const [selectedSegment, setSelectedSegment] = useState<string | null>(null)
   const [viewMode, setViewMode] = useState<"cluster" | "profile" | "radar">("cluster")
   const [periodType, setPeriodType] = useState<"MTD" | "YTD">("MTD")
-  const [lastUpdated, setLastUpdated] = useState("No data sync yet")
-  const [dashboardVersion, setDashboardVersion] = useState(0)
   const periodOptions = ["MTD", "YTD"] as const
 
 const [selectedMonth, setSelectedMonth] = useState("All Month")
-const [selectedYear, setSelectedYear] = useState("2024")
+const [selectedYear, setSelectedYear] = useState("2025")
 const [selectedVenue, setSelectedVenue] = useState("All Venue")
 const [selectedCustomerType, setSelectedCustomerType] = useState("All Type")
 const [openCustomerType, setOpenCustomerType] = useState(false)
 
-const customerTypes = ["All Type", "Membership", "Online"]
+const customerTypes = ["All Type", "Membership", "Non Membership"]
 
 const [openMonth, setOpenMonth] = useState(false)
 const [openYear, setOpenYear] = useState(false)
@@ -302,38 +421,346 @@ const [openVenue, setOpenVenue] = useState(false)
     "Dec",
   ]
 
-  const years = ["2022", "2023", "2024", "2025"]
+  const years = ["2022", "2023", "2024", "2025", "2026"]
 
   const venues = ["All Venue", "Mini Soccer", "Basket"]
+  useEffect(() => {
+  const fetchOverviewKpi = async () => {
+    try {
+      setOverviewKpiError("")
+
+      const token = getStoredToken()
+
+      if (!token) {
+        setOverviewKpiError("Token not found.")
+        return
+      }
+
+       const params = new URLSearchParams({
+        month: selectedMonth,
+        year: selectedYear,
+        periodType,
+        venue: selectedVenue,
+        customerType: selectedCustomerType,
+      })
+
+      const response = await fetch(
+        getApiUrl(`/dashboard/overview-kpis?${params.toString()}`),
+        {
+          method: "GET",
+          cache: "no-store",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      )
+      
+      const result: OverviewKpiResponse = await response.json()
+
+      if (!response.ok || !result.success || !result.data) {
+        throw new Error(result.message || "Failed to fetch overview KPI.")
+      }
+
+      setOverviewKpi(result.data)
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to fetch overview KPI."
+
+      console.warn("Overview KPI fetch failed:", message)
+      setOverviewKpiError(message)
+    }
+  }
+
+  fetchOverviewKpi()
+}, [
+  selectedMonth,
+  selectedYear,
+  periodType,
+  selectedVenue,
+  selectedCustomerType,
+])
+useEffect(() => {
+  const fetchOccupancyTrend = async () => {
+    try {
+      setIsLoadingOccupancyTrend(true)
+
+      const token = getStoredToken()
+
+      if (!token) {
+        console.warn("Token not found for occupancy trend.")
+        setOccupancyTrendData([])
+        return
+      }
+
+      const params = new URLSearchParams({
+        month: selectedMonth,
+        year: selectedYear,
+        periodType,
+        venue: selectedVenue,
+        customerType: selectedCustomerType,
+      })
+
+      const url = getApiUrl(`/dashboard/occupancy-trend?${params.toString()}`)
+
+      const response = await fetch(url, {
+        method: "GET",
+        cache: "no-store",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      })
+
+      const result: OccupancyTrendResponse | null = await response
+        .json()
+        .catch(() => null)
+
+      if (response.status === 401 || response.status === 403) {
+        console.warn("Token expired. Please login again.")
+        setOccupancyTrendData([])
+        return
+      }
+
+      if (!response.ok || !result?.success || !Array.isArray(result.data)) {
+        console.warn("Invalid occupancy trend response:", result)
+        setOccupancyTrendData([])
+        return
+      }
+
+     const isDailyTrend = selectedMonth !== "All Month" && periodType === "MTD"
+
+const normalizedData = result.data.map((item) => ({
+  label: item.label,
+  displayLabel:
+    isDailyTrend && item.date
+      ? formatShortDateLabel(item.date)
+      : item.label,
+  month: item.month,
+  date: item.date,
+  bookedSessions: Number(item.bookedSessions || 0),
+  availableSessions: Number(item.availableSessions || 0),
+  rate: Number(item.rate || 0),
+}))
+
+      setOccupancyTrendData(normalizedData)
+    } catch (error) {
+      console.warn("Failed to fetch occupancy trend:", error)
+      setOccupancyTrendData([])
+    } finally {
+      setIsLoadingOccupancyTrend(false)
+    }
+  }
+
+  fetchOccupancyTrend()
+}, [
+  selectedMonth,
+  selectedYear,
+  periodType,
+  selectedVenue,
+  selectedCustomerType,
+])
 
   useEffect(() => {
-    const syncLabel = () => {
-      const storedTimestamp = localStorage.getItem(LAST_SYNC_KEY)
-      setLastUpdated(formatLastUpdated(storedTimestamp))
-    }
+  const fetchPlaytimeMl = async () => {
+    try {
+      setIsLoadingPlaytimeMl(true)
+      setPlaytimeMlError("")
 
-    syncLabel()
+      const token = getStoredToken()
 
-    const handleStorage = (event: StorageEvent) => {
-      if (event.key === LAST_SYNC_KEY) {
-        syncLabel()
-        setDashboardVersion((current) => current + 1)
+      if (!token) {
+        setPlaytimeMlError("Token not found. Please login again.")
+        return
       }
-    }
 
-    const handleSyncUpdate = () => {
-      syncLabel()
-      setDashboardVersion((current) => current + 1)
-    }
+      const response = await fetch(getApiUrl("/ml/playtime/latest"), {
+        method: "GET",
+        cache: "no-store",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      })
 
-    window.addEventListener("storage", handleStorage)
-    window.addEventListener("maiin-data-sync-updated", handleSyncUpdate as EventListener)
+      const result: PlaytimeMlResponse = await response.json()
 
-    return () => {
-      window.removeEventListener("storage", handleStorage)
-      window.removeEventListener("maiin-data-sync-updated", handleSyncUpdate as EventListener)
+      if (!response.ok || !result.success || !result.data) {
+        throw new Error(result.message || "Failed to fetch playtime ML data.")
+      }
+
+      setPlaytimeMlData(result.data)
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to fetch playtime ML data."
+
+      console.warn("Playtime ML fetch failed:", message)
+      setPlaytimeMlError(message)
+    } finally {
+      setIsLoadingPlaytimeMl(false)
     }
-  }, [])
+  }
+
+  fetchPlaytimeMl()
+}, [])
+const sessionByTimeSource = parseJsonArray<SessionByTimeItem>(
+  playtimeMlData?.sessionByTime
+)
+
+const playTimeSegmentRawData = ["Pagi", "Siang", "Malam"].map((group) => {
+  const found = sessionByTimeSource.find((item) => {
+    const itemGroup = item.play_time_group || item.playTimeGroup
+    return itemGroup === group
+  })
+
+  const sessions = Number(
+    found?.session_count ?? found?.sessionCount ?? found?.value ?? 0
+  )
+
+  return {
+    name: group,
+    sessions,
+    color: playtimeColors[group],
+  }
+})
+
+const totalPlaytimeSessions = playTimeSegmentRawData.reduce(
+  (total, item) => total + item.sessions,
+  0
+)
+
+const playTimeSegmentChartData = playTimeSegmentRawData.map((item) => ({
+  ...item,
+  percentage:
+    totalPlaytimeSessions > 0
+      ? Number(((item.sessions / totalPlaytimeSessions) * 100).toFixed(1))
+      : 0,
+}))
+console.log("PLAYTIME ML DATA:", playtimeMlData)
+console.log("SESSION BY TIME SOURCE:", sessionByTimeSource)
+console.log("PLAYTIME RAW DATA:", playTimeSegmentRawData)
+console.log("PLAYTIME CHART DATA:", playTimeSegmentChartData)
+console.log("TOTAL PLAYTIME SESSIONS:", totalPlaytimeSessions)
+
+const customerPlaytimeSegmentData =
+  playtimeMlData?.segmentSummaries?.map((item) => ({
+    name: item.playtimeSegment,
+    value: item.totalCustomers,
+    color: segmentColors[item.playtimeSegment] || "var(--chart-4)",
+  })) || []
+
+const heatmapSource = parseJsonArray<HeatmapItem>(playtimeMlData?.heatmapData)
+
+const dayOrder = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+
+const heatmapHours = Array.from(
+  new Set(
+    heatmapSource
+      .map((item) => Number(item.startHour ?? item.start_hour))
+      .filter((hour) => !Number.isNaN(hour))
+  )
+).sort((a, b) => a - b)
+
+const maxHeatmapValue = Math.max(
+  ...heatmapSource.map((item) =>
+    Number(item.session_count ?? item.sessionCount ?? 0)
+  ),
+  1
+)
+
+
+const getHeatmapValue = (day: string, hour: number) => {
+  const found = heatmapSource.find((item) => {
+    const itemDay = item.day_short || item.dayShort
+    const itemHour = Number(item.startHour ?? item.start_hour)
+
+    return itemDay === day && itemHour === hour
+  })
+
+  return Number(found?.session_count ?? found?.sessionCount ?? 0)
+}
+const formatRevenue = (value: number) => {
+  if (value >= 1_000_000_000) {
+    return `Rp ${(value / 1_000_000_000).toFixed(1)}B`
+  }
+
+  if (value >= 1_000_000) {
+    return `Rp ${(value / 1_000_000).toFixed(1)}M`
+  }
+
+  return `Rp ${value.toLocaleString("id-ID")}`
+}
+const dashboardMetrics = [
+  {
+    title: "Occupancy Rate",
+    value: (
+      <span className="flex items-baseline gap-1">
+        <span className="text-3xl font-bold">
+          {overviewKpi ? `${overviewKpi.occupancyRate}%` : "0%"}
+        </span>
+      </span>
+    ),
+    change: overviewKpi
+      ? `${overviewKpi.occupancyChange >= 0 ? "+" : ""}${overviewKpi.occupancyChange}% from previous period`
+      : "No data",
+    trend:
+      overviewKpi && overviewKpi.occupancyChange < 0 ? "down" : "up",
+    description: overviewKpi
+      ? `${overviewKpi.totalBookedSessions} booked sessions from ${overviewKpi.availableSessions} available slots`
+      : "Current field occupancy rate",
+    icon: Users,
+  },
+  {
+    title: "Revenue",
+    value: (
+      <span className="flex items-baseline gap-1">
+        <span className="text-3xl font-bold">
+          {overviewKpi ? formatRevenue(overviewKpi.totalRevenue) : "Rp 0"}
+        </span>
+      </span>
+    ),
+    change: overviewKpi
+      ? `${overviewKpi.revenueChange >= 0 ? "+" : ""}${overviewKpi.revenueChange}% from previous period`
+      : "No data",
+    trend:
+      overviewKpi && overviewKpi.revenueChange < 0 ? "down" : "up",
+    description: "Total revenue from completed transactions",
+    icon: Target,
+  },
+  {
+    title: "Low Session",
+    value: (
+      <span className="flex items-baseline gap-1">
+        <span className="text-2xl font-bold">
+          {overviewKpi?.lowSessionLabel || "No Data"}
+        </span>
+      </span>
+    ),
+    change: overviewKpi
+      ? `${overviewKpi.lowSessionCount} sessions`
+      : "No data",
+    trend: "down",
+    description: "Lowest booking session based on day and playtime group",
+    icon: TrendingUp,
+  },
+  {
+    title: "At Risk Customer",
+    value: (
+      <span className="flex items-baseline gap-1">
+        <span className="text-3xl font-bold">12</span>
+        <span className="text-sm font-medium text-muted-foreground">
+          Inactive Cust
+        </span>
+      </span>
+    ),
+    change: "7.5% from last month",
+    trend: "up",
+    description: "Customers who have not been active recently",
+    icon: Gift,
+  },
+]
+const isDailyOccupancyTrend =
+  selectedMonth !== "All Month" && periodType === "MTD"
+
+const occupancyXAxisInterval =
+  isDailyOccupancyTrend && occupancyTrendData.length > 20 ? 1 : 0
 
   return (
     <TooltipProvider>
@@ -353,12 +780,10 @@ const [openVenue, setOpenVenue] = useState(false)
           <div className="flex flex-col items-start sm:items-end gap-3">
             <div className="flex items-center gap-2">
               <Badge variant="outline" className="gap-1">
-                <span className="h-2 w-2 rounded-full bg-primary animate-pulse" />
-                Live
               </Badge>
 
               <span className="text-sm text-muted-foreground">
-                Last updated: {lastUpdated}
+                Last updated: 2 min ago
               </span>
             </div>
 
@@ -426,7 +851,7 @@ const [openVenue, setOpenVenue] = useState(false)
             KPI CARDS
         ========================= */}
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {metrics.map((metric) => {
+          {dashboardMetrics.map((metric) => {
             const Icon = metric.icon
 
             return (
@@ -491,13 +916,10 @@ const [openVenue, setOpenVenue] = useState(false)
     REVENUE GAP + OCCUPANCY
 ========================= */}
 <div className="grid gap-6 lg:grid-cols-2">
-
-  {/* REVENUE GAP PERFORMANCE */}
-  <Card key={`revenue-gap-${dashboardVersion}`} className="bg-card border-border shadow-sm">
+  <Card className="bg-card border-border shadow-sm">
     <CardHeader>
       <CardTitle className="flex items-center gap-2">
         Revenue Gap Performance
-
         <Tooltip>
           <TooltipTrigger>
             <Info className="h-4 w-4 text-muted-foreground" />
@@ -560,7 +982,7 @@ const [openVenue, setOpenVenue] = useState(false)
   </Card>
 
   {/* OCCUPANCY RATE TREND */}
-  <Card key={`occupancy-${dashboardVersion}`} className="bg-card border-border shadow-sm">
+  <Card className="bg-card border-border shadow-sm">
     <CardHeader>
       <CardTitle className="flex items-center gap-2">
         Occupancy Rate Trend
@@ -582,76 +1004,113 @@ const [openVenue, setOpenVenue] = useState(false)
     </CardHeader>
 
     <CardContent>
-      <div className="h-[300px]">
-        <ResponsiveContainer width="100%" height="100%">
-          <AreaChart data={occupancyData}>
-            <defs>
-              <linearGradient
-                id="occupancyGradient"
-                x1="0"
-                y1="0"
-                x2="0"
-                y2="1"
-              >
-                <stop
-                  offset="5%"
-                  stopColor="var(--chart-1)"
-                  stopOpacity={0.3}
-                />
-                <stop
-                  offset="95%"
-                  stopColor="var(--chart-1)"
-                  stopOpacity={0}
-                />
-              </linearGradient>
-            </defs>
+  {isLoadingOccupancyTrend ? (
+    <div className="h-[300px] flex items-center justify-center text-sm text-muted-foreground">
+      Loading occupancy trend...
+    </div>
+  ) : occupancyTrendData.length === 0 ? (
+    <div className="h-[300px] flex flex-col items-center justify-center text-sm text-muted-foreground">
+      <p>No occupancy trend data available.</p>
+      <p className="text-xs">
+        Check API /dashboard/occupancy-trend for year {selectedYear}.
+      </p>
+    </div>
+  ) : (
+    <div className="h-[300px]">
+      <ResponsiveContainer width="100%" height="100%">
+       <AreaChart
+  data={occupancyTrendData}
+  margin={{
+    top: 10,
+    right: 24,
+    left: 8,
+    bottom: 8,
+  }}
+>
+  <defs>
+    <linearGradient
+      id="occupancyGradient"
+      x1="0"
+      y1="0"
+      x2="0"
+      y2="1"
+    >
+      <stop
+        offset="5%"
+        stopColor="var(--chart-1)"
+        stopOpacity={0.3}
+      />
+      <stop
+        offset="95%"
+        stopColor="var(--chart-1)"
+        stopOpacity={0}
+      />
+    </linearGradient>
+  </defs>
 
-            <CartesianGrid
-              strokeDasharray="3 3"
-              stroke="var(--border)"
-              vertical={false}
-            />
+  <CartesianGrid
+    strokeDasharray="3 3"
+    stroke="var(--border)"
+    vertical={false}
+  />
 
-            <XAxis
-              dataKey="time"
-              stroke="var(--muted-foreground)"
-              fontSize={10}
-              tickLine={false}
-              axisLine={false}
-              interval={0}
-              height={30}
-              tickMargin={4}
-            />
+  <XAxis
+    dataKey="displayLabel"
+    stroke="var(--muted-foreground)"
+    fontSize={9}
+    tickLine={false}
+    axisLine={false}
+    interval={occupancyXAxisInterval}
+    height={isDailyOccupancyTrend ? 58 : 30}
+    tickMargin={isDailyOccupancyTrend ? 12 : 4}
+    angle={isDailyOccupancyTrend ? -45 : 0}
+    textAnchor={isDailyOccupancyTrend ? "end" : "middle"}
+  />
 
-            <YAxis
-              stroke="var(--muted-foreground)"
-              fontSize={12}
-              tickLine={false}
-              axisLine={false}
-              tickFormatter={(value) => `${value}%`}
-            />
+  <YAxis
+  width={50}
+  domain={[0, 100]}
+  stroke="var(--muted-foreground)"
+  fontSize={12}
+  tickLine={false}
+  axisLine={false}
+  tickMargin={8}
+  tickFormatter={(value) => `${value}%`}
+/>
 
-            <RechartsTooltip
-              contentStyle={{
-                backgroundColor: "var(--popover)",
-                border: "1px solid var(--border)",
-                borderRadius: "8px",
-                color: "var(--foreground)",
-              }}
-              formatter={(value: any) => [`${value}%`, "Occupancy"]}
-            />
+  <RechartsTooltip
+    contentStyle={{
+      backgroundColor: "var(--popover)",
+      border: "1px solid var(--border)",
+      borderRadius: "8px",
+      color: "var(--foreground)",
+    }}
+    formatter={(value: any, name: any, props: any) => {
+      if (name === "rate") {
+        return [
+          `${Number(value).toFixed(1)}%`,
+          `Occupancy (${props.payload.bookedSessions}/${props.payload.availableSessions} sessions)`,
+        ]
+      }
 
-            <Area
-              type="monotone"
-              dataKey="rate"
-              stroke="var(--chart-1)"
-              strokeWidth={2}
-              fill="url(#occupancyGradient)"
-            />
-          </AreaChart>
-        </ResponsiveContainer>
-      </div>
-    </CardContent>
+      return [value, name]
+    }}
+  />
+
+  <Area
+    type="monotone"
+    dataKey="rate"
+    stroke="var(--chart-1)"
+    strokeWidth={2}
+    fill="url(#occupancyGradient)"
+    dot={{ r: 3 }}
+    activeDot={{ r: 5 }}
+  />
+        </AreaChart>
+      </ResponsiveContainer>
+    </div>
+  )}
+</CardContent>
   </Card>
 
 </div>
@@ -663,7 +1122,7 @@ const [openVenue, setOpenVenue] = useState(false)
 <div className="grid gap-6 lg:grid-cols-2">
 
   {/* TREND REVENUE VS TARGET */}
-  <Card key={`revenue-target-${dashboardVersion}`} className="bg-card border-border shadow-sm">
+  <Card className="bg-card border-border shadow-sm">
     <CardHeader>
       <CardTitle>Trend Revenue vs Target</CardTitle>
 
@@ -731,7 +1190,7 @@ const [openVenue, setOpenVenue] = useState(false)
   </Card>
 
   {/* TREND REVENUE VS TAYANGAN */}
-  <Card key={`revenue-view-${dashboardVersion}`} className="bg-card border-border shadow-sm">
+  <Card className="bg-card border-border shadow-sm">
     <CardHeader>
       <CardTitle>Trend Revenue vs Tayangan</CardTitle>
 
@@ -813,9 +1272,9 @@ const [openVenue, setOpenVenue] = useState(false)
         ========================= */}
         <div className="grid gap-6 lg:grid-cols-2">
           {/* CUSTOMER SEGMENT PIE */}
-          <Card key={`customer-segment-${dashboardVersion}`} className="bg-card border-border shadow-sm">
+          <Card className="bg-card border-border shadow-sm">
             <CardHeader>
-              <CardTitle>Customer Segment</CardTitle>
+              <CardTitle>Customer Segmentation</CardTitle>
 
               <CardDescription>
                 Breakdown customer by RFM segment
@@ -852,9 +1311,9 @@ const [openVenue, setOpenVenue] = useState(false)
           </Card>
 
           {/* JAM MAIN SEGMENT PIE */}
-          <Card key={`playtime-segment-${dashboardVersion}`} className="bg-card border-border shadow-sm">
+          <Card className="bg-card border-border shadow-sm">
             <CardHeader>
-              <CardTitle>Jam Main Segment</CardTitle>
+              <CardTitle>Jam Main Segment - DATA FROM ML</CardTitle>
 
               <CardDescription>
                 Segmentasi waktu main berdasarkan pagi, siang, dan malam
@@ -866,15 +1325,15 @@ const [openVenue, setOpenVenue] = useState(false)
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie
-                      data={playTimeSegmentData}
+                      data={playTimeSegmentChartData}
                       cx="50%"
                       cy="50%"
                       innerRadius={65}
                       outerRadius={105}
                       paddingAngle={3}
-                      dataKey="value"
+                      dataKey="percentage"
                     >
-                      {playTimeSegmentData.map((entry, index) => (
+                      {playTimeSegmentChartData.map((entry, index) => (
                         <Cell key={`cell-${index}`} fill={entry.color} />
                       ))}
                     </Pie>
@@ -882,8 +1341,15 @@ const [openVenue, setOpenVenue] = useState(false)
                     <Legend />
 
                     <RechartsTooltip
-                      formatter={(value, name) => [`${value}%`, name]}
-                    />
+                    formatter={(value, name, props) => {
+                      const sessions = props.payload.sessions
+
+                      return [
+                        `${value}% (${sessions} sessions)`,
+                        name,
+                      ]
+                    }}
+                  />
                   </PieChart>
                 </ResponsiveContainer>
               </div>

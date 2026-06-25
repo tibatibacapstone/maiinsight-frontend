@@ -4,7 +4,7 @@
  */
 
 export const USER_ROLES = {
-  MARKETING: "marketing",
+  OPERATIONAL: "operational",
   MANAGEMENT: "management",
   IT_SUPPORT: "it_support",
 } as const;
@@ -15,7 +15,7 @@ export type UserRole = typeof USER_ROLES[keyof typeof USER_ROLES];
  * Page access permissions by role
  */
 export const PAGE_PERMISSIONS: Record<UserRole, string[]> = {
-  marketing: [
+  operational: [
     "dashboard",
     "segments",
     "data",
@@ -53,7 +53,7 @@ export const PAGE_PERMISSIONS: Record<UserRole, string[]> = {
  * Feature access permissions by role
  */
 export const FEATURE_PERMISSIONS: Record<UserRole, Record<string, boolean>> = {
-  marketing: {
+  operational: {
     uploadCsv: true,
     deleteImport: true,
     viewRawImports: true,
@@ -156,7 +156,7 @@ export const hasBusinessAuthority = (userRole: UserRole | null): boolean => {
 export const normalizeRole = (role?: string | null): UserRole | null => {
   const value = role?.toLowerCase().trim();
 
-  if (value === USER_ROLES.MARKETING) return USER_ROLES.MARKETING;
+  if (value === USER_ROLES.OPERATIONAL) return USER_ROLES.OPERATIONAL;
   if (value === USER_ROLES.MANAGEMENT) return USER_ROLES.MANAGEMENT;
   if (
     value === "it" ||
@@ -268,7 +268,7 @@ export const canAccessFeature = (
  */
 export const getRoleDisplayName = (role: UserRole): string => {
   const displayNames: Record<UserRole, string> = {
-    marketing: "Marketing",
+    operational: "Operational",
     management: "Management",
     it_support: "IT Support",
   };

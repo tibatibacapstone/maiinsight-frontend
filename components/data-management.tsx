@@ -161,6 +161,33 @@ interface AiStrategyResponse {
   success?: boolean
   message?: string
 }
+interface PlaytimeMlLatestResponse {
+  success: boolean
+  message?: string
+  data?: {
+    id: number
+    totalSessions: number
+    totalCustomers: number
+    clusterCount: number
+    createdAt: string
+  }
+}
+
+interface PlaytimeMlRunResponse {
+  success: boolean
+  message?: string
+  data?: {
+    runId?: number
+    totalSessions?: number
+    totalCustomers?: number
+  }
+}
+
+interface MlSummary {
+  lastRun: string
+  records: number
+  totalCustomers: number
+} 
 
 const defaultDataSources: DataSource[] = [
   {
@@ -355,6 +382,14 @@ const createSyncJob = (source: DataSource, status: SyncStatus, progress: number)
 })
 
 export function DataManagement() {
+  const [isRunningMl, setIsRunningMl] = useState(false)
+const [mlMessage, setMlMessage] = useState("")
+const [mlError, setMlError] = useState("")
+const [mlSummary, setMlSummary] = useState<MlSummary>({
+  lastRun: "Not run yet",
+  records: 0,
+  totalCustomers: 0,
+})
   const [dataSources, setDataSources] = useState<DataSource[]>(defaultDataSources)
   const [syncJobs, setSyncJobs] = useState<SyncJob[]>(initialSyncJobs)
 
@@ -382,10 +417,11 @@ export function DataManagement() {
 
   const userRole = getStoredRole()
   const canAccessDataCenter =
-    userRole === USER_ROLES.MARKETING || userRole === USER_ROLES.IT_SUPPORT
+    userRole === USER_ROLES.OPERATIONAL|| userRole === USER_ROLES.IT_SUPPORT
   const canManageCsv = canAccessFeature(userRole, "uploadCsv")
 
-  const fetchDataCenter = useCallback(async () => {
+ const fetchDataCenter = useCallback(async () => {
+  try {
     const token = getStoredToken()
 
     if (!token) {
@@ -393,32 +429,32 @@ export function DataManagement() {
       return
     }
 
-    try {
-      const response = await fetch(getApiUrl("/dashboard/data-center"), {
-        method: "GET",
-        cache: "no-store",
-        headers: {
-          ...getAuthHeaders(),
-        },
+    const response = await fetch(getApiUrl("/dashboard/data-center"), {
+      method: "GET",
+      cache: "no-store",
+      headers: {
+        ...getAuthHeaders(),
+      },
+    })
+
+    const result = await response.json().catch(() => null)
+
+    if (!response.ok || !result?.success) {
+      console.warn("Invalid data center summary response:", {
+        status: response.status,
+        result,
       })
 
-      const result: DataCenterResponse = await response.json()
-
-      if (!response.ok || !result?.dataCenter?.sources) {
-        throw new Error("Failed to fetch data center summary.")
-      }
-
-      setDataSources(
-        result.dataCenter.sources.map((source) => ({
-          ...source,
-          lastSync: formatDisplaySyncTime(source.lastSync),
-        })),
-      )
-    } catch (error) {
-      console.error("Failed to fetch data center summary:", error)
       setDataSources(defaultDataSources)
+      return
     }
-  }, [])
+
+    setDataSources(defaultDataSources)
+  } catch (error) {
+    console.warn("Failed to fetch data center summary:", error)
+    setDataSources(defaultDataSources)
+  }
+}, [])
 
   const fetchSyncJobs = useCallback(async () => {
   const userRole = getStoredRole()
@@ -431,7 +467,7 @@ export function DataManagement() {
     return
   }
 
-  const canAccess = userRole === USER_ROLES.MARKETING || userRole === USER_ROLES.IT_SUPPORT
+  const canAccess = userRole === USER_ROLES.OPERATIONAL || userRole === USER_ROLES.IT_SUPPORT
   if (!canAccess) {
     console.warn("User does not have access to Data Center.")
     setSyncJobs(initialSyncJobs)
@@ -452,13 +488,21 @@ export function DataManagement() {
 
     const result = await response.json().catch(() => null)
 
-    if (!response.ok) {
-      throw new Error(
-        result?.error ||
-          result?.message ||
-          `Failed to fetch import jobs. Status: ${response.status}`,
-      )
-    }
+    if (response.status === 401 || response.status === 403) {
+  console.warn("Token expired or invalid. Please login again.")
+  localStorage.clear()
+  setSyncJobs(initialSyncJobs)
+  return
+}
+
+if (!response.ok) {
+  console.warn("Failed to fetch import jobs:", {
+    status: response.status,
+    result,
+  })
+  setSyncJobs(initialSyncJobs)
+  return
+}
 
     if (!result?.success || !Array.isArray(result.data)) {
       throw new Error("Invalid response format from import jobs API.")
@@ -469,7 +513,7 @@ export function DataManagement() {
     setSyncJobs(mappedJobs.length > 0 ? mappedJobs : initialSyncJobs)
     publishLastSyncTime()
   } catch (error) {
-    console.error("Failed to fetch sync jobs:", error)
+    console.warn("Failed to fetch sync jobs:", error)
     setSyncJobs(initialSyncJobs)
   } finally {
     setIsLoadingJobs(false)
@@ -610,6 +654,56 @@ export function DataManagement() {
     },
     [dataSources, fetchDataCenter, fetchSyncJobs],
   )
+  const fetchMlSummary = useCallback(async () => {
+  try {
+    const token = getStoredToken()
+
+    if (!token) {
+      setMlSummary({
+        lastRun: "Not run yet",
+        records: 0,
+        totalCustomers: 0,
+      })
+      return
+    }
+
+    const response = await fetch(getApiUrl("/ml/playtime/latest"), {
+      method: "GET",
+      cache: "no-store",
+      headers: {
+        ...getAuthHeaders(),
+      },
+    })
+
+    const result: PlaytimeMlLatestResponse = await response
+      .json()
+      .catch(() => null)
+
+    if (!response.ok || !result?.success || !result.data) {
+      setMlSummary({
+        lastRun: "Not run yet",
+        records: 0,
+        totalCustomers: 0,
+      })
+      return
+    }
+
+    setMlSummary({
+      lastRun: formatDisplaySyncTime(result.data.createdAt),
+      records: result.data.totalSessions || 0,
+      totalCustomers: result.data.totalCustomers || 0,
+    })
+  } catch (error) {
+    console.warn("Failed to fetch ML summary:", error)
+
+    setMlSummary({
+      lastRun: "Not run yet",
+      records: 0,
+      totalCustomers: 0,
+    })
+  }
+}, [])
+
 
   useEffect(() => {
     fetchSyncJobs()
@@ -618,6 +712,10 @@ export function DataManagement() {
   useEffect(() => {
     fetchDataCenter()
   }, [fetchDataCenter])
+
+  useEffect(() => {
+  fetchMlSummary()
+}, [fetchMlSummary])
 
   const resetUploadState = () => {
     setUploadFile(null)
@@ -789,6 +887,57 @@ export function DataManagement() {
       setIsUploading(false)
     }
   }
+  
+  const handleRunMachineLearning = async () => {
+  try {
+    setIsRunningMl(true)
+    setMlMessage("")
+    setMlError("")
+
+    const response = await fetch(getApiUrl("/ml/playtime/run"), {
+      method: "POST",
+      cache: "no-store",
+      headers: {
+        ...getAuthHeaders(),
+      },
+    })
+
+    const result: PlaytimeMlRunResponse = await response
+      .json()
+      .catch(() => null)
+
+    if (!response.ok || !result?.success) {
+      throw new Error(result?.message || "Failed to run machine learning.")
+    }
+
+    await fetchMlSummary()
+
+    setMlMessage(
+      `Machine learning completed. Total sessions: ${
+        result.data?.totalSessions || 0
+      }.`
+    )
+
+    toast.success("Machine learning completed", {
+      description: `Processed ${
+        result.data?.totalSessions || 0
+      } sessions.`,
+    })
+
+    publishLastSyncTime()
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Failed to run machine learning."
+
+    setMlError(message)
+
+    toast.error("Machine learning failed", {
+      description: message,
+    })
+  } finally {
+    setIsRunningMl(false)
+  }
+}
 
 const handleViewRawRows= async (job: SyncJob) => {
   try {
@@ -968,7 +1117,6 @@ if (!canAccessDataCenter) {
               API synchronization and data import tools
             </p>
           </div>
-
           <Dialog open={uploadModalOpen} onOpenChange={handleDialogOpenChange} >
             <DialogTrigger asChild>
               <Button className="gap-2" disabled={!canManageCsv}>
@@ -1087,87 +1235,148 @@ if (!canAccessDataCenter) {
             </DialogContent>
           </Dialog>
         </div>
-
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {dataSources.map((source) => (
-            <Card key={source.id} className="border-border bg-card shadow-sm">
-              <CardContent className="pt-6">
-                <div className="mb-4 flex items-start justify-between">
-                  <div
-                    className={`flex h-10 w-10 items-center justify-center rounded-lg ${
-                      source.status === "connected"
-                        ? "bg-primary/10"
-                        : source.status === "error"
-                          ? "bg-destructive/10"
-                          : "bg-muted"
-                    }`}
-                  >
-                    {source.type === "api" && (
-                      <Zap
-                        className={`h-5 w-5 ${
-                          source.status === "connected"
-                            ? "text-primary"
-                            : source.status === "error"
-                              ? "text-destructive"
-                              : "text-muted-foreground"
-                        }`}
-                      />
-                    )}
+  {dataSources.map((source) => (
+    <Card key={source.id} className="border-border bg-card shadow-sm">
+      <CardContent className="pt-6">
+        <div className="mb-4 flex items-start justify-between">
+          <div
+            className={`flex h-10 w-10 items-center justify-center rounded-lg ${
+              source.status === "connected"
+                ? "bg-primary/10"
+                : source.status === "error"
+                  ? "bg-destructive/10"
+                  : "bg-muted"
+            }`}
+          >
+            {source.type === "api" && (
+              <Zap
+                className={`h-5 w-5 ${
+                  source.status === "connected"
+                    ? "text-primary"
+                    : source.status === "error"
+                      ? "text-destructive"
+                      : "text-muted-foreground"
+                }`}
+              />
+            )}
 
-                    {source.type === "database" && (
-                      <Database
-                        className={`h-5 w-5 ${
-                          source.status === "connected"
-                            ? "text-primary"
-                            : source.status === "error"
-                              ? "text-destructive"
-                              : "text-muted-foreground"
-                        }`}
-                      />
-                    )}
+            {source.type === "database" && (
+              <Database
+                className={`h-5 w-5 ${
+                  source.status === "connected"
+                    ? "text-primary"
+                    : source.status === "error"
+                      ? "text-destructive"
+                      : "text-muted-foreground"
+                }`}
+              />
+            )}
 
-                    {source.type === "file" && (
-                      <FileSpreadsheet className="h-5 w-5 text-muted-foreground" />
-                    )}
-                  </div>
+            {source.type === "file" && (
+              <FileSpreadsheet className="h-5 w-5 text-muted-foreground" />
+            )}
+          </div>
 
-                  <Badge
-                    variant={
-                      source.status === "connected"
-                        ? "default"
-                        : source.status === "error"
-                          ? "destructive"
-                          : "secondary"
-                    }
-                  >
-                    {source.status}
-                  </Badge>
-                </div>
-
-                <h3 className="mb-1 font-semibold">{source.name}</h3>
-
-                <p className="mb-3 text-sm text-muted-foreground">
-                  {source.records.toLocaleString()} records • Last sync:{" "}
-                  {source.lastSync}
-                </p>
-
-    <Button
-      variant="outline"
-      size="sm"
-      className="w-full gap-2"
-      onClick={() => triggerSync(source.id)}
-      disabled={source.status === "error" || syncingSourceId === source.id}
-    >
-                  <RefreshCw
-                    className={`h-4 w-4 ${syncingSourceId === source.id ? "animate-spin" : ""}`}
-                  />
-                  {syncingSourceId === source.id ? "Syncing..." : "Sync Now"}
-                </Button>
-              </CardContent>
-            </Card>
-          ))}
+          <Badge
+            variant={
+              source.status === "connected"
+                ? "default"
+                : source.status === "error"
+                  ? "destructive"
+                  : "secondary"
+            }
+          >
+            {source.status}
+          </Badge>
         </div>
 
+        <h3 className="mb-1 font-semibold">{source.name}</h3>
+
+        <p className="mb-3 text-sm text-muted-foreground">
+          {source.records.toLocaleString()} records • Last sync:{" "}
+          {source.lastSync}
+        </p>
+
+        <Button
+          variant="outline"
+          size="sm"
+          className="w-full gap-2"
+          onClick={() => triggerSync(source.id)}
+          disabled={source.status === "error" || syncingSourceId === source.id}
+        >
+          <RefreshCw
+            className={`h-4 w-4 ${
+              syncingSourceId === source.id ? "animate-spin" : ""
+            }`}
+          />
+          {syncingSourceId === source.id ? "Syncing..." : "Sync Now"}
+        </Button>
+      </CardContent>
+    </Card>
+  ))}
+
+  <Card className="border-border bg-card shadow-sm">
+    <CardContent className="pt-6">
+      <div className="mb-4 flex items-start justify-between">
+        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
+          {isRunningMl ? (
+            <Loader2 className="h-5 w-5 animate-spin text-primary" />
+          ) : (
+            <RefreshCw className="h-5 w-5 text-primary" />
+          )}
+        </div>
+
+        <Badge variant={isRunningMl ? "secondary" : "default"}>
+          {isRunningMl ? "running" : "ready"}
+        </Badge>
+      </div>
+
+      <h3 className="mb-1 font-semibold">Machine Learning Engine</h3>
+
+      <p className="mb-1 text-sm text-muted-foreground">
+        {mlSummary.records.toLocaleString()} sessions • Last run:{" "}
+        {mlSummary.lastRun}
+      </p>
+
+      <p className="mb-3 text-xs text-muted-foreground">
+        {mlSummary.totalCustomers.toLocaleString()} customers processed
+      </p>
+
+      <Button
+        variant="outline"
+        size="sm"
+        className="w-full gap-2"
+        disabled={isRunningMl}
+        onClick={handleRunMachineLearning}
+      >
+        {isRunningMl ? (
+          <>
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Running ML...
+          </>
+        ) : (
+          <>
+            <RefreshCw className="h-4 w-4" />
+            Run Machine Learning
+          </>
+        )}
+      </Button>
+    </CardContent>
+  </Card>
+</div>
+
+{mlMessage && (
+  <div className="rounded-md border border-primary/20 bg-primary/5 p-3 text-sm text-primary">
+    {mlMessage}
+  </div>
+)}
+
+{mlError && (
+  <div className="rounded-md border border-destructive/20 bg-destructive/5 p-3 text-sm text-destructive">
+    {mlError}
+  </div>
+)}
         <Card className="border-border bg-card shadow-sm">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">

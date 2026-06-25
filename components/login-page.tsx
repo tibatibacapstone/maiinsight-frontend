@@ -28,7 +28,7 @@ export function LoginPage({ onSubmit, isLoading, error }: LoginPageProps) {
   }
 
   const handleGoogleLogin = async () => {
-    await onSubmit("marketing@maiin.com", "Password123!")
+    await onSubmit("operationalg@maiin.com", "Password123!")
   }
 
   return (
@@ -58,7 +58,7 @@ export function LoginPage({ onSubmit, isLoading, error }: LoginPageProps) {
               <p className="text-muted-foreground text-sm">
                 Decision Support System
               </p>
-            </div>
+           </div>
           </div>
 
           {/* Hero Text */}
@@ -185,14 +185,10 @@ export function LoginPage({ onSubmit, isLoading, error }: LoginPageProps) {
                 {error}
               </div>
             ) : null}
-
-            {/* Email Login Form */}
+            
             <form
               onSubmit={handleSubmit}
-              className="space-y-4"
-            >
-
-              {/* Email */}
+              className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="email">
                   Email

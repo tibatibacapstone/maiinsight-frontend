@@ -10,7 +10,6 @@ import {
 } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { toast } from "sonner"
 import {
   Sparkles,
   Bell,
@@ -26,14 +25,6 @@ import {
   ShieldAlert,
   Lock,
 } from "lucide-react"
-import { AccessDenied } from "@/components/access-denied"
-import {
-  getStoredRole,
-  getStoredToken,
-  getAuthHeaders,
-  canAccessFeature,
-  normalizeRole,
-} from "@/lib/roles"
 
 interface StrategyCardType {
   id: string
@@ -77,18 +68,125 @@ const copywritingTones = [
   "Professional Corporate Tone (Email Newsletter)",
 ]
 
+const normalizeRole = (role?: string | null) => {
+  const value = role?.toLowerCase().trim()
+
+  if (value === "operational") return "operational"
+  if (value === "management") return "management"
+  if (value === "it" || value === "it_support" || value === "it support") {
+    return "it"
+  }
+
+  return value || "unknown"
+}
+
+const decodeJwtPayload = (token: string) => {
+  try {
+    const base64Url = token.split(".")[1]
+
+    if (!base64Url) return null
+
+    const base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/")
+    const jsonPayload = decodeURIComponent(
+      atob(base64)
+        .split("")
+        .map((char) => {
+          return `%${`00${char.charCodeAt(0).toString(16)}`.slice(-2)}`
+        })
+        .join("")
+    )
+
+    return JSON.parse(jsonPayload)
+  } catch {
+    return null
+  }
+}
+
+const getStoredUserRole = () => {
+  if (typeof window === "undefined") return null
+
+  const directRoleKeys = [
+    "maiinRole",
+    "role",
+    "userRole",
+    "maiinsight_role",
+  ]
+
+  for (const key of directRoleKeys) {
+    const role = localStorage.getItem(key)
+
+    if (role) return role
+  }
+
+  const userStorageKeys = [
+    "maiinUser",
+    "user",
+    "authUser",
+    "currentUser",
+    "maiinsight_user",
+  ]
+
+  for (const key of userStorageKeys) {
+    const rawValue = localStorage.getItem(key)
+
+    if (!rawValue) continue
+
+    try {
+      const parsed = JSON.parse(rawValue)
+
+      if (parsed?.role) return parsed.role
+      if (parsed?.user?.role) return parsed.user.role
+    } catch {
+      continue
+    }
+  }
+
+  const tokenStorageKeys = [
+    "maiinToken",
+    "token",
+    "accessToken",
+    "authToken",
+    "maiinsight_token",
+  ]
+
+  for (const key of tokenStorageKeys) {
+    const token = localStorage.getItem(key)
+
+    if (!token) continue
+
+    const payload = decodeJwtPayload(token)
+
+    if (payload?.role) return payload.role
+  }
+
+  return null
+}
+
 export function GenAIWorkspace({ userRole: userRoleFromProps }: GenAIWorkspaceProps) {
+  const [storedUserRole, setStoredUserRole] = useState<string | null>(null)
+  const [isRoleReady, setIsRoleReady] = useState(false)
   const [isGenerating, setIsGenerating] = useState(false)
   const [accessMessage, setAccessMessage] = useState("")
 
-  const userRole = normalizeRole(
-    userRoleFromProps ?? getStoredRole()
-  )
+  useEffect(() => {
+    if (userRoleFromProps) {
+      setStoredUserRole(userRoleFromProps)
+    } else {
+      setStoredUserRole(getStoredUserRole())
+    }
 
-  const isIT = userRole === "it_support"
-  const isManagement = userRole === "management"
-  const canViewAi = canAccessFeature(userRole, "viewAiStrategy")
-  const canGenerateAi = canAccessFeature(userRole, "generateAiStrategy")
+    setIsRoleReady(true)
+  }, [userRoleFromProps])
+
+  const activeRole = userRoleFromProps || storedUserRole
+  const normalizedRole = normalizeRole(activeRole)
+
+  const isAdmin = normalizedRole === "operational"
+  const isManagement = normalizedRole === "management"
+  const isIT = normalizedRole === "it"
+
+  const canViewPage = isAdmin || isIT
+  const canGenerateAi = isAdmin
 
   const [selectedVenueType, setSelectedVenueType] =
     useState<VenueType>("All Venue")
@@ -162,13 +260,9 @@ export function GenAIWorkspace({ userRole: userRoleFromProps }: GenAIWorkspacePr
   const copyToClipboard = async (text: string) => {
     try {
       await navigator.clipboard.writeText(text)
-      toast.success("Copied to clipboard", {
-        description: "The selected copy has been placed in your clipboard.",
-      })
+      alert("Copied to clipboard!")
     } catch {
-      toast.error("Copy failed", {
-        description: "We couldn't copy the text to your clipboard.",
-      })
+      alert("Failed to copy")
     }
   }
 
@@ -311,7 +405,12 @@ export function GenAIWorkspace({ userRole: userRoleFromProps }: GenAIWorkspacePr
   }
 
   const handleGenerateStrategy = async () => {
-    if (!canGenerateAi) return
+    setAccessMessage("")
+
+    if (!canGenerateAi) {
+      setAccessMessage("Access denied. Only admin can generate AI strategy.")
+      return
+    }
 
     setIsGenerating(true)
 
@@ -325,15 +424,37 @@ export function GenAIWorkspace({ userRole: userRoleFromProps }: GenAIWorkspacePr
     setIsGenerating(false)
   }
 
-  if (!canViewAi) {
+  if (!isRoleReady) {
     return (
-      <AccessDenied
-        title="Feature Not Available"
-        message="AI Strategy access is not available for your current role."
-        feature="GenAI Workspace"
-        requiredRole="Marketing, Management, or IT Support"
-        showButton={false}
-      />
+      <div className="flex min-h-[60vh] items-center justify-center">
+        <div className="text-center">
+          <RefreshCw className="mx-auto mb-3 h-6 w-6 animate-spin text-muted-foreground" />
+          <p className="text-sm text-muted-foreground">Checking access...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (!canViewPage || isManagement) {
+    return (
+      <div className="flex min-h-[60vh] items-center justify-center">
+        <Card className="max-w-md border-red-200 bg-red-50">
+          <CardContent className="p-8 text-center">
+            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-red-100">
+              <ShieldAlert className="h-6 w-6 text-red-600" />
+            </div>
+
+            <h2 className="mb-2 text-xl font-bold text-red-700">
+              Access Denied
+            </h2>
+
+            <p className="text-sm text-red-600">
+              Management role cannot access GenAI Workspace. This page is only
+              available for Admin and IT.
+            </p>
+          </CardContent>
+        </Card>
+      </div>
     )
   }
 
@@ -364,31 +485,12 @@ export function GenAIWorkspace({ userRole: userRoleFromProps }: GenAIWorkspacePr
 
             <div>
               <h3 className="font-semibold text-amber-800">
-                IT Support Technical Access
+                Limited Access for IT Role
               </h3>
 
               <p className="text-sm text-amber-700">
-                AI generation is available for testing and troubleshooting only.
-                Sensitive support actions should be recorded in activity logs.
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {isManagement && (
-        <Card className="border-blue-200 bg-blue-50">
-          <CardContent className="flex items-start gap-3 p-5">
-            <ShieldAlert className="mt-1 h-5 w-5 text-blue-600" />
-
-            <div>
-              <h3 className="font-semibold text-blue-800">
-                Management Read-Only Access
-              </h3>
-
-              <p className="text-sm text-blue-700">
-                You can view AI strategy recommendations, but generation and
-                modification actions are disabled.
+                You can view this page, but Generate AI Strategy and Refresh
+                Strategy are disabled for IT role.
               </p>
             </div>
           </CardContent>
@@ -452,7 +554,6 @@ export function GenAIWorkspace({ userRole: userRoleFromProps }: GenAIWorkspacePr
                 onChange={(event) =>
                   setSelectedVenueType(event.target.value as VenueType)
                 }
-                disabled={!canGenerateAi}
                 className="w-full rounded-xl border border-border bg-background px-4 py-3 text-base shadow-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
               >
                 {venueTypes.map((venue) => (
@@ -471,7 +572,6 @@ export function GenAIWorkspace({ userRole: userRoleFromProps }: GenAIWorkspacePr
               <select
                 value={selectedSegment}
                 onChange={(event) => setSelectedSegment(event.target.value)}
-                disabled={!canGenerateAi}
                 className="w-full rounded-xl border border-border bg-background px-4 py-3 text-base shadow-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
               >
                 {targetSegments.map((segment) => (
@@ -490,7 +590,6 @@ export function GenAIWorkspace({ userRole: userRoleFromProps }: GenAIWorkspacePr
               <select
                 value={selectedObjective}
                 onChange={(event) => setSelectedObjective(event.target.value)}
-                disabled={!canGenerateAi}
                 className="w-full rounded-xl border border-border bg-background px-4 py-3 text-base shadow-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
               >
                 {campaignObjectives.map((objective) => (
@@ -509,7 +608,6 @@ export function GenAIWorkspace({ userRole: userRoleFromProps }: GenAIWorkspacePr
               <select
                 value={selectedIncentive}
                 onChange={(event) => setSelectedIncentive(event.target.value)}
-                disabled={!canGenerateAi}
                 className="w-full rounded-xl border border-border bg-background px-4 py-3 text-base shadow-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
               >
                 {incentiveFrameworks.map((incentive) => (
@@ -528,7 +626,6 @@ export function GenAIWorkspace({ userRole: userRoleFromProps }: GenAIWorkspacePr
               <select
                 value={selectedTone}
                 onChange={(event) => setSelectedTone(event.target.value)}
-                disabled={!canGenerateAi}
                 className="w-full rounded-xl border border-border bg-background px-4 py-3 text-base shadow-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
               >
                 {copywritingTones.map((tone) => (
@@ -544,8 +641,7 @@ export function GenAIWorkspace({ userRole: userRoleFromProps }: GenAIWorkspacePr
             <Button
               onClick={handleGenerateStrategy}
               disabled={!canGenerateAi || isGenerating}
-              className="gap-2 text-base"
-            >
+              className="gap-2 text-base">
               {isGenerating ? (
                 <>
                   <RefreshCw className="h-4 w-4 animate-spin" />
