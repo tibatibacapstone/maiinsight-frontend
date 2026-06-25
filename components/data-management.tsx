@@ -162,6 +162,19 @@ interface AiStrategyResponse {
   message?: string
 }
 
+interface ProcessImportResponse {
+  success: boolean
+  message?: string
+  data?: {
+    batchId: number
+    processedTransactions?: number
+    validTransactions?: number
+    invalidTransactions?: number
+    customersUpserted?: number
+    courtHoursCreated?: number
+  }
+}
+
 const defaultDataSources: DataSource[] = [
   {
     id: "1",
@@ -379,6 +392,7 @@ export function DataManagement() {
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [downloadConfirmOpen, setDownloadConfirmOpen] = useState(false)
   const [pendingJob, setPendingJob] = useState<SyncJob | null>(null)
+  const [runningSegmentation, setRunningSegmentation] = useState(false)
 
   const userRole = getStoredRole()
   const canAccessDataCenter =
@@ -419,6 +433,82 @@ export function DataManagement() {
       setDataSources(defaultDataSources)
     }
   }, [])
+
+  const processImportJob = useCallback(async (job: SyncJob) => {
+    const token = getStoredToken()
+    if (!token) {
+      toast.error("Processing unavailable", { description: "Please sign in again." })
+      return
+    }
+
+    if (!canAccessFeature(userRole, "uploadCsv")) {
+      toast.error("Access denied", {
+        description: "Only Marketing and IT Support can process import jobs.",
+      })
+      return
+    }
+
+    try {
+      setPendingJob(job)
+      const response = await fetch(getApiUrl(`/imports/batches/${job.id}/process`), {
+        method: "POST",
+        headers: getAuthHeaders(),
+      })
+      const result: ProcessImportResponse = await response.json().catch(() => ({}))
+      if (!response.ok || !result.success) {
+        throw new Error(result.message || "Failed to process import job.")
+      }
+      toast.success("Process complete", {
+        description: `Batch ${job.name} processed${result.data?.processedTransactions ? `, ${result.data.processedTransactions} rows` : ""}.`,
+      })
+      publishLastSyncTime()
+      window.dispatchEvent(new CustomEvent("maiin-data-sync-updated"))
+    } catch (error) {
+      toast.error("Process failed", {
+        description: error instanceof Error ? error.message : "Failed to process import job.",
+      })
+    } finally {
+      setPendingJob(null)
+    }
+  }, [userRole])
+
+  const runSegmentation = useCallback(async () => {
+    const token = getStoredToken()
+    if (!token) {
+      toast.error("Segmentation unavailable", { description: "Please sign in again." })
+      return
+    }
+    if (userRole !== USER_ROLES.MARKETING && userRole !== USER_ROLES.IT_SUPPORT) {
+      toast.error("Access denied", {
+        description: "Only Marketing and IT Support can run segmentation.",
+      })
+      return
+    }
+    try {
+      setRunningSegmentation(true)
+      const response = await fetch(getApiUrl("/segmentation/run"), {
+        method: "POST",
+        headers: {
+          ...getAuthHeaders(),
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({}),
+      })
+      const result = await response.json().catch(() => null)
+      if (!response.ok || !result?.success) {
+        throw new Error(result?.message || "Failed to run segmentation.")
+      }
+      toast.success("Segmentation complete", {
+        description: "Customer segmentation model finished successfully.",
+      })
+    } catch (error) {
+      toast.error("Segmentation failed", {
+        description: error instanceof Error ? error.message : "Failed to run segmentation.",
+      })
+    } finally {
+      setRunningSegmentation(false)
+    }
+  }, [userRole])
 
   const fetchSyncJobs = useCallback(async () => {
   const userRole = getStoredRole()
@@ -1086,6 +1176,16 @@ if (!canAccessDataCenter) {
               </div>
             </DialogContent>
           </Dialog>
+
+          <Button
+            variant="outline"
+            className="gap-2"
+            onClick={() => void runSegmentation()}
+            disabled={runningSegmentation || !canAccessFeature(userRole, "generateAiStrategy")}
+          >
+            <Zap className={`h-4 w-4 ${runningSegmentation ? "animate-spin" : ""}`} />
+            {runningSegmentation ? "Running..." : "Run Segmentation"}
+          </Button>
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -1256,6 +1356,27 @@ if (!canAccessDataCenter) {
                       )}
 
                       <div className="flex items-center gap-2">
+                        {isCsvJob && (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 text-muted-foreground hover:text-primary"
+                                disabled={
+                                  !canManageCsv || job.status === "processing"
+                                }
+                                onClick={() => {
+                                  void processImportJob(job)
+                                }}
+                              >
+                                <Play className="h-4 w-4" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>Process Data</TooltipContent>
+                          </Tooltip>
+                        )}
+
                         {job.status === "processing" && (
                           <Tooltip>
                             <TooltipTrigger asChild>
