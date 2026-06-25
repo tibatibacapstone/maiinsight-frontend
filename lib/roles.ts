@@ -268,7 +268,7 @@ export const canAccessFeature = (
  */
 export const getRoleDisplayName = (role: UserRole): string => {
   const displayNames: Record<UserRole, string> = {
-    operational: "Operational",
+    operational: "Marketing Operational",
     management: "Management",
     it_support: "IT Support",
   };

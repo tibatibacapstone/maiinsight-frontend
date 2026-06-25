@@ -17,19 +17,19 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:5
 
 export default function Home() {
   const [isAuthenticated, setIsAuthenticated] = useState(false)
-  const [userRole, setUserRole] = useState<UserRole>("marketing")
+  const [userRole, setUserRole] = useState<UserRole>("operational")
   const [currentPage, setCurrentPage] = useState<PageId>("dashboard")
   const [isLoading, setIsLoading] = useState(false)
   const [authError, setAuthError] = useState<string | null>(null)
 
   useEffect(() => {
     const storedToken = localStorage.getItem("maiinToken")
-    const storedRole = localStorage.getItem("maiinRole") as UserRole | "admin" | null
+    const storedRole = localStorage.getItem("maiinRole") as UserRole | null
 
-    if (storedToken && storedRole && storedRole !== "admin") {
+    if (storedToken && storedRole) {
       setUserRole(storedRole)
       setIsAuthenticated(true)
-    } else if (storedRole === "admin") {
+    } else {
       localStorage.removeItem("maiinToken")
       localStorage.removeItem("maiinRole")
       localStorage.removeItem("maiinUser")

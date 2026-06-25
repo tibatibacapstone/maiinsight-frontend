@@ -307,7 +307,7 @@ export function ManagementReport() {
         <CardContent>
           <div className="space-y-3 text-sm text-muted-foreground">
             <p>
-              The report aggregates marketing revenue and occupancy rate performance across the selected date range. Use the print dialog to save a polished PDF file.
+              The report aggregates marketing operational revenue and occupancy rate performance across the selected date range. Use the print dialog to save a polished PDF file.
             </p>
             <p>
               If you need a more detailed export, use the calendar filters and refresh before downloading.

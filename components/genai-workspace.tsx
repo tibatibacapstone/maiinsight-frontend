@@ -408,7 +408,7 @@ export function GenAIWorkspace({ userRole: userRoleFromProps }: GenAIWorkspacePr
     setAccessMessage("")
 
     if (!canGenerateAi) {
-      setAccessMessage("Access denied. Only admin can generate AI strategy.")
+      setAccessMessage("Access denied. Only Marketing Operational and IT Support can generate AI strategy.")
       return
     }
 
@@ -465,7 +465,7 @@ export function GenAIWorkspace({ userRole: userRoleFromProps }: GenAIWorkspacePr
           <h1 className="text-3xl font-bold">GenAI Strategy Workspace</h1>
 
           <p className="text-base text-muted-foreground">
-            AI-powered marketing and business strategies
+            AI-powered marketing operational and business strategies
           </p>
         </div>
 
