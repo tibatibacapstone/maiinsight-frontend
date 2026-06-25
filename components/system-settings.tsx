@@ -71,7 +71,7 @@ const userAccounts: UserAccount[] = [
 ]
 
 const roleConfig = {
-  operational: { color: "text-chart-5", bg: "bg-chart-5/10", label: "operational" },
+  operational: { color: "text-chart-5", bg: "bg-chart-5/10", label: "Marketing Operational" },
   management: { color: "text-chart-1", bg: "bg-chart-1/10", label: "management" },
   it_support: { color: "text-chart-2", bg: "bg-chart-2/10", label: "IT Support" },
 }

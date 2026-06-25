@@ -9,7 +9,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
-import { canAccessPage, UserRole } from "@/lib/roles"
+import { canAccessPage, getRoleDisplayName, UserRole } from "@/lib/roles"
 
 import {
   BarChart3,
@@ -141,7 +141,7 @@ export function DashboardSidebar({
 
                 {/* FIXED USER ROLE */}
                 <p className="text-xs text-muted-foreground truncate capitalize">
-                  {userRole?.replace("_", " ") || "User"}
+                  {userRole ? getRoleDisplayName(userRole) : "User"}
                 </p>
 
               </div>

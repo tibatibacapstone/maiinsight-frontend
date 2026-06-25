@@ -41,12 +41,12 @@ const activities: Activity[] = [
   { id: "2", type: "data", action: "Data Sync", user: "System", role: "System", details: "Gemini API synchronized 4,520 records", timestamp: "5 min ago", status: "success" },
   { id: "3", type: "ai", action: "Strategy Generated", user: "Arrief Hardian", role: "operatinal", details: "Created Weekend Flash Sale campaign", timestamp: "15 min ago", status: "success" },
   { id: "4", type: "config", action: "Settings Updated", user: "Sabri Kurniadi", role: "it_support", details: "Updated API token for CRM integration", timestamp: "30 min ago", status: "success" },
-  { id: "5", type: "data", action: "CSV Import", user: "Jane Smith", role: "operational", details: "Imported customer_data_may.csv (2,340 rows)", timestamp: "1 hour ago", status: "success" },
-  { id: "6", type: "report", action: "Report Generated", user: "John Doe", role: "operational", details: "Monthly performance report exported", timestamp: "2 hours ago", status: "success" },
+  { id: "5", type: "data", action: "CSV Import", user: "Jane Smith", role: "Marketing Operational", details: "Imported customer_data_may.csv (2,340 rows)", timestamp: "1 hour ago", status: "success" },
+  { id: "6", type: "report", action: "Report Generated", user: "John Doe", role: "Marketing Operational", details: "Monthly performance report exported", timestamp: "2 hours ago", status: "success" },
   { id: "7", type: "data", action: "Data Sync", user: "System", role: "System", details: "Inventory API sync failed - connection timeout", timestamp: "3 hours ago", status: "error" },
-  { id: "8", type: "ai", action: "Strategy Approved", user: "Admin User", role: "operational", details: "Approved Re-engagement Campaign for deployment", timestamp: "4 hours ago", status: "success" },
+  { id: "8", type: "ai", action: "Strategy Approved", user: "Admin User", role: "Marketing Operational", details: "Approved Re-engagement Campaign for deployment", timestamp: "4 hours ago", status: "success" },
   { id: "9", type: "auth", action: "Login Failed", user: "Unknown", role: "N/A", details: "Failed login attempt from 10.0.0.55", timestamp: "5 hours ago", status: "warning" },
-  { id: "10", type: "config", action: "User Created", user: "Admin User", role: "operational", details: "Created new Marketing user: sarah@maiin.com", timestamp: "6 hours ago", status: "success" },
+  { id: "10", type: "config", action: "User Created", user: "Admin User", role: "Marketing Operational", details: "Created new Marketing Operational user: sarah@maiin.com", timestamp: "6 hours ago", status: "success" },
 ]
 
 const typeConfig = {
