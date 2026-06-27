@@ -1,6 +1,7 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
+
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import {
@@ -9,15 +10,14 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
-import { canAccessPage, getRoleDisplayName, UserRole } from "@/lib/roles"
-
+import { canAccessPage, getAuthHeaders, getRoleDisplayName, UserRole } from "@/lib/roles"
+import { getApiUrl } from "@/lib/api"
 import {
   BarChart3,
   LayoutDashboard,
   Users,
   Database,
   Sparkles,
-  TrendingUp,
   History,
   Settings,
   ChevronLeft,
@@ -25,13 +25,15 @@ import {
   LogOut,
   Bell,
   GitGraph,
-  FileText
+  FileText,
+  Target,
 } from "lucide-react"
 
 export type PageId =
   | "dashboard"
   | "segments"
   | "data"
+  | "targeting"
   | "genai"
   | "instasight"
   | "history"
@@ -43,301 +45,191 @@ interface SidebarProps {
   currentPage: PageId
   onNavigate: (page: PageId) => void
   onLogout: () => void
-
-  // Optional karena sekarang role bisa saja belum ada
   userRole?: UserRole
 }
 
 const navItems = [
-  {
-    id: "dashboard" as PageId,
-    label: "Overview",
-    icon: LayoutDashboard
-  },
-  {
-    id: "reports" as PageId,
-    label: "Management Reports",
-    icon: FileText,
-  },
-  {
-    id: "segments" as PageId,
-    label: "Segments",
-    icon: Users
-  },
-  {
-    id: "data" as PageId,
-    label: "Data Center",
-    icon: Database
-  },
-  {
-    id: "genai" as PageId,
-    label: "GenAI Workspace",
-    icon: Sparkles
-  },
-  {
-    id: "instasight" as PageId,
-    label: "InstaSight",
-    icon: GitGraph
-  },
-  {
-    id: "history" as PageId,
-    label: "History",
-    icon: History
-  },
-  {
-    id: "notifications" as PageId,
-    label: "Notifications",
-    icon: Bell
-  },
-  {
-    id: "settings" as PageId,
-    label: "Settings",
-    icon: Settings
-  },
+  { id: "dashboard" as PageId, label: "Overview", icon: LayoutDashboard },
+  { id: "reports" as PageId, label: "Management Reports", icon: FileText },
+  { id: "segments" as PageId, label: "Segments", icon: Users },
+  { id: "data" as PageId, label: "Data Center", icon: Database },
+  { id: "targeting" as PageId, label: "Fill Empty Sessions", icon: Target },
+  { id: "genai" as PageId, label: "GenAI Workspace", icon: Sparkles },
+  { id: "instasight" as PageId, label: "InstaSight", icon: GitGraph },
+  { id: "history" as PageId, label: "History", icon: History },
+  { id: "notifications" as PageId, label: "Notifications", icon: Bell },
+  { id: "settings" as PageId, label: "Settings", icon: Settings },
 ]
 
-// Mapping allowed pages sudah disentralkan di `@/lib/roles` via PAGE_PERMISSIONS.
-// Di sidebar, kita cukup gunakan filter sederhana saat render.
 export function DashboardSidebar({
   currentPage,
   onNavigate,
   onLogout,
-  userRole
+  userRole,
 }: SidebarProps) {
-
   const [collapsed, setCollapsed] = useState(false)
-  const [notifications] = useState(3)
+  const [notifications, setNotifications] = useState(0)
 
   const visibleNavItems = navItems.filter((item) =>
     userRole ? canAccessPage(userRole, item.id) : true
   )
 
+  useEffect(() => {
+    const loadUnreadCount = async () => {
+      if (!userRole || !canAccessPage(userRole, "notifications")) {
+        setNotifications(0)
+        return
+      }
+
+      try {
+        const response = await fetch(getApiUrl("/operations/notifications/unread-count"), {
+          method: "GET",
+          cache: "no-store",
+          headers: getAuthHeaders(),
+        })
+
+        const result = await response.json().catch(() => null)
+        if (!response.ok || !result?.success) {
+          setNotifications(0)
+          return
+        }
+
+        setNotifications(Number(result.data?.unreadCount || 0))
+      } catch {
+        setNotifications(0)
+      }
+    }
+
+    void loadUnreadCount()
+    window.addEventListener("focus", loadUnreadCount)
+    return () => window.removeEventListener("focus", loadUnreadCount)
+  }, [userRole])
 
   return (
     <TooltipProvider delayDuration={0}>
-
       <aside
         className={cn(
-          "sticky top-0 z-40 h-screen shrink-0 bg-sidebar border-r border-sidebar-border flex flex-col transition-all duration-300",
+          "sticky top-0 z-40 flex h-screen shrink-0 flex-col border-r border-sidebar-border bg-sidebar transition-all duration-300",
           collapsed ? "w-20" : "w-64"
         )}
       >
-
-        {/* Logo Header */}
-        <div className="h-16 flex items-center px-4 border-b border-sidebar-border bg-gradient-to-r from-primary/5 to-transparent">
-
+        <div className="flex h-16 items-center border-b border-sidebar-border bg-gradient-to-r from-primary/5 to-transparent px-4">
           <div className="flex items-center gap-3 overflow-hidden">
-
-            <div className="h-10 w-10 min-w-10 rounded-xl bg-gradient-to-br from-primary to-primary/80 flex items-center justify-center shadow-lg shadow-primary/20">
+            <div className="flex h-10 w-10 min-w-10 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-primary/80 shadow-lg shadow-primary/20">
               <BarChart3 className="h-6 w-6 text-primary-foreground" />
             </div>
 
             {!collapsed && (
               <div className="overflow-hidden">
-
-                <h1 className="font-bold text-lg truncate">
-                  MaiinSight
-                </h1>
-
-                {/* FIXED USER ROLE */}
-                <p className="text-xs text-muted-foreground truncate capitalize">
+                <h1 className="truncate text-lg font-bold">MaiinSight</h1>
+                <p className="truncate text-xs capitalize text-muted-foreground">
                   {userRole ? getRoleDisplayName(userRole) : "User"}
                 </p>
-
               </div>
             )}
-
           </div>
         </div>
 
-        {/* Navigation */}
-        <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
-
+        <nav className="flex-1 space-y-1 overflow-y-auto p-3">
           {visibleNavItems.map((item) => {
-
             const Icon = item.icon
             const isActive = currentPage === item.id
+            const badgeCount = item.id === "notifications" ? notifications : 0
 
-            return collapsed ? (
-
-              <Tooltip key={item.id}>
-
-                <TooltipTrigger asChild>
-
-                  <Button
-                    variant={isActive ? "secondary" : "ghost"}
+            const content = (
+              <>
+                <Icon className="h-5 w-5" />
+                {!collapsed && <span className="truncate">{item.label}</span>}
+                {badgeCount > 0 ? (
+                  <span
                     className={cn(
-                      "w-full justify-center h-11",
-                      isActive &&
-                        "bg-primary/15 text-primary border-l-2 border-primary rounded-l-none"
+                      "flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1 text-[10px] text-destructive-foreground",
+                      collapsed ? "absolute right-2 top-2" : "ml-auto"
                     )}
-                    onClick={() => onNavigate(item.id)}
                   >
-                    <Icon className="h-5 w-5" />
-                  </Button>
+                    {badgeCount > 99 ? "99+" : badgeCount}
+                  </span>
+                ) : null}
+              </>
+            )
 
-                </TooltipTrigger>
+            if (collapsed) {
+              return (
+                <Tooltip key={item.id}>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant={isActive ? "secondary" : "ghost"}
+                      className={cn(
+                        "relative h-11 w-full justify-center",
+                        isActive &&
+                          "rounded-l-none border-l-2 border-primary bg-primary/15 text-primary"
+                      )}
+                      onClick={() => onNavigate(item.id)}
+                    >
+                      {content}
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="right">{item.label}</TooltipContent>
+                </Tooltip>
+              )
+            }
 
-                <TooltipContent side="right">
-                  {item.label}
-                </TooltipContent>
-
-              </Tooltip>
-
-            ) : (
-
+            return (
               <Button
                 key={item.id}
                 variant={isActive ? "secondary" : "ghost"}
                 className={cn(
-                  "w-full justify-start h-11 gap-3",
+                  "relative h-11 w-full justify-start gap-3",
                   isActive &&
-                    "bg-primary/15 text-primary border-l-2 border-primary rounded-l-none font-semibold"
+                    "rounded-l-none border-l-2 border-primary bg-primary/15 font-semibold text-primary"
                 )}
                 onClick={() => onNavigate(item.id)}
               >
-
-                <Icon className="h-5 w-5" />
-
-                <span className="truncate">
-                  {item.label}
-                </span>
-
+                {content}
               </Button>
-
             )
           })}
-
         </nav>
 
-        {/* Bottom Section */}
-        <div className="p-3 border-t border-sidebar-border space-y-2">
-
-          {/* Notifications */}
-          {collapsed ? (
-
-            <Tooltip>
-
-              <TooltipTrigger asChild>
-
-                <Button
-                  variant="ghost"
-                  className="w-full justify-center h-11 relative"
-                  onClick={() => onNavigate("notifications")}
-                >
-
-                  <Bell className="h-5 w-5" />
-
-                  {notifications > 0 && (
-                    <span className="absolute top-2 right-3 h-4 w-4 rounded-full bg-destructive text-[10px] flex items-center justify-center text-destructive-foreground">
-                      {notifications}
-                    </span>
-                  )}
-
-                </Button>
-
-              </TooltipTrigger>
-
-              <TooltipContent side="right">
-                Notifications
-              </TooltipContent>
-
-            </Tooltip>
-
-          ) : (
-
-            <Button
-              variant="ghost"
-              className="w-full justify-start h-11 gap-3 relative"
-              onClick={() => onNavigate("notifications")}
-            >
-
-              <Bell className="h-5 w-5" />
-
-              <span>
-                Notifications
-              </span>
-
-              {notifications > 0 && (
-                <span className="ml-auto h-5 w-5 rounded-full bg-destructive text-[10px] flex items-center justify-center text-destructive-foreground">
-                  {notifications}
-                </span>
-              )}
-
-            </Button>
-
-          )}
-
-          {/* Collapse Toggle */}
+        <div className="space-y-2 border-t border-sidebar-border p-3">
           <Button
             variant="ghost"
-            className={cn(
-              "w-full h-11",
-              collapsed
-                ? "justify-center"
-                : "justify-start gap-3"
-            )}
+            className={cn("h-11 w-full", collapsed ? "justify-center" : "justify-start gap-3")}
             onClick={() => setCollapsed(!collapsed)}
           >
-
             {collapsed ? (
-
               <ChevronRight className="h-5 w-5" />
-
             ) : (
-
               <>
                 <ChevronLeft className="h-5 w-5" />
                 <span>Collapse</span>
               </>
-
             )}
-
           </Button>
 
-          {/* Logout */}
           {collapsed ? (
-
             <Tooltip>
-
               <TooltipTrigger asChild>
-
                 <Button
                   variant="ghost"
-                  className="w-full justify-center h-11 text-destructive hover:text-destructive hover:bg-destructive/10"
+                  className="h-11 w-full justify-center text-destructive hover:bg-destructive/10 hover:text-destructive"
                   onClick={onLogout}
                 >
-
                   <LogOut className="h-5 w-5" />
-
                 </Button>
-
               </TooltipTrigger>
-
-              <TooltipContent side="right">
-                Logout
-              </TooltipContent>
-
+              <TooltipContent side="right">Logout</TooltipContent>
             </Tooltip>
-
           ) : (
-
             <Button
               variant="ghost"
-              className="w-full justify-start h-11 gap-3 text-destructive hover:text-destructive hover:bg-destructive/10"
+              className="h-11 w-full justify-start gap-3 text-destructive hover:bg-destructive/10 hover:text-destructive"
               onClick={onLogout}
             >
-
               <LogOut className="h-5 w-5" />
-
-              <span>
-                Logout
-              </span>
-
+              <span>Logout</span>
             </Button>
-
           )}
-
         </div>
       </aside>
     </TooltipProvider>

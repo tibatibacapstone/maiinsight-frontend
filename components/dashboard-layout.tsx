@@ -6,6 +6,7 @@ import { DashboardSidebar, type PageId } from "./dashboard-sidebar"
 import { AnalyticsDashboard } from "./analytics-dashboard"
 import { SegmentVisualization } from "./segment-visualization"
 import { DataManagement } from "./data-management"
+import { LowOccupancyTargeting } from "./low-occupancy-targeting"
 import { GenAIWorkspace } from "./genai-workspace"
 import { InstaSightHub } from "./instasight-hub"
 import { ActivityLogs } from "./activity-logs"
@@ -31,9 +32,7 @@ export function DashboardLayout({
 }: DashboardLayoutProps) {
   const permittedPages = PAGE_PERMISSIONS[userRole] ?? ["dashboard"]
 
-  const [performanceView, setPerformanceView] = useState<
-    "performance" | "audience"
-  >("performance")
+  const [performanceView, setPerformanceView] = useState<"performance" | "audience">("performance")
 
   const renderPage = () => {
     if (!permittedPages.includes(currentPage)) {
@@ -52,44 +51,35 @@ export function DashboardLayout({
     switch (currentPage) {
       case "dashboard":
         return <AnalyticsDashboard />
-
       case "segments":
         return <SegmentVisualization />
-
       case "data":
         return <DataManagement />
-
+      case "targeting":
+        return <LowOccupancyTargeting onNavigate={onNavigate} />
       case "genai":
         return <GenAIWorkspace />
-
       case "instasight":
         return performanceView === "audience" ? (
           <MetaAudience onBack={() => setPerformanceView("performance")} />
         ) : (
-          <InstaSightHub
-            onViewAudience={() => setPerformanceView("audience")}
-          />
+          <InstaSightHub onViewAudience={() => setPerformanceView("audience")} />
         )
-
       case "reports":
         return <ManagementReport />
-
       case "history":
         return <ActivityLogs />
-
       case "notifications":
         return <Notifications />
-
       case "settings":
         return <SystemSettings />
-
       default:
         return <AnalyticsDashboard />
     }
   }
 
   return (
-    <div className="flex min-h-screen">
+    <div className="flex min-h-screen bg-[radial-gradient(circle_at_top,#ffffff_0%,#f4f7f6_46%,#eef2f1_100%)]">
       <DashboardSidebar
         currentPage={currentPage}
         onNavigate={onNavigate}
@@ -97,7 +87,7 @@ export function DashboardLayout({
         userRole={userRole}
       />
       <main className="flex-1 overflow-auto">
-        <div className="p-6 lg:p-8">{renderPage()}</div>
+        <div className="mx-auto w-full max-w-[1680px] p-5 lg:p-7">{renderPage()}</div>
       </main>
     </div>
   )

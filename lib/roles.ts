@@ -7,18 +7,16 @@ export const USER_ROLES = {
   OPERATIONAL: "operational",
   MANAGEMENT: "management",
   IT_SUPPORT: "it_support",
-} as const;
+} as const
 
-export type UserRole = typeof USER_ROLES[keyof typeof USER_ROLES];
+export type UserRole = typeof USER_ROLES[keyof typeof USER_ROLES]
 
-/**
- * Page access permissions by role
- */
 export const PAGE_PERMISSIONS: Record<UserRole, string[]> = {
   operational: [
     "dashboard",
     "segments",
     "data",
+    "targeting",
     "genai",
     "instasight",
     "notifications",
@@ -26,20 +24,17 @@ export const PAGE_PERMISSIONS: Record<UserRole, string[]> = {
     "reports",
     "history",
   ],
-
   management: [
     "dashboard",
+    "reports",
     "segments",
     "instasight",
-    "genai",
-    "notifications",
-    "reports",
   ],
-
   it_support: [
     "dashboard",
     "segments",
     "data",
+    "targeting",
     "genai",
     "instasight",
     "history",
@@ -47,11 +42,8 @@ export const PAGE_PERMISSIONS: Record<UserRole, string[]> = {
     "settings",
     "reports",
   ],
-};
+}
 
-/**
- * Feature access permissions by role
- */
 export const FEATURE_PERMISSIONS: Record<UserRole, Record<string, boolean>> = {
   operational: {
     uploadCsv: true,
@@ -74,9 +66,8 @@ export const FEATURE_PERMISSIONS: Record<UserRole, Record<string, boolean>> = {
     troubleshootingOnly: false,
     auditSensitiveActions: false,
     businessAuthority: true,
-    readOnly: false,
+    readOnly: true,
   },
-
   management: {
     uploadCsv: false,
     deleteImport: false,
@@ -84,7 +75,7 @@ export const FEATURE_PERMISSIONS: Record<UserRole, Record<string, boolean>> = {
     viewImportJobs: false,
     downloadExports: false,
     generateAiStrategy: false,
-    viewAiStrategy: true,
+    viewAiStrategy: false,
     modifyAiStrategy: false,
     approveAiStrategy: false,
     manageUsers: false,
@@ -100,7 +91,6 @@ export const FEATURE_PERMISSIONS: Record<UserRole, Record<string, boolean>> = {
     businessAuthority: true,
     readOnly: true,
   },
-
   it_support: {
     uploadCsv: true,
     deleteImport: true,
@@ -124,7 +114,7 @@ export const FEATURE_PERMISSIONS: Record<UserRole, Record<string, boolean>> = {
     businessAuthority: false,
     readOnly: false,
   },
-};
+}
 
 export const SENSITIVE_AUDIT_FEATURES = new Set([
   "uploadCsv",
@@ -135,142 +125,103 @@ export const SENSITIVE_AUDIT_FEATURES = new Set([
   "modifyAiStrategy",
   "modifySettings",
   "manageUsers",
-]);
+])
 
 export const requiresAudit = (
   userRole: UserRole | null,
   feature: string
 ): boolean => {
-  return userRole === USER_ROLES.IT_SUPPORT && SENSITIVE_AUDIT_FEATURES.has(feature);
-};
+  return userRole === USER_ROLES.IT_SUPPORT && SENSITIVE_AUDIT_FEATURES.has(feature)
+}
 
 export const hasBusinessAuthority = (userRole: UserRole | null): boolean => {
-  if (!userRole) return false;
-  return FEATURE_PERMISSIONS[userRole]?.businessAuthority ?? false;
-};
+  if (!userRole) return false
+  return FEATURE_PERMISSIONS[userRole]?.businessAuthority ?? false
+}
 
-
-/**
- * Normalize user role from various sources
- */
 export const normalizeRole = (role?: string | null): UserRole | null => {
-  const value = role?.toLowerCase().trim();
+  const value = role?.toLowerCase().trim()
 
-  if (value === USER_ROLES.OPERATIONAL) return USER_ROLES.OPERATIONAL;
-  if (value === USER_ROLES.MANAGEMENT) return USER_ROLES.MANAGEMENT;
+  if (value === USER_ROLES.OPERATIONAL) return USER_ROLES.OPERATIONAL
+  if (value === USER_ROLES.MANAGEMENT) return USER_ROLES.MANAGEMENT
   if (
     value === "it" ||
     value === USER_ROLES.IT_SUPPORT ||
     value === "it support" ||
     value === "it-support"
   ) {
-    return USER_ROLES.IT_SUPPORT;
+    return USER_ROLES.IT_SUPPORT
   }
 
-  return null;
-};
+  return null
+}
 
-/**
- * Get user role from localStorage
- */
 export const getStoredRole = (): UserRole | null => {
-  if (typeof window === "undefined") return null;
+  if (typeof window === "undefined") return null
 
-  // Try direct role keys
-  const directRoleKeys = ["maiinRole", "role", "userRole", "maiinsight_role"];
+  const directRoleKeys = ["maiinRole", "role", "userRole", "maiinsight_role"]
   for (const key of directRoleKeys) {
-    const role = localStorage.getItem(key);
+    const role = localStorage.getItem(key)
     if (role) {
-      const normalized = normalizeRole(role);
-      if (normalized) return normalized;
+      const normalized = normalizeRole(role)
+      if (normalized) return normalized
     }
   }
 
-  // Try user object keys
-  const userStorageKeys = [
-    "maiinUser",
-    "user",
-    "authUser",
-    "currentUser",
-    "maiinsight_user",
-  ];
+  const userStorageKeys = ["maiinUser", "user", "authUser", "currentUser", "maiinsight_user"]
   for (const key of userStorageKeys) {
-    const rawValue = localStorage.getItem(key);
-    if (!rawValue) continue;
+    const rawValue = localStorage.getItem(key)
+    if (!rawValue) continue
 
     try {
-      const parsed = JSON.parse(rawValue);
-      const role = parsed?.role || parsed?.user?.role;
+      const parsed = JSON.parse(rawValue)
+      const role = parsed?.role || parsed?.user?.role
       if (role) {
-        const normalized = normalizeRole(role);
-        if (normalized) return normalized;
+        const normalized = normalizeRole(role)
+        if (normalized) return normalized
       }
     } catch {
-      continue;
+      continue
     }
   }
 
-  return null;
-};
+  return null
+}
 
-/**
- * Get stored token from localStorage
- */
 export const getStoredToken = (): string | null => {
-  if (typeof window === "undefined") return null;
+  if (typeof window === "undefined") return null
 
-  const tokenKeys = [
-    "maiinToken",
-    "token",
-    "authToken",
-    "accessToken",
-    "maiinsight_token",
-  ];
+  const tokenKeys = ["maiinToken", "token", "authToken", "accessToken", "maiinsight_token"]
 
   for (const key of tokenKeys) {
-    const token = localStorage.getItem(key);
-    if (token) return token;
+    const token = localStorage.getItem(key)
+    if (token) return token
   }
 
-  return null;
-};
+  return null
+}
 
-/**
- * Get auth headers for API requests
- */
 export const getAuthHeaders = (): Record<string, string> => {
-  const token = getStoredToken();
-  if (!token) return {};
-  return { Authorization: `Bearer ${token}` };
-};
+  const token = getStoredToken()
+  if (!token) return {}
+  return { Authorization: `Bearer ${token}` }
+}
 
-/**
- * Check if user has access to a page
- */
 export const canAccessPage = (userRole: UserRole | null, page: string): boolean => {
-  if (!userRole) return false;
-  return PAGE_PERMISSIONS[userRole]?.includes(page) ?? false;
-};
+  if (!userRole) return false
+  return PAGE_PERMISSIONS[userRole]?.includes(page) ?? false
+}
 
-/**
- * Check if user has access to a feature
- */
-export const canAccessFeature = (
-  userRole: UserRole | null,
-  feature: string
-): boolean => {
-  if (!userRole) return false;
-  return FEATURE_PERMISSIONS[userRole]?.[feature] ?? false;
-};
+export const canAccessFeature = (userRole: UserRole | null, feature: string): boolean => {
+  if (!userRole) return false
+  return FEATURE_PERMISSIONS[userRole]?.[feature] ?? false
+}
 
-/**
- * Get role display name
- */
 export const getRoleDisplayName = (role: UserRole): string => {
   const displayNames: Record<UserRole, string> = {
     operational: "Marketing Operational",
     management: "Management",
     it_support: "IT Support",
-  };
-  return displayNames[role] || role;
-};
+  }
+  return displayNames[role] || role
+}
