@@ -1,398 +1,479 @@
 "use client"
 
-import { useState } from "react"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
+import { useEffect, useMemo, useState } from "react"
+import { toast } from "sonner"
+import { Copy, Eye, EyeOff, Key, Link as LinkIcon, Loader2, Save, Shield, Users, Check, CircleDashed } from "lucide-react"
+
+import { AccessDenied } from "@/components/access-denied"
+import { BusinessErrorAlert } from "@/components/business-error-alert"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Switch } from "@/components/ui/switch"
-import { 
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog"
-import { 
-  Key, 
-  Users, 
-  Shield, 
-  Bell,
-  Database,
-  RefreshCw,
-  Plus,
-  Trash2,
-  Edit,
-  Eye,
-  EyeOff,
-  Copy,
-  CheckCircle2,
-  AlertCircle,
-  Info,
-  Save
-} from "lucide-react"
+import { getApiUrl } from "@/lib/api"
+import { getAuthHeaders, getStoredRole, USER_ROLES } from "@/lib/roles"
 
-interface APIToken {
-  id: string
-  name: string
-  key: string
-  status: "active" | "inactive" | "expired"
-  lastUsed: string
-  createdAt: string
-}
+type Role = "operational" | "management" | "it_support"
 
-interface UserAccount {
-  id: string
-  name: string
-  email: string
-  role: "operational" | "management" | "it_support"
-  status: "active" | "inactive"
-  lastLogin: string
-}
+type UserRow = { id: number; name: string; email: string; role: Role; updatedAt: string }
 
-const apiTokens: APIToken[] = [
-  { id: "1", name: "Gemini System API", key: "pos_api_key_xxxx", status: "active", lastUsed: "2 min ago", createdAt: "Jan 15, 2024" },
-  { id: "2", name: "Meta Graph API", key: "crm_api_key_yyyy", status: "active", lastUsed: "5 min ago", createdAt: "Feb 3, 2024" },
-]
-
-const userAccounts: UserAccount[] = [
-  { id: "1", name: "Arrief Hardian", email: "arrief.Hardian@triaysa.co.id", role: "operational", status: "active", lastLogin: "2 hours ago" },
-  { id: "2", name: "Nizar Muharram", email: "nizar.muharram@triyasa.co.id", role: "operational", status: "active", lastLogin: "5 min ago" },
-  { id: "3", name: "Sabri Kurniadi", email: "sabri.kurniadi@triyasa.co.id", role: "it_support", status: "active", lastLogin: "1 day ago" },
-  { id: "4", name: "Iqbal Utomo", email: "iqbal.utomo@triyasa.co.id", role: "management", status: "inactive", lastLogin: "2 weeks ago" },
-]
-
-const roleConfig = {
-  operational: { color: "text-chart-5", bg: "bg-chart-5/10", label: "Marketing Operational" },
-  management: { color: "text-chart-1", bg: "bg-chart-1/10", label: "management" },
-  it_support: { color: "text-chart-2", bg: "bg-chart-2/10", label: "IT Support" },
+interface SummaryResponse {
+  success: boolean
+  message?: string
+  data?: {
+    currentUser: { userId: number; email: string; role: string }
+    database: { name: string; status: string; subtitle: string } | null
+    latestMlRun: { id: number; status: string; createdAt: string; totalSessions: number; lastRunningAt?: string | null; lastRunningLabel?: string | null } | null
+    latestSegmentationRun: { id: number; status: string; runDate: string; totalCustomers: number } | null
+    latestImport: { id: number; fileName: string; status: string; updatedAt: string; rowCount: number } | null
+    integrations: {
+      metaConfigured: boolean
+      aiConfigured: boolean
+      aiProvider: string
+      aiProviderLabel: string
+      aiModel: string | null
+      geminiApiKey: string
+      geminiModel: string
+      metaIgUserId: string
+      metaAccessToken: string
+      metaGraphVersion: string
+    }
+    users: UserRow[]
+  }
 }
 
 export function SystemSettings() {
-  const [tokens, setTokens] = useState(apiTokens)
-  const [users, setUsers] = useState(userAccounts)
-  const [showKey, setShowKey] = useState<string | null>(null)
-  const [copiedKey, setCopiedKey] = useState<string | null>(null)
-  const [notifications, setNotifications] = useState({
-    aiAlerts: true,
-    syncAlerts: true,
-    securityAlerts: true,
-    weeklyReports: true,
-    performanceAlerts: false,
+  const userRole = getStoredRole()
+  const isItSupport = userRole === USER_ROLES.IT_SUPPORT
+
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [summary, setSummary] = useState<SummaryResponse["data"] | null>(null)
+  const [showGeminiKey, setShowGeminiKey] = useState(false)
+  const [showMetaToken, setShowMetaToken] = useState(false)
+  const [integrationForm, setIntegrationForm] = useState({
+    geminiApiKey: "",
+    geminiModel: "",
+    metaIgUserId: "",
+    metaAccessToken: "",
+    metaGraphVersion: "",
   })
+  const [isSavingIntegrations, setIsSavingIntegrations] = useState(false)
+  const [inviteForm, setInviteForm] = useState({ name: "", email: "", role: "operational" as Role })
+  const [isCreatingInvite, setIsCreatingInvite] = useState(false)
+  const [activationUrl, setActivationUrl] = useState<string | null>(null)
+  const [inviteStatus, setInviteStatus] = useState<string | null>(null)
+  const [hasCopiedActivationUrl, setHasCopiedActivationUrl] = useState(false)
+  const [isResendingInvite, setIsResendingInvite] = useState(false)
+  const [users, setUsers] = useState<UserRow[]>([])
 
-  const copyToClipboard = (key: string, tokenId: string) => {
-    navigator.clipboard.writeText(key)
-    setCopiedKey(tokenId)
-    setTimeout(() => setCopiedKey(null), 2000)
+  const geminiApiKeyValue = summary?.integrations.geminiApiKey || ""
+  const metaAccessTokenValue = summary?.integrations.metaAccessToken || ""
+  const hasGeminiSecret = Boolean(geminiApiKeyValue)
+  const hasMetaSecret = Boolean(metaAccessTokenValue)
+  const isDatabaseConnected = summary?.database?.status === "connected"
+  const latestMlLabel = summary?.latestMlRun?.lastRunningLabel || "No recent run"
+
+  const readOnlyNotice = useMemo(
+    () => (isItSupport ? null : "Settings are restricted to IT Support only."),
+    [isItSupport],
+  )
+
+  const loadSettings = async () => {
+    try {
+      setIsLoading(true)
+      setError(null)
+      const response = await fetch(getApiUrl("/system/summary"), {
+        headers: getAuthHeaders(),
+        cache: "no-store",
+      })
+      const result: SummaryResponse = await response.json().catch(() => null)
+      if (!response.ok || !result?.success || !result.data) {
+        throw new Error(result?.message || "Settings could not be loaded.")
+      }
+
+      setSummary(result.data)
+      setUsers(result.data.users || [])
+      setIntegrationForm({
+        geminiApiKey: result.data.integrations.geminiApiKey || "",
+        geminiModel: result.data.integrations.geminiModel || "",
+        metaIgUserId: result.data.integrations.metaIgUserId || "",
+        metaAccessToken: result.data.integrations.metaAccessToken || "",
+        metaGraphVersion: result.data.integrations.metaGraphVersion || "",
+      })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Settings could not be loaded.")
+    } finally {
+      setIsLoading(false)
+    }
   }
 
-  const toggleTokenStatus = (tokenId: string) => {
-    setTokens(prev => prev.map(token => 
-      token.id === tokenId 
-        ? { ...token, status: token.status === "active" ? "inactive" as const : "active" as const }
-        : token
-    ))
+  useEffect(() => {
+    if (isItSupport) void loadSettings()
+  }, [isItSupport])
+
+  if (!isItSupport) {
+    return (
+      <AccessDenied
+        title="Forbidden"
+        message="Settings page is only available to IT Support."
+        feature="system-settings"
+        requiredRole="IT Support"
+        showButton={false}
+      />
+    )
   }
 
-  const toggleUserStatus = (userId: string) => {
-    setUsers(prev => prev.map(user => 
-      user.id === userId 
-        ? { ...user, status: user.status === "active" ? "inactive" as const : "active" as const }
-        : user
-    ))
+  const copyText = async (text: string, label: string) => {
+    if (!text || typeof navigator === "undefined") return
+    await navigator.clipboard.writeText(text)
+    toast.success(`${label} copied.`)
+  }
+
+  const saveIntegrations = async () => {
+    try {
+      setIsSavingIntegrations(true)
+      const response = await fetch(getApiUrl("/system/integrations"), {
+        method: "PUT",
+        headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify(integrationForm),
+      })
+      const result = await response.json().catch(() => null)
+      if (!response.ok || !result?.success) throw new Error(result?.message || "Integration settings could not be saved.")
+      await loadSettings()
+      toast.success("Integration settings saved.")
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Integration settings could not be saved.")
+    } finally {
+      setIsSavingIntegrations(false)
+    }
+  }
+
+  const createInvite = async () => {
+    try {
+      setIsCreatingInvite(true)
+      const response = await fetch(getApiUrl("/system/user-invites"), {
+        method: "POST",
+        headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify(inviteForm),
+      })
+      const result = await response.json().catch(() => null)
+      if (!response.ok || !result?.success || !result.data?.activationUrl) {
+        throw new Error(result?.message || "Invite could not be created.")
+      }
+      setActivationUrl(result.data.activationUrl)
+      setInviteStatus("Activation email sent")
+      setHasCopiedActivationUrl(false)
+      setInviteForm({ name: "", email: "", role: "operational" })
+      await loadSettings()
+      toast.success("Activation email sent.")
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Invite could not be created.")
+    } finally {
+      setIsCreatingInvite(false)
+    }
+  }
+
+  const copyActivationUrl = async () => {
+    if (!activationUrl || typeof navigator === "undefined") return
+    await navigator.clipboard.writeText(activationUrl)
+    setHasCopiedActivationUrl(true)
+    window.setTimeout(() => setHasCopiedActivationUrl(false), 2000)
+    toast.success("Activation link copied.")
+  }
+
+  const resendActivationEmail = async () => {
+    if (!activationUrl) return
+
+    try {
+      setIsResendingInvite(true)
+      const response = await fetch(getApiUrl("/system/user-invites/resend"), {
+        method: "POST",
+        headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({ activationUrl }),
+      })
+      const result = await response.json().catch(() => null)
+      if (!response.ok || !result?.success) {
+        throw new Error(result?.message || "Activation email could not be sent again.")
+      }
+      setActivationUrl(result.data?.activationUrl || activationUrl)
+      setInviteStatus("Activation email sent again")
+      toast.success("Activation email sent again.")
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Activation email could not be sent again.")
+    } finally {
+      setIsResendingInvite(false)
+    }
   }
 
   return (
-    <TooltipProvider>
-      <div className="space-y-6">
-        {/* Header */}
-        <div>
-          <h1 className="text-2xl font-bold">System Configuration</h1>
-          <p className="text-muted-foreground">Manage API tokens, users, and system settings</p>
-        </div>
-
-        <div className="grid gap-6 lg:grid-cols-2">
-          {/* API Tokens */}
-          <Card className="bg-card border-border shadow-sm">
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle className="flex items-center gap-2">
-                    <Key className="h-5 w-5" />
-                    API Tokens
-                  </CardTitle>
-                  <CardDescription>Manage integration API keys</CardDescription>
-                </div>
-                <Dialog>
-                  <DialogTrigger asChild>
-                    <Button size="sm" className="gap-2">
-                      <Plus className="h-4 w-4" />
-                      Add Token
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent>
-                    <DialogHeader>
-                      <DialogTitle>Create New API Token</DialogTitle>
-                      <DialogDescription>
-                        Generate a new API token for integration
-                      </DialogDescription>
-                    </DialogHeader>
-                    <div className="space-y-4 pt-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="token-name">Token Name</Label>
-                        <Input id="token-name" placeholder="e.g., Analytics API" />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="token-desc">Description</Label>
-                        <Input id="token-desc" placeholder="What this token is used for" />
-                      </div>
-                      <Button className="w-full">Generate Token</Button>
-                    </div>
-                  </DialogContent>
-                </Dialog>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {tokens.map((token) => (
-                <div 
-                  key={token.id}
-                  className="flex items-center gap-4 p-3 rounded-xl border border-border bg-secondary/50">
-                  <div className={`h-10 w-10 rounded-lg flex items-center justify-center ${
-                    token.status === "active" ? "bg-primary/10" : 
-                    token.status === "expired" ? "bg-destructive/10" : "bg-muted"
-                  }`}>
-                    <Key className={`h-5 w-5 ${
-                      token.status === "active" ? "text-primary" : 
-                      token.status === "expired" ? "text-destructive" : "text-muted-foreground"
-                    }`} />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <h4 className="font-medium truncate">{token.name}</h4>
-                      <Badge 
-                        variant={token.status === "active" ? "default" : token.status === "expired" ? "destructive" : "secondary"}
-                        className={token.status === "active" ? "bg-primary/10 text-primary border-0" : ""}
-                      >
-                        {token.status}
-                      </Badge>
-                    </div>
-                    <div className="flex items-center gap-2 text-xs text-muted-foreground mt-1">
-                      <code className="bg-secondary px-2 py-0.5 rounded">
-                        {showKey === token.id ? token.key : "••••••••••••"}
-                      </code>
-                      <button
-                        onClick={() => setShowKey(showKey === token.id ? null : token.id)}
-                        className="hover:text-foreground"
-                      >
-                        {showKey === token.id ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
-                      </button>
-                      <button
-                        onClick={() => copyToClipboard(token.key, token.id)}
-                        className="hover:text-foreground"
-                      >
-                        {copiedKey === token.id ? (
-                          <CheckCircle2 className="h-3 w-3 text-primary" />
-                        ) : (
-                          <Copy className="h-3 w-3" />
-                        )}
-                      </button>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Switch
-                      checked={token.status === "active"}
-                      onCheckedChange={() => toggleTokenStatus(token.id)}
-                      disabled={token.status === "expired"}
-                    />
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive">
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>Delete Token</TooltipContent>
-                    </Tooltip>
-                  </div>
-                </div>
-              ))}
-            </CardContent>
-          </Card>
-
-          {/* User Management */}
-          <Card className="bg-card border-border shadow-sm">
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle className="flex items-center gap-2">
-                    <Users className="h-5 w-5" />
-                    User Accounts
-                  </CardTitle>
-                  <CardDescription>Manage user access and roles</CardDescription>
-                </div>
-                <Dialog>
-                  <DialogTrigger asChild>
-                    <Button size="sm" className="gap-2">
-                      <Plus className="h-4 w-4" />
-                      Add User
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent>
-                    <DialogHeader>
-                      <DialogTitle>Create New User</DialogTitle>
-                      <DialogDescription>
-                        Add a new user to the system
-                      </DialogDescription>
-                    </DialogHeader>
-                    <div className="space-y-4 pt-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="user-name">Full Name</Label>
-                        <Input id="user-name" placeholder="John Doe" />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="user-email">Email</Label>
-                        <Input id="user-email" type="email" placeholder="john@maiin.com" />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Role</Label>
-                        <div className="flex gap-2">
-                          {Object.entries(roleConfig).map(([role, config]) => (
-                            <Button key={role} variant="outline" size="sm" className="flex-1">
-                              {config.label}
-                            </Button>
-                          ))}
-                        </div>
-                      </div>
-                      <Button className="w-full">Create User</Button>
-                    </div>
-                  </DialogContent>
-                </Dialog>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {users.map((user) => {
-                const roleConf = roleConfig[user.role]
-                return (
-                  <div 
-                    key={user.id}
-                    className="flex items-center gap-4 p-3 rounded-xl border border-border bg-secondary/50"
-                  >
-                    <div className={`h-10 w-10 rounded-full flex items-center justify-center ${roleConf.bg}`}>
-                      <span className={`text-sm font-semibold ${roleConf.color}`}>
-                        {user.name.split(" ").map(n => n[0]).join("")}
-                      </span>
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <h4 className="font-medium truncate">{user.name}</h4>
-                        <Badge className={`${roleConf.bg} ${roleConf.color} border-0`}>
-                          {roleConf.label}
-                        </Badge>
-                      </div>
-                      <p className="text-xs text-muted-foreground truncate">{user.email}</p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Badge variant={user.status === "active" ? "default" : "secondary"} className="text-xs">
-                        {user.status}
-                      </Badge>
-                      <Switch
-                        checked={user.status === "active"}
-                        onCheckedChange={() => toggleUserStatus(user.id)}
-                      />
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button variant="ghost" size="icon" className="h-8 w-8">
-                            <Edit className="h-4 w-4" />
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>Edit User</TooltipContent>
-                      </Tooltip>
-                    </div>
-                  </div>
-                )
-              })}
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Notification Settings */}
-        <Card className="bg-card border-border shadow-sm">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Bell className="h-5 w-5" />
-              Notification Settings
-            </CardTitle>
-            <CardDescription>Configure system alerts and notifications</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {[
-                { key: "aiAlerts", label: "AI Draft Alerts", description: "Get notified when new AI strategies are ready" },
-                { key: "syncAlerts", label: "Sync Alerts", description: "Notifications for data sync completion" },
-                { key: "securityAlerts", label: "Security Alerts", description: "Critical security and access notifications" },
-                { key: "weeklyReports", label: "Weekly Reports", description: "Receive weekly performance summaries" },
-                { key: "performanceAlerts", label: "Performance Alerts", description: "Alerts for KPI threshold breaches" },
-              ].map((setting) => (
-                <div 
-                  key={setting.key}
-                  className="flex items-start justify-between p-4 rounded-lg border border-border/50 bg-secondary/20"
-                >
-                  <div className="space-y-1">
-                    <Label htmlFor={setting.key} className="font-medium">{setting.label}</Label>
-                    <p className="text-xs text-muted-foreground">{setting.description}</p>
-                  </div>
-                  <Switch
-                    id={setting.key}
-                    checked={notifications[setting.key as keyof typeof notifications]}
-                    onCheckedChange={(checked) => setNotifications(prev => ({ ...prev, [setting.key]: checked }))}
-                  />
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* System Info */}
-        <Card className="bg-card border-border shadow-sm">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Database className="h-5 w-5" />
-              System Information
-            </CardTitle>
-            <CardDescription>Current system status and configuration</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              {[
-                { label: "System Version", value: "v2.4.1", status: "current" },
-                { label: "Database Status", value: "Connected", status: "success" },
-                { label: "API Uptime", value: "99.9%", status: "success" },
-                { label: "Last Backup", value: "2 hours ago", status: "current" },
-              ].map((info) => (
-                <div key={info.label} className="p-4 rounded-lg border border-border/50 bg-secondary/20">
-                  <p className="text-sm text-muted-foreground mb-1">{info.label}</p>
-                  <div className="flex items-center gap-2">
-                    {info.status === "success" ? (
-                      <CheckCircle2 className="h-4 w-4 text-primary" />
-                    ) : (
-                      <Info className="h-4 w-4 text-muted-foreground" />
-                    )}
-                    <span className="font-medium">{info.value}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-2xl font-bold">System Configuration</h1>
+        <p className="text-muted-foreground">Manage Gemini, Meta, database, machine learning, and user access settings.</p>
       </div>
-    </TooltipProvider>
+
+      {readOnlyNotice ? <BusinessErrorAlert title="Read-Only Access" message={readOnlyNotice} variant="info" /> : null}
+      {error ? <BusinessErrorAlert title="Action Failed" message={error} suggestion="Please try again." /> : null}
+
+      {isLoading ? (
+        <Card>
+          <CardContent className="flex min-h-[200px] items-center justify-center gap-2">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Loading system settings...
+          </CardContent>
+        </Card>
+      ) : (
+        <>
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <Card className="border-border/60 bg-card/90 shadow-sm">
+              <CardContent className="p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Gemini</p>
+                    <p className="mt-2 text-lg font-semibold">{summary?.integrations.aiConfigured ? "Connected" : "Offline"}</p>
+                    <p className="text-sm text-muted-foreground">{summary?.integrations.geminiModel || "No model configured"}</p>
+                  </div>
+                  <Badge variant={summary?.integrations.aiConfigured ? "default" : "secondary"} className="rounded-full px-3">
+                    AI
+                  </Badge>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="border-border/60 bg-card/90 shadow-sm">
+              <CardContent className="p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Meta</p>
+                    <p className="mt-2 text-lg font-semibold">{summary?.integrations.metaConfigured ? "Connected" : "Offline"}</p>
+                    <p className="text-sm text-muted-foreground">{summary?.integrations.metaGraphVersion || "No graph version"}</p>
+                  </div>
+                  <Badge variant={summary?.integrations.metaConfigured ? "default" : "secondary"} className="rounded-full px-3">
+                    API
+                  </Badge>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="border-border/60 bg-card/90 shadow-sm">
+              <CardContent className="p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Database</p>
+                    <p className="mt-2 text-lg font-semibold">{isDatabaseConnected ? "Connected" : "Error"}</p>
+                    <p className="text-sm text-muted-foreground">{summary?.database?.subtitle || "Error establishing database connection"}</p>
+                    <p className="mt-2 text-sm text-muted-foreground">{summary?.database?.name || "Unknown database"}</p>
+                  </div>
+                  <Badge variant={isDatabaseConnected ? "default" : "secondary"} className="rounded-full px-3">
+                    DB
+                  </Badge>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="border-border/60 bg-card/90 shadow-sm">
+              <CardContent className="p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Machine Learning</p>
+                    <p className="mt-2 text-lg font-semibold">{summary?.latestMlRun ? "Last running" : "Idle"}</p>
+                    <p className="text-sm text-muted-foreground">{latestMlLabel}</p>
+                  </div>
+                  <Badge variant={summary?.latestMlRun ? "default" : "secondary"} className="rounded-full px-3">
+                    ML
+                  </Badge>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          <div className="grid gap-6 xl:grid-cols-2">
+            <Card className="border-border/60 bg-card/90 shadow-sm">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Shield className="h-5 w-5" />
+                  Integration Configuration
+                </CardTitle>
+                <CardDescription>Editable secrets for IT Support only.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="rounded-2xl border border-border/60 bg-secondary/20 p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-medium">Gemini API Key</p>
+                      <p className="text-xs text-muted-foreground">Editable without env changes.</p>
+                    </div>
+                    <Badge variant={summary?.integrations.aiConfigured ? "default" : "secondary"} className="rounded-full px-3 py-1">
+                      {summary?.integrations.aiConfigured ? "Active" : "Inactive"}
+                    </Badge>
+                  </div>
+                  <div className="mt-4 grid gap-3 text-sm">
+                    <div className="space-y-2">
+                      <Label htmlFor="gemini-model">Model</Label>
+                      <Input
+                        id="gemini-model"
+                        value={integrationForm.geminiModel}
+                        onChange={(e) => setIntegrationForm((p) => ({ ...p, geminiModel: e.target.value }))}
+                        placeholder="gemini-1.5-flash"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="gemini-key">API Key</Label>
+                      <div className="flex gap-2">
+                        <Input
+                          id="gemini-key"
+                          type={showGeminiKey ? "text" : "password"}
+                          value={integrationForm.geminiApiKey}
+                          onChange={(e) => setIntegrationForm((p) => ({ ...p, geminiApiKey: e.target.value }))}
+                          placeholder="Paste Gemini API key"
+                        />
+                        <Button type="button" variant="outline" size="icon" onClick={() => setShowGeminiKey((v) => !v)} title={showGeminiKey ? "Hide Gemini API key" : "Show Gemini API key"}>
+                          {showGeminiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        </Button>
+                        <Button type="button" variant="secondary" size="icon" onClick={() => void copyText(integrationForm.geminiApiKey, "Gemini API key")} disabled={!hasGeminiSecret} title="Copy Gemini API key">
+                          <Copy className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-border/60 bg-secondary/20 p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-medium">Meta Credentials</p>
+                      <p className="text-xs text-muted-foreground">IG user id and access token.</p>
+                    </div>
+                    <Badge variant={summary?.integrations.metaConfigured ? "default" : "secondary"} className="rounded-full px-3 py-1">
+                      {summary?.integrations.metaConfigured ? "Active" : "Inactive"}
+                    </Badge>
+                  </div>
+                  <div className="mt-4 grid gap-3 text-sm">
+                    <div className="space-y-2">
+                      <Label htmlFor="meta-user-id">IG User ID</Label>
+                      <Input
+                        id="meta-user-id"
+                        value={integrationForm.metaIgUserId}
+                        onChange={(e) => setIntegrationForm((p) => ({ ...p, metaIgUserId: e.target.value }))}
+                        placeholder="Instagram business user id"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="meta-token">Access Token</Label>
+                      <div className="flex gap-2">
+                        <Input
+                          id="meta-token"
+                          type={showMetaToken ? "text" : "password"}
+                          value={integrationForm.metaAccessToken}
+                          onChange={(e) => setIntegrationForm((p) => ({ ...p, metaAccessToken: e.target.value }))}
+                          placeholder="Paste Meta access token"
+                        />
+                        <Button type="button" variant="outline" size="icon" onClick={() => setShowMetaToken((v) => !v)} title={showMetaToken ? "Hide Meta access token" : "Show Meta access token"}>
+                          {showMetaToken ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        </Button>
+                        <Button type="button" variant="secondary" size="icon" onClick={() => void copyText(integrationForm.metaAccessToken, "Meta access token")} disabled={!hasMetaSecret} title="Copy Meta access token">
+                          <Copy className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="meta-version">Graph Version</Label>
+                      <Input
+                        id="meta-version"
+                        value={integrationForm.metaGraphVersion}
+                        onChange={(e) => setIntegrationForm((p) => ({ ...p, metaGraphVersion: e.target.value }))}
+                        placeholder="v25.0"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap gap-2 pt-2">
+                  <Button className="gap-2" onClick={() => void saveIntegrations()} disabled={isSavingIntegrations}>
+                    {isSavingIntegrations ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                    Save Integration Settings
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="border-border/60 bg-card/90 shadow-sm">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Users className="h-5 w-5" />
+                  User Accounts
+                </CardTitle>
+                <CardDescription>Invite users and let them set their own password.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="invite-name">Full name</Label>
+                    <Input id="invite-name" value={inviteForm.name} onChange={(e) => setInviteForm((p) => ({ ...p, name: e.target.value }))} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="invite-email">Email</Label>
+                    <Input id="invite-email" type="email" value={inviteForm.email} onChange={(e) => setInviteForm((p) => ({ ...p, email: e.target.value }))} />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="invite-role">Role</Label>
+                  <select
+                    id="invite-role"
+                    value={inviteForm.role}
+                    onChange={(e) => setInviteForm((p) => ({ ...p, role: e.target.value as Role }))}
+                    className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  >
+                    <option value="operational">Marketing Operational</option>
+                    <option value="management">Management</option>
+                    <option value="it_support">IT Support</option>
+                  </select>
+                </div>
+                <Button className="gap-2" onClick={() => void createInvite()} disabled={isCreatingInvite}>
+                  {isCreatingInvite ? <Loader2 className="h-4 w-4 animate-spin" /> : <LinkIcon className="h-4 w-4" />}
+                  Create Invite
+                </Button>
+                {activationUrl ? (
+                  <div className="rounded-2xl border border-border/60 bg-secondary/20 p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Invite Status</p>
+                        <p className="mt-1 text-sm font-medium">{inviteStatus || "Activation email sent"}</p>
+                      </div>
+                      <Badge variant="secondary" className="rounded-full px-3 py-1">Sent</Badge>
+                    </div>
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      <Button type="button" variant="outline" size="sm" className="gap-2" onClick={() => void copyActivationUrl()} title="Copy activation link">
+                        {hasCopiedActivationUrl ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                        {hasCopiedActivationUrl ? "Copied" : "Copy link"}
+                      </Button>
+                      <Button type="button" variant="secondary" size="sm" className="gap-2" onClick={() => void resendActivationEmail()} disabled={isResendingInvite} title="Send email again">
+                        {isResendingInvite ? <Loader2 className="h-4 w-4 animate-spin" /> : <LinkIcon className="h-4 w-4" />}
+                        {isResendingInvite ? "Sending..." : "Resend email"}
+                      </Button>
+                    </div>
+                  </div>
+                ) : null}
+                <div className="space-y-2">
+                  {users.map((user) => (
+                    <div key={user.id} className="rounded-xl border bg-secondary/20 p-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <div>
+                          <p className="font-medium">{user.name}</p>
+                          <p className="text-sm text-muted-foreground">{user.email}</p>
+                        </div>
+                        <Badge variant="outline">{user.role}</Badge>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </>
+      )}
+    </div>
   )
 }

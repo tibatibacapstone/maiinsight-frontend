@@ -1,6 +1,7 @@
 "use client"
 
-import { useState } from "react"
+import { useState, type FormEvent } from "react"
+import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -22,7 +23,7 @@ export function LoginPage({ onSubmit, isLoading, error }: LoginPageProps) {
   const [password, setPassword] = useState("")
   const [showPassword, setShowPassword] = useState(false)
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
     await onSubmit(email, password)
   }
@@ -125,7 +126,7 @@ export function LoginPage({ onSubmit, isLoading, error }: LoginPageProps) {
             </CardTitle>
 
             <CardDescription>
-              Continue with your Google account or email
+              Continue with your account credentials or activate your invited account
             </CardDescription>
           </CardHeader>
 
@@ -185,7 +186,7 @@ export function LoginPage({ onSubmit, isLoading, error }: LoginPageProps) {
                 {error}
               </div>
             ) : null}
-            
+
             <form
               onSubmit={handleSubmit}
               className="space-y-4">
@@ -246,6 +247,16 @@ export function LoginPage({ onSubmit, isLoading, error }: LoginPageProps) {
               </Button>
 
             </form>
+
+            <div className="rounded-xl border border-border/60 bg-secondary/20 p-4 text-sm text-muted-foreground">
+              Got an activation link from IT Support? Open
+              {" "}
+              <Link href="/activate" className="font-medium text-foreground underline underline-offset-4">
+                the activation page
+              </Link>
+              {" "}
+              to set your password securely.
+            </div>
 
             {/* Footer */}
             <p className="text-center text-xs text-muted-foreground">

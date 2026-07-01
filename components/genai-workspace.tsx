@@ -1,441 +1,402 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
-import {
-  Sparkles,
   Bell,
-  RefreshCw,
-  Send,
-  Target,
-  TrendingUp,
-  CheckCircle2,
-  Clock,
+  Check,
   Copy,
-  Megaphone,
-  Gift,
+  Loader2,
+  MessageSquare,
+  RefreshCw,
   ShieldAlert,
-  Lock,
+  Sparkles,
 } from "lucide-react"
 
-interface StrategyCardType {
+import { BusinessErrorAlert } from "@/components/business-error-alert"
+import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog"
+import { getApiUrl } from "@/lib/api"
+import {
+  LOW_OCCUPANCY_OUTREACH_EVENT,
+  readLowOccupancyOutreachContext,
+  type LowOccupancyOutreachContext,
+} from "@/lib/low-occupancy-outreach"
+import { canAccessFeature, getAuthHeaders, getStoredRole, normalizeRole, type UserRole } from "@/lib/roles"
+
+interface NotificationItem {
   id: string
   title: string
-  objective: string
-  actionPlans: string[]
-  incentive: string
-  readyToUseLabel: string
-  readyToUseCopy: string
-  tone: string
-  channel: string
-  variant: "blue" | "pink"
+  message: string
+  createdAt?: string
+  relativeTime: string
+}
+
+interface AiStatusResponse {
+  success: boolean
+  data?: {
+    configured: boolean
+    provider: string
+    providerLabel: string
+    model: string | null
+    latestGenerationAt: string | null
+    setupMessage: string | null
+    suggestion: string | null
+  }
+  message?: string
+}
+
+interface StrategyPayload {
+  campaignObjective: string
+  targetCustomerGroup: string
+  customerReasoning: string
+  suggestedOffer: string
+  whatsappMessage: string
+  followUpPlan: string
+  expectedBusinessImpact: string
+  dataLimitation: string
+}
+
+interface NormalizedStrategyPayload {
+  provider: string
+  model: string
+  generatedAt: string
+  rawText?: string | null
+  technicalMessage?: string | null
+  strategy: StrategyPayload
+}
+
+interface StrategyResponse {
+  success: boolean
+  errorCode?: string
+  message?: string
+  suggestion?: string
+  technicalMessage?: string
+  provider?: string
+  model?: string
+  generatedAt?: string
+  rawText?: string | null
+  strategy?: StrategyPayload
+  data?: NormalizedStrategyPayload
+}
+
+interface StrategyFieldCardProps {
+  label: string
+  value: string
+  accent?: "blue" | "emerald" | "amber" | "rose" | "slate"
 }
 
 interface GenAIWorkspaceProps {
   userRole?: string | null
 }
 
-const venueTypes = ["All Venue", "Mini Soccer", "Basket"] as const
-type VenueType = (typeof venueTypes)[number]
-
-const targetSegments = ["Champions", "Loyal", "At Risk", "Potential"]
-
+const venueTypes = ["All Venue", "Mini Soccer", "Basketball"] as const
+const targetSegments = ["Prime Players", "Routine Players", "Growth Players", "Re-Engagement Players"]
 const campaignObjectives = [
   "Maximize Off-Peak Occupancy",
   "Drive Revenue Growth",
   "Boost Social Media Conversion",
   "Customer Reactivation & Retention",
 ]
-
 const incentiveFrameworks = [
   "Time-Based Discount",
   "Value-Added Services",
   "Loyalty Points Multiplier",
   "Fixed-Rate Bundling",
 ]
-
 const copywritingTones = [
-  "Casual & Community Hook (WhatsApp Blast)",
-  "Urgent & Catchy Promo (Instagram Ads)",
-  "Professional Corporate Tone (Email Newsletter)",
+  "Casual & Community Hook",
+  "Urgent Promo Tone",
+  "Professional Tone",
 ]
 
-const normalizeRole = (role?: string | null) => {
-  const value = role?.toLowerCase().trim()
-
-  if (value === "operational") return "operational"
-  if (value === "management") return "management"
-  if (value === "it" || value === "it_support" || value === "it support") {
-    return "it"
-  }
-
-  return value || "unknown"
+const getRelativeTime = (value?: string | null) => {
+  if (!value) return "Not generated yet"
+  const timestamp = new Date(value)
+  if (Number.isNaN(timestamp.getTime())) return "Not generated yet"
+  const diffMinutes = Math.floor((Date.now() - timestamp.getTime()) / 60000)
+  if (diffMinutes < 1) return "just now"
+  if (diffMinutes < 60) return `${diffMinutes} min ago`
+  const diffHours = Math.floor(diffMinutes / 60)
+  if (diffHours < 24) return `${diffHours} hour${diffHours === 1 ? "" : "s"} ago`
+  const diffDays = Math.floor(diffHours / 24)
+  return diffDays === 1 ? "yesterday" : `${diffDays} days ago`
 }
 
-const decodeJwtPayload = (token: string) => {
-  try {
-    const base64Url = token.split(".")[1]
+const formatExactDateTime = (value?: string | null) => {
+  if (!value) return "Not generated yet"
+  const timestamp = new Date(value)
+  if (Number.isNaN(timestamp.getTime())) return "Not generated yet"
 
-    if (!base64Url) return null
-
-    const base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/")
-    const jsonPayload = decodeURIComponent(
-      atob(base64)
-        .split("")
-        .map((char) => {
-          return `%${`00${char.charCodeAt(0).toString(16)}`.slice(-2)}`
-        })
-        .join("")
-    )
-
-    return JSON.parse(jsonPayload)
-  } catch {
-    return null
-  }
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).format(timestamp)
 }
 
-const getStoredUserRole = () => {
-  if (typeof window === "undefined") return null
+const mapCourtTypeToVenue = (courtType: string) => {
+  if (courtType === "mini_soccer") return "Mini Soccer"
+  if (courtType === "basketball") return "Basketball"
+  return "All Venue"
+}
 
-  const directRoleKeys = [
-    "maiinRole",
-    "role",
-    "userRole",
-    "maiinsight_role",
-  ]
+const accentStyles: Record<NonNullable<StrategyFieldCardProps["accent"]>, string> = {
+  blue: "border-sky-200 bg-sky-50/80 text-sky-800",
+  emerald: "border-emerald-200 bg-emerald-50/80 text-emerald-800",
+  amber: "border-amber-200 bg-amber-50/80 text-amber-800",
+  rose: "border-rose-200 bg-rose-50/80 text-rose-800",
+  slate: "border-slate-200 bg-slate-50/80 text-slate-800",
+}
 
-  for (const key of directRoleKeys) {
-    const role = localStorage.getItem(key)
-
-    if (role) return role
-  }
-
-  const userStorageKeys = [
-    "maiinUser",
-    "user",
-    "authUser",
-    "currentUser",
-    "maiinsight_user",
-  ]
-
-  for (const key of userStorageKeys) {
-    const rawValue = localStorage.getItem(key)
-
-    if (!rawValue) continue
-
-    try {
-      const parsed = JSON.parse(rawValue)
-
-      if (parsed?.role) return parsed.role
-      if (parsed?.user?.role) return parsed.user.role
-    } catch {
-      continue
-    }
-  }
-
-  const tokenStorageKeys = [
-    "maiinToken",
-    "token",
-    "accessToken",
-    "authToken",
-    "maiinsight_token",
-  ]
-
-  for (const key of tokenStorageKeys) {
-    const token = localStorage.getItem(key)
-
-    if (!token) continue
-
-    const payload = decodeJwtPayload(token)
-
-    if (payload?.role) return payload.role
-  }
-
-  return null
+function StrategyFieldCard({ label, value, accent = "slate" }: StrategyFieldCardProps) {
+  return (
+    <div className={`group rounded-2xl border p-4 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md ${accentStyles[accent]}`}>
+      <p className="text-xs font-semibold uppercase tracking-[0.14em] opacity-80">{label}</p>
+      <p className="mt-2 text-sm leading-6 text-slate-900">{value}</p>
+    </div>
+  )
 }
 
 export function GenAIWorkspace({ userRole: userRoleFromProps }: GenAIWorkspaceProps) {
-  const [storedUserRole, setStoredUserRole] = useState<string | null>(null)
-  const [isRoleReady, setIsRoleReady] = useState(false)
+  const [storedUserRole, setStoredUserRole] = useState<UserRole | null>(null)
+  const [workspaceMode, setWorkspaceMode] = useState<"general" | "outreach">("general")
+  const [outreachContext, setOutreachContext] = useState<LowOccupancyOutreachContext | null>(null)
+  const [selectedVenueType, setSelectedVenueType] = useState<(typeof venueTypes)[number]>("All Venue")
+  const [selectedSegment, setSelectedSegment] = useState("Re-Engagement Players")
+  const [selectedObjective, setSelectedObjective] = useState("Maximize Off-Peak Occupancy")
+  const [selectedIncentive, setSelectedIncentive] = useState("Value-Added Services")
+  const [selectedTone, setSelectedTone] = useState("Casual & Community Hook")
+  const [aiStatus, setAiStatus] = useState<AiStatusResponse["data"] | null>(null)
+  const [strategy, setStrategy] = useState<NormalizedStrategyPayload | null>(null)
+  const [alerts, setAlerts] = useState<NotificationItem[]>([])
+  const [alertsOpen, setAlertsOpen] = useState(false)
+  const [copiedField, setCopiedField] = useState<string | null>(null)
+  const [isLoadingStatus, setIsLoadingStatus] = useState(true)
   const [isGenerating, setIsGenerating] = useState(false)
-  const [accessMessage, setAccessMessage] = useState("")
+  const [error, setError] = useState<{ message: string; suggestion?: string | null; technical?: string | null } | null>(null)
 
   useEffect(() => {
-    if (userRoleFromProps) {
-      setStoredUserRole(userRoleFromProps)
-    } else {
-      setStoredUserRole(getStoredUserRole())
-    }
-
-    setIsRoleReady(true)
+    setStoredUserRole(normalizeRole(userRoleFromProps) || getStoredRole())
   }, [userRoleFromProps])
 
-  const activeRole = userRoleFromProps || storedUserRole
-  const normalizedRole = normalizeRole(activeRole)
+  useEffect(() => {
+    const applyContext = (context: LowOccupancyOutreachContext | null) => {
+      if (!context) return
+      setOutreachContext(context)
+      setWorkspaceMode("outreach")
+      setSelectedVenueType(mapCourtTypeToVenue(context.courtType))
+      if (context.rfmSegmentName) {
+        setSelectedSegment(context.rfmSegmentName)
+      }
+      setSelectedTone("Casual & Community Hook")
+    }
 
-  const isAdmin = normalizedRole === "operational"
-  const isManagement = normalizedRole === "management"
-  const isIT = normalizedRole === "it"
+    applyContext(readLowOccupancyOutreachContext())
+    const handleContextEvent = (event: Event) => applyContext((event as CustomEvent<LowOccupancyOutreachContext>).detail)
+    window.addEventListener(LOW_OCCUPANCY_OUTREACH_EVENT, handleContextEvent)
+    return () => window.removeEventListener(LOW_OCCUPANCY_OUTREACH_EVENT, handleContextEvent)
+  }, [])
 
-  const canViewPage = isAdmin || isIT
-  const canGenerateAi = isAdmin
+  const activeRole = userRoleFromProps ? normalizeRole(userRoleFromProps) : storedUserRole
+  const canViewPage = Boolean(activeRole && activeRole !== "management")
+  const canGenerateAi = canAccessFeature(activeRole, "generateAiStrategy")
+  const canViewTechnicalDetails = activeRole === "it_support"
 
-  const [selectedVenueType, setSelectedVenueType] =
-    useState<VenueType>("All Venue")
 
-  const [selectedSegment, setSelectedSegment] = useState("At Risk")
-  const [selectedObjective, setSelectedObjective] = useState(
-    "Maximize Off-Peak Occupancy"
-  )
-  const [selectedIncentive, setSelectedIncentive] =
-    useState("Value-Added Services")
-  const [selectedTone, setSelectedTone] = useState(
-    "Casual & Community Hook (WhatsApp Blast)"
-  )
-
-  const [aiSummary, setAiSummary] = useState(
-    "At Risk customers show declining visit frequency and need reactivation before becoming dormant. Maximizing off-peak occupancy with value-added services through WhatsApp Blast can help redirect them into empty weekday slots with a cost-efficient strategy."
-  )
-
-  const [strategyCards, setStrategyCards] = useState<StrategyCardType[]>([
-    {
-      id: "1",
-      title: "Mid-Week Customer Reactivation Push",
-      objective: "Re-engage At Risk customers during weekday off-peak hours",
-      actionPlans: [
-        "Send WhatsApp reminder to inactive customers.",
-        "Promote limited weekday booking slots.",
-        "Highlight added-value benefits instead of heavy discounting.",
-      ],
-      incentive: "FREE mineral water + priority booking reminder",
-      readyToUseLabel: "WhatsApp Blast Ready-To-Use",
-      readyToUseCopy:
-        "Hi! Udah lama nggak main di Maiin Gandaria 👋 Yuk balik lagi dan nikmatin weekday special bonus untuk booking di jam sepi. Slot terbatas, langsung booking sekarang ya!",
-      tone: "Casual",
-      channel: "WhatsApp Blast",
-      variant: "blue",
-    },
-    {
-      id: "2",
-      title: "Retention Booster for Repeat Booking",
-      objective: "Strengthen repeat booking habit and improve short-term retention",
-      actionPlans: [
-        "Offer reactivation package for repeat visits.",
-        "Encourage booking confirmation before the weekend.",
-        "Use reminder-based communication for faster conversion.",
-      ],
-      incentive: "Book 3 sessions, get added value on next session",
-      readyToUseLabel: "Instagram / Promo Copy Ready-To-Use",
-      readyToUseCopy:
-        "Balik main minggu ini dan dapetin benefit spesial buat kamu yang udah lama nggak booking 🔥 Jangan tunggu slot favorit penuh. Amankan sesi kamu sekarang!",
-      tone: "Catchy",
-      channel: "Instagram Ads",
-      variant: "pink",
-    },
-  ])
-
-  const alerts = [
-    {
-      id: 1,
-      message: "New AI draft ready: Holiday Season Strategy",
-      time: "5 min ago",
-      unread: true,
-    },
-    {
-      id: 2,
-      message: "Campaign performance update available",
-      time: "1 hour ago",
-      unread: true,
-    },
-  ]
-
-  const copyToClipboard = async (text: string) => {
+  const loadWorkspaceStatus = async () => {
     try {
-      await navigator.clipboard.writeText(text)
-      alert("Copied to clipboard!")
-    } catch {
-      alert("Failed to copy")
+      setIsLoadingStatus(true)
+      setError(null)
+
+      const [statusResponse, alertsResponse] = await Promise.all([
+        fetch(getApiUrl("/ai-strategy/status"), {
+          method: "GET",
+          headers: getAuthHeaders(),
+          cache: "no-store",
+        }),
+        fetch(getApiUrl("/operations/notifications"), {
+          method: "GET",
+          headers: getAuthHeaders(),
+          cache: "no-store",
+        }),
+      ])
+
+      const statusResult: AiStatusResponse | null = await statusResponse.json().catch(() => null)
+      const alertsResult = await alertsResponse.json().catch(() => null)
+
+      if (!statusResponse.ok || !statusResult?.success || !statusResult.data) {
+        throw new Error(statusResult?.message || "AI strategy status could not be loaded.")
+      }
+
+      setAiStatus(statusResult.data)
+
+      const aiAlerts = Array.isArray(alertsResult?.data)
+        ? (alertsResult.data as NotificationItem[])
+            .filter((item) => `${item.title} ${item.message}`.toLowerCase().includes("ai"))
+            .slice(0, 6)
+        : []
+
+      setAlerts(aiAlerts)
+    } catch (loadError) {
+      setAiStatus(null)
+      setAlerts([])
+      setError({
+        message: loadError instanceof Error ? loadError.message : "AI strategy status could not be loaded.",
+        suggestion: "Please try again or contact IT Support if the issue continues.",
+      })
+    } finally {
+      setIsLoadingStatus(false)
     }
   }
 
-  const buildAiSummary = () => {
-    const segmentMap: Record<string, string> = {
-      Champions:
-        "Champions are high-value customers with strong loyalty, strong recency, and high transaction value.",
-      Loyal:
-        "Loyal customers are consistent repeat visitors and can be nurtured into stronger premium behavior.",
-      "At Risk":
-        "At Risk customers show declining visit frequency and need reactivation before becoming dormant.",
-      Potential:
-        "Potential customers already show interest and can be pushed into more frequent repeat bookings.",
+  useEffect(() => {
+    if (!canViewPage) return
+    void loadWorkspaceStatus()
+  }, [canViewPage])
+
+  const requestPayload = useMemo(() => {
+    if (workspaceMode === "outreach" && outreachContext) {
+      return {
+        selected_filters: {
+          mode: "low_occupancy_outreach",
+          venue: selectedVenueType,
+          segmentName: outreachContext.rfmSegmentName || selectedSegment,
+          campaignObjective: selectedObjective,
+          copyTone: selectedTone,
+          slotTimeLabel: outreachContext.slotTimeLabel || null,
+        },
+        customer_segment_summary: {
+          targetPriorityLabel: outreachContext.targetPriorityLabel,
+          targetPriorityScore: outreachContext.targetPriorityScore,
+          customerTypeLabel: outreachContext.customerTypeLabel,
+          selectedSessionBookingCount: outreachContext.selectedSessionBookingCount,
+        },
+        business_context: {
+          date: outreachContext.date,
+          sessionName: outreachContext.sessionName,
+          sessionStartHour: outreachContext.sessionStartHour || null,
+          sessionEndHour: outreachContext.sessionEndHour || null,
+          slotTimeLabel: outreachContext.slotTimeLabel || null,
+          courtType: outreachContext.courtType,
+          suggestedAction: outreachContext.suggestedAction,
+          lowOccupancyTargeting: true,
+        },
+        promotion_context: {
+          incentiveFramework: selectedIncentive,
+          copywritingTone: selectedTone,
+        },
+        recommended_customer_context: {
+          customerLabel: outreachContext.customerTypeLabel,
+          targetPriorityLabel: outreachContext.targetPriorityLabel,
+        },
+      }
     }
 
-    const objectiveMap: Record<string, string> = {
-      "Maximize Off-Peak Occupancy":
-        "The immediate business goal is to fill empty off-peak slots and improve utilization during low-demand periods.",
-      "Drive Revenue Growth":
-        "The priority is to increase transaction value and overall revenue contribution from targeted customers.",
-      "Boost Social Media Conversion":
-        "The campaign should convert digital attention into real booking actions and stronger response rates.",
-      "Customer Reactivation & Retention":
-        "The strategy should bring customers back and improve their likelihood of repeat visits over time.",
+    return {
+      selected_filters: {
+        mode: "general_strategy",
+        venue: selectedVenueType,
+        segmentName: selectedSegment,
+        campaignObjective: selectedObjective,
+      },
+      customer_segment_summary: {
+        segmentName: selectedSegment,
+      },
+      business_context: {
+        venueType: selectedVenueType,
+        objective: selectedObjective,
+      },
+      promotion_context: {
+        incentiveFramework: selectedIncentive,
+        copywritingTone: selectedTone,
+      },
     }
-
-    const incentiveMap: Record<string, string> = {
-      "Time-Based Discount":
-        "A time-based discount can create urgency and redirect traffic into less crowded hours.",
-      "Value-Added Services":
-        "Value-added services offer a cost-efficient way to increase perceived value without reducing price too much.",
-      "Loyalty Points Multiplier":
-        "A loyalty points multiplier can motivate repeat bookings and reinforce retention behavior.",
-      "Fixed-Rate Bundling":
-        "Fixed-rate bundling can simplify the offer and encourage higher booking commitment.",
-    }
-
-    const toneMap: Record<string, string> = {
-      "Casual & Community Hook (WhatsApp Blast)":
-        "A casual and community-driven WhatsApp message is suitable to create a direct and warm engagement tone.",
-      "Urgent & Catchy Promo (Instagram Ads)":
-        "A more urgent and catchy Instagram-style promo is suitable to drive fast attention and action.",
-      "Professional Corporate Tone (Email Newsletter)":
-        "A professional email-based tone works well for more structured communication and formal audiences.",
-    }
-
-    const venueText =
-      selectedVenueType === "All Venue" ? "all venue types" : selectedVenueType
-
-    return `${selectedSegment} segment analysis for ${venueText}: ${segmentMap[selectedSegment]} ${objectiveMap[selectedObjective]} ${incentiveMap[selectedIncentive]} ${toneMap[selectedTone]}`
-  }
-
-  const generateStrategyCards = () => {
-    const titleMap: Record<string, string> = {
-      Champions: "Premium Loyalty Activation",
-      Loyal: "Repeat Visit Growth Plan",
-      "At Risk": "Customer Reactivation Push",
-      Potential: "Conversion Uplift Campaign",
-    }
-
-    const objectiveDetailMap: Record<string, string> = {
-      "Maximize Off-Peak Occupancy": "Occupancy boost on off-peak hours",
-      "Drive Revenue Growth": "Revenue uplift through targeted monetization",
-      "Boost Social Media Conversion":
-        "Higher social engagement-to-booking conversion",
-      "Customer Reactivation & Retention":
-        "Repeat booking improvement and customer recovery",
-    }
-
-    const incentiveDetailMap: Record<string, string> = {
-      "Time-Based Discount": "10% weekday discount for selected hours",
-      "Value-Added Services":
-        "FREE mineral water / vest rental / added-value bonus",
-      "Loyalty Points Multiplier": "2x loyalty points for selected bookings",
-      "Fixed-Rate Bundling": "Buy multi-session bundle with better fixed rate",
-    }
-
-    const readyToUseLabelMap: Record<string, string> = {
-      "Casual & Community Hook (WhatsApp Blast)":
-        "WhatsApp Blast Ready-To-Use",
-      "Urgent & Catchy Promo (Instagram Ads)":
-        "Instagram Ads Ready-To-Use",
-      "Professional Corporate Tone (Email Newsletter)":
-        "Email Newsletter Ready-To-Use",
-    }
-
-    const readyToUseCopyMap: Record<string, string> = {
-      "Casual & Community Hook (WhatsApp Blast)": `Hai ${selectedSegment} customers 👋 Lagi cari waktu main yang lebih santai di ${selectedVenueType}? Yuk manfaatkan slot weekday dengan benefit spesial dari Maiin Gandaria. Booking sekarang sebelum slot-nya penuh ya!`,
-      "Urgent & Catchy Promo (Instagram Ads)": `Jangan sampai kelewatan! 🔥 Promo spesial untuk ${selectedSegment} customers di ${selectedVenueType} lagi aktif sekarang. Booking sesi kamu hari ini dan nikmatin benefit eksklusif sebelum habis!`,
-      "Professional Corporate Tone (Email Newsletter)": `Dear Customer, we are pleased to offer a tailored booking strategy for our ${selectedSegment} segment at ${selectedVenueType}. Enjoy selected benefits and preferred session opportunities designed to improve your playing experience with Maiin Gandaria.`,
-    }
-
-    const secondaryCopyMap: Record<string, string> = {
-      "Casual & Community Hook (WhatsApp Blast)":
-        "Udah siap balik main lagi? Ada benefit spesial buat kamu kalau booking di jam tertentu minggu ini 🙌 Cocok buat yang mau main lebih hemat tapi tetap nyaman.",
-      "Urgent & Catchy Promo (Instagram Ads)":
-        "Slot terbatas! ⏰ Benefit spesial untuk booking minggu ini siap kamu klaim sekarang juga. Jangan tunggu sampai kehabisan.",
-      "Professional Corporate Tone (Email Newsletter)":
-        "We would like to invite you to take advantage of this limited campaign opportunity, designed to support repeat booking and higher customer value.",
-    }
-
-    const primaryCard: StrategyCardType = {
-      id: "1",
-      title: `${titleMap[selectedSegment]} - Primary Strategy`,
-      objective: `${objectiveDetailMap[selectedObjective]} for ${selectedVenueType}`,
-      actionPlans: [
-        `Target ${selectedSegment} customers with focused outreach.`,
-        `Prioritize campaign for ${selectedVenueType}.`,
-        `Align campaign message with objective: ${selectedObjective}.`,
-        `Push preferred booking window based on current business priority.`,
-      ],
-      incentive: incentiveDetailMap[selectedIncentive],
-      readyToUseLabel: readyToUseLabelMap[selectedTone],
-      readyToUseCopy: readyToUseCopyMap[selectedTone],
-      tone: selectedTone,
-      channel: selectedTone,
-      variant: "blue",
-    }
-
-    const secondaryCard: StrategyCardType = {
-      id: "2",
-      title: `${titleMap[selectedSegment]} - Supporting Strategy`,
-      objective: `Support ${objectiveDetailMap[
-        selectedObjective
-      ].toLowerCase()} through follow-up communication`,
-      actionPlans: [
-        `Send reminder campaign to improve response rate.`,
-        `Reinforce incentive using clear CTA and benefit framing.`,
-        `Monitor booking response and retarget non-converted customers.`,
-      ],
-      incentive: incentiveDetailMap[selectedIncentive],
-      readyToUseLabel: `${readyToUseLabelMap[selectedTone]} Alternative Copy`,
-      readyToUseCopy: secondaryCopyMap[selectedTone],
-      tone: selectedTone,
-      channel: selectedTone,
-      variant: "pink",
-    }
-
-    return [primaryCard, secondaryCard]
-  }
+  }, [outreachContext, selectedIncentive, selectedObjective, selectedSegment, selectedTone, selectedVenueType, workspaceMode])
 
   const handleGenerateStrategy = async () => {
-    setAccessMessage("")
-
     if (!canGenerateAi) {
-      setAccessMessage("Access denied. Only Marketing Operational and IT Support can generate AI strategy.")
+      setError({
+        message: "AI strategy generation is available to Marketing Operational and IT Support only.",
+        suggestion: "Please sign in with a Marketing Operational or IT Support account.",
+      })
       return
     }
 
-    setIsGenerating(true)
+    try {
+      setIsGenerating(true)
+      setError(null)
 
-    await new Promise((resolve) => setTimeout(resolve, 1000))
+      const response = await fetch(getApiUrl("/ai-strategy/generate"), {
+        method: "POST",
+        headers: {
+          ...getAuthHeaders(),
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(requestPayload),
+      })
 
-    const summary = buildAiSummary()
-    const cards = generateStrategyCards()
+      const result: StrategyResponse | null = await response.json().catch(() => null)
+      const normalizedResult = result?.data || (result?.strategy && result?.provider && result?.generatedAt
+        ? {
+            provider: result.provider,
+            model: result.model || "",
+            generatedAt: result.generatedAt,
+            rawText: result.rawText || null,
+            technicalMessage: result.technicalMessage || null,
+            strategy: result.strategy,
+          }
+        : null)
 
-    setAiSummary(summary)
-    setStrategyCards(cards)
-    setIsGenerating(false)
+      if (!response.ok || !result?.success || !normalizedResult?.strategy) {
+        setStrategy(null)
+        setError({
+          message: result?.message || "AI strategy could not be generated.",
+          suggestion: result?.suggestion || "Please try again or contact IT Support if the issue continues.",
+          technical: result?.technicalMessage || null,
+        })
+        return
+      }
+
+      setStrategy(normalizedResult)
+      await loadWorkspaceStatus()
+    } catch (generationError) {
+      setStrategy(null)
+      setError({
+        message: "AI strategy could not be generated.",
+        suggestion: "Please try again or contact IT Support if the issue continues.",
+        technical: generationError instanceof Error ? generationError.message : null,
+      })
+    } finally {
+      setIsGenerating(false)
+    }
   }
 
-  if (!isRoleReady) {
-    return (
-      <div className="flex min-h-[60vh] items-center justify-center">
-        <div className="text-center">
-          <RefreshCw className="mx-auto mb-3 h-6 w-6 animate-spin text-muted-foreground" />
-          <p className="text-sm text-muted-foreground">Checking access...</p>
-        </div>
-      </div>
-    )
+  const handleCopy = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopiedField(text)
+      window.setTimeout(() => setCopiedField((current) => (current === text ? null : current)), 1400)
+    } catch {
+      setError({
+        message: "The generated text could not be copied automatically.",
+        suggestion: "Please copy the text manually and try again.",
+      })
+    }
   }
 
-  if (!canViewPage || isManagement) {
+  if (!canViewPage) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center">
         <Card className="max-w-md border-red-200 bg-red-50">
@@ -443,15 +404,8 @@ export function GenAIWorkspace({ userRole: userRoleFromProps }: GenAIWorkspacePr
             <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-red-100">
               <ShieldAlert className="h-6 w-6 text-red-600" />
             </div>
-
-            <h2 className="mb-2 text-xl font-bold text-red-700">
-              Access Denied
-            </h2>
-
-            <p className="text-sm text-red-600">
-              Management role cannot access GenAI Workspace. This page is only
-              available for Admin and IT.
-            </p>
+            <h2 className="mb-2 text-xl font-bold text-red-700">Access Denied</h2>
+            <p className="text-sm text-red-600">GenAI Workspace is available to Marketing Operational and IT Support only.</p>
           </CardContent>
         </Card>
       </div>
@@ -459,413 +413,287 @@ export function GenAIWorkspace({ userRole: userRoleFromProps }: GenAIWorkspacePr
   }
 
   return (
-    <div className="space-y-7">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+    <div className="space-y-6">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div>
-          <h1 className="text-3xl font-bold">GenAI Strategy Workspace</h1>
-
-          <p className="text-base text-muted-foreground">
-            AI-powered marketing operational and business strategies
-          </p>
+          <h1 className="text-2xl font-semibold tracking-tight">AI Strategy Assistant</h1>
+          <p className="text-sm text-muted-foreground">Generate business-ready campaign strategy, outreach copy, and follow-up actions from MaiinSight context.</p>
         </div>
-
-        <Button variant="outline" size="sm" className="gap-2 text-sm">
-          <Bell className="h-4 w-4" />
-          Alerts
-          <Badge className="ml-1 flex h-5 w-5 items-center justify-center rounded-full p-0 text-xs">
-            {alerts.filter((alert) => alert.unread).length}
-          </Badge>
-        </Button>
-      </div>
-
-      {isIT && (
-        <Card className="border-amber-200 bg-amber-50">
-          <CardContent className="flex items-start gap-3 p-5">
-            <Lock className="mt-1 h-5 w-5 text-amber-600" />
-
-            <div>
-              <h3 className="font-semibold text-amber-800">
-                Limited Access for IT Role
-              </h3>
-
-              <p className="text-sm text-amber-700">
-                You can view this page, but Generate AI Strategy and Refresh
-                Strategy are disabled for IT role.
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {accessMessage && (
-        <Card className="border-red-200 bg-red-50">
-          <CardContent className="p-4">
-            <p className="text-sm text-red-600">{accessMessage}</p>
-          </CardContent>
-        </Card>
-      )}
-
-      <Card className="border-primary/20 bg-primary/5">
-        <CardContent className="py-5">
-          <div className="flex items-start gap-4">
-            <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-primary/10">
-              <Sparkles className="h-5 w-5 text-primary" />
-            </div>
-
-            <div className="flex-1">
-              <h3 className="text-lg font-semibold text-primary">
-                AI Draft Ready
-              </h3>
-
-              <p className="text-base text-muted-foreground">
-                {alerts[0].message}
-              </p>
-            </div>
-
-            <Badge
-              variant="outline"
-              className="border-primary/30 text-sm text-primary"
-            >
-              {alerts[0].time}
-            </Badge>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card className="border-border bg-card shadow-sm">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-xl">
-            <Sparkles className="h-5 w-5 text-primary" />
-            AI Strategy Configuration
-          </CardTitle>
-
-          <CardDescription className="text-base">
-            Choose campaign parameters to generate a data-driven strategy
-          </CardDescription>
-        </CardHeader>
-
-        <CardContent className="space-y-5">
-          <div className="grid max-w-full grid-cols-[180px_220px_280px_280px_320px] items-end gap-x-4 gap-y-5">
-            <div className="min-w-0 space-y-2">
-              <label className="text-base font-semibold">1. Venue Type</label>
-
-              <select
-                value={selectedVenueType}
-                onChange={(event) =>
-                  setSelectedVenueType(event.target.value as VenueType)
-                }
-                className="w-full rounded-xl border border-border bg-background px-4 py-3 text-base shadow-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
-              >
-                {venueTypes.map((venue) => (
-                  <option key={venue} value={venue}>
-                    {venue}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="min-w-0 space-y-2">
-              <label className="text-base font-semibold">
-                2. Target Customer Segment
-              </label>
-
-              <select
-                value={selectedSegment}
-                onChange={(event) => setSelectedSegment(event.target.value)}
-                className="w-full rounded-xl border border-border bg-background px-4 py-3 text-base shadow-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
-              >
-                {targetSegments.map((segment) => (
-                  <option key={segment} value={segment}>
-                    {segment}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="min-w-0 space-y-2">
-              <label className="text-base font-semibold">
-                3. Campaign Objective
-              </label>
-
-              <select
-                value={selectedObjective}
-                onChange={(event) => setSelectedObjective(event.target.value)}
-                className="w-full rounded-xl border border-border bg-background px-4 py-3 text-base shadow-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
-              >
-                {campaignObjectives.map((objective) => (
-                  <option key={objective} value={objective}>
-                    {objective}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="min-w-0 space-y-2">
-              <label className="text-base font-semibold">
-                4. Incentive & Promo Framework
-              </label>
-
-              <select
-                value={selectedIncentive}
-                onChange={(event) => setSelectedIncentive(event.target.value)}
-                className="w-full rounded-xl border border-border bg-background px-4 py-3 text-base shadow-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
-              >
-                {incentiveFrameworks.map((incentive) => (
-                  <option key={incentive} value={incentive}>
-                    {incentive}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="min-w-0 space-y-2">
-              <label className="text-base font-semibold">
-                5. Copywriting Tone & Channel
-              </label>
-
-              <select
-                value={selectedTone}
-                onChange={(event) => setSelectedTone(event.target.value)}
-                className="w-full rounded-xl border border-border bg-background px-4 py-3 text-base shadow-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
-              >
-                {copywritingTones.map((tone) => (
-                  <option key={tone} value={tone}>
-                    {tone}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-3">
-            <Button
-              onClick={handleGenerateStrategy}
-              disabled={!canGenerateAi || isGenerating}
-              className="gap-2 text-base">
-              {isGenerating ? (
-                <>
-                  <RefreshCw className="h-4 w-4 animate-spin" />
-                  Generating...
-                </>
+        <Dialog open={alertsOpen} onOpenChange={setAlertsOpen}>
+          <DialogTrigger asChild>
+            <Button variant="outline" className="gap-2">
+              <Bell className="h-4 w-4" />
+              Alerts
+              {alerts.length > 0 ? <Badge>{alerts.length}</Badge> : null}
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="max-h-[80vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>AI Strategy Alerts</DialogTitle>
+              <DialogDescription>Recent AI strategy generation notifications and assistant activity.</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-3">
+              {alerts.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
+                  No AI alerts yet.
+                </div>
               ) : (
-                <>
-                  <Send className="h-4 w-4" />
-                  Generate AI Strategy
-                </>
+                alerts.map((alert) => (
+                  <div key={alert.id} className="rounded-xl border border-border bg-secondary/20 p-4">
+                    <p className="font-medium">{alert.title}</p>
+                    <p className="mt-1 text-sm text-muted-foreground">{alert.message}</p>
+                    <p className="mt-2 text-xs text-muted-foreground">{alert.relativeTime}</p>
+                  </div>
+                ))
               )}
-            </Button>
-
-            <Button
-              variant="outline"
-              onClick={handleGenerateStrategy}
-              disabled={!canGenerateAi || isGenerating}
-              className="gap-2 text-base"
-            >
-              <RefreshCw className="h-4 w-4" />
-              Refresh Strategy
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-
-      <div className="grid gap-6 lg:grid-cols-3">
-        <Card className="border-orange-200 bg-orange-50 shadow-sm lg:col-span-2">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-lg">
-              <Sparkles className="h-5 w-5 text-orange-600" />
-              AI Executive Analysis: Data-Driven Insight
-            </CardTitle>
-
-            <CardDescription className="text-base">
-              Generated summary based on selected strategy filters
-            </CardDescription>
-          </CardHeader>
-
-          <CardContent>
-            <p className="text-base leading-relaxed text-slate-700">
-              {aiSummary}
-            </p>
-
-            <div className="mt-4 flex flex-wrap gap-2">
-              <Badge variant="secondary" className="text-sm">
-                {selectedVenueType}
-              </Badge>
-
-              <Badge variant="secondary" className="text-sm">
-                {selectedSegment}
-              </Badge>
-
-              <Badge variant="secondary" className="text-sm">
-                {selectedObjective}
-              </Badge>
-
-              <Badge variant="secondary" className="text-sm">
-                {selectedIncentive}
-              </Badge>
-
-              <Badge variant="secondary" className="text-sm">
-                {selectedTone}
-              </Badge>
             </div>
-          </CardContent>
-        </Card>
-
-        <Card className="border-border bg-card shadow-sm">
-          <CardHeader>
-            <CardTitle className="text-xl">AI Performance</CardTitle>
-
-            <CardDescription className="text-base">
-              Strategy generation metrics
-            </CardDescription>
-          </CardHeader>
-
-          <CardContent className="space-y-4">
-            <div className="flex items-center justify-between rounded-lg bg-secondary/30 p-4">
-              <div className="flex items-center gap-3">
-                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10">
-                  <Target className="h-4 w-4 text-primary" />
-                </div>
-
-                <span className="text-base">Strategies Generated</span>
-              </div>
-
-              <span className="text-lg font-bold">24</span>
-            </div>
-
-            <div className="flex items-center justify-between rounded-lg bg-secondary/30 p-4">
-              <div className="flex items-center gap-3">
-                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-chart-1/10">
-                  <CheckCircle2 className="h-4 w-4 text-chart-1" />
-                </div>
-
-                <span className="text-base">Deployed</span>
-              </div>
-
-              <span className="text-lg font-bold">18</span>
-            </div>
-
-            <div className="flex items-center justify-between rounded-lg bg-secondary/30 p-4">
-              <div className="flex items-center gap-3">
-                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-chart-3/10">
-                  <TrendingUp className="h-4 w-4 text-chart-3" />
-                </div>
-
-                <span className="text-base">Avg. Accuracy</span>
-              </div>
-
-              <span className="text-lg font-bold">84%</span>
-            </div>
-
-            <div className="flex items-center justify-between rounded-lg bg-secondary/30 p-4">
-              <div className="flex items-center gap-3">
-                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-chart-2/10">
-                  <Clock className="h-4 w-4 text-chart-2" />
-                </div>
-
-                <span className="text-base">Pending Review</span>
-              </div>
-
-              <span className="text-lg font-bold">3</span>
-            </div>
-          </CardContent>
-        </Card>
+          </DialogContent>
+        </Dialog>
       </div>
 
-      <Card className="border-border bg-card shadow-sm">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-xl">
-            <Megaphone className="h-5 w-5 text-primary" />
-            Strategy Cards
-          </CardTitle>
+      {error ? (
+        <BusinessErrorAlert
+          title="AI Strategy Assistant"
+          message={error.message}
+          suggestion={error.suggestion}
+          technicalDetails={error.technical}
+          showTechnicalDetails={canViewTechnicalDetails}
+        />
+      ) : null}
 
-          <CardDescription className="text-base">
-            AI-generated action plans based on selected strategy inputs
-          </CardDescription>
-        </CardHeader>
-
-        <CardContent>
-          <div className="grid gap-6 lg:grid-cols-2">
-            {strategyCards.map((card) => {
-              const isBlue = card.variant === "blue"
-
-              return (
-                <div
-                  key={card.id}
-                  className={`rounded-2xl border p-5 shadow-sm ${
-                    isBlue
-                      ? "border-sky-200 bg-sky-50"
-                      : "border-pink-200 bg-pink-50"
-                  }`}
-                >
-                  <div className="space-y-4">
-                    <div>
-                      <h3 className="text-xl font-bold text-slate-900">
-                        {card.title}
-                      </h3>
-
-                      <p className="mt-1 text-base text-slate-700">
-                        <span className="font-semibold">Objective:</span>{" "}
-                        {card.objective}
-                      </p>
-                    </div>
-
-                    <div>
-                      <p className="mb-2 text-base font-semibold text-slate-900">
-                        Action Plan
-                      </p>
-
-                      <div className="space-y-2">
-                        {card.actionPlans.map((plan, index) => (
-                          <div
-                            key={index}
-                            className="flex items-start gap-2 text-base text-slate-700"
-                          >
-                            <CheckCircle2 className="mt-1 h-4 w-4 shrink-0 text-primary" />
-                            <span>{plan}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div className="rounded-xl border border-white bg-white/80 p-3">
-                      <p className="text-base text-slate-800">
-                        <span className="font-semibold">Incentive:</span>{" "}
-                        {card.incentive}
-                      </p>
-                    </div>
-
-                    <div className="rounded-xl border bg-white/70 p-4">
-                      <div className="mb-2 flex items-center gap-2">
-                        <Gift className="h-4 w-4 text-primary" />
-
-                        <p className="text-base font-semibold text-slate-900">
-                          {card.readyToUseLabel}
-                        </p>
-                      </div>
-
-                      <p className="text-base leading-relaxed text-slate-700">
-                        {card.readyToUseCopy}
-                      </p>
-
-                      <div className="mt-4">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="gap-2 text-sm"
-                          onClick={() => copyToClipboard(card.readyToUseCopy)}
-                        >
-                          <Copy className="h-4 w-4" />
-                          Copy to Clipboard
-                        </Button>
-                      </div>
-                    </div>
+      {isLoadingStatus ? (
+        <Card className="border-border bg-card shadow-sm">
+          <CardContent className="flex min-h-[180px] items-center justify-center gap-2 text-sm text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Loading AI assistant status...
+          </CardContent>
+        </Card>
+      ) : !aiStatus?.configured ? (
+        <Card className="border-amber-200 bg-amber-50/70 shadow-sm">
+          <CardHeader>
+            <CardTitle>Setup Required</CardTitle>
+            <CardDescription>{aiStatus?.providerLabel || "AI provider"} is not connected for MaiinSight strategy generation yet.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm text-slate-700">
+            <p>{aiStatus?.setupMessage || "AI strategy generation is not configured yet."}</p>
+            <p className="text-muted-foreground">{aiStatus?.suggestion || "Please ask IT Support to configure AI provider credentials in the environment settings."}</p>
+          </CardContent>
+        </Card>
+      ) : (
+        <>
+          <Card className="border-border bg-card shadow-sm">
+            <CardContent className="py-5">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                <div className="flex items-start gap-4">
+                  <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-primary/10">
+                    <Sparkles className="h-5 w-5 text-primary" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-semibold text-foreground">Assistant Status</h3>
+                    <p className="text-sm text-muted-foreground">
+                      {strategy?.generatedAt
+                        ? "Strategy draft is ready for review in this session."
+                        : "No AI strategy generated yet."}
+                    </p>
                   </div>
                 </div>
-              )
-            })}
-          </div>
-        </CardContent>
-      </Card>
+                <Badge variant="outline" className="w-fit border-primary/20 text-primary">
+                  {strategy?.generatedAt
+                    ? `Generated ${getRelativeTime(strategy.generatedAt)}`
+                    : aiStatus.latestGenerationAt
+                      ? `Last workspace activity ${getRelativeTime(aiStatus.latestGenerationAt)}`
+                      : "Ready to generate"}
+                </Badge>
+              </div>
+            </CardContent>
+          </Card>
+
+          {outreachContext ? (
+            <Card className="border-sky-200 bg-sky-50/70 shadow-sm">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-base"><MessageSquare className="h-4 w-4 text-sky-600" /> Low Occupancy Outreach Context</CardTitle>
+                <CardDescription>Context passed from Fill Empty Sessions for outreach-focused AI strategy generation.</CardDescription>
+              </CardHeader>
+              <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                <div className="rounded-xl border border-white/80 bg-white/90 p-4 text-sm">
+                  <p className="font-semibold text-slate-900">Customer Type</p>
+                  <p>{outreachContext.customerTypeLabel}</p>
+                  <p className="text-muted-foreground">{outreachContext.targetPriorityLabel}</p>
+                </div>
+                <div className="rounded-xl border border-white/80 bg-white/90 p-4 text-sm">
+                  <p className="font-semibold text-slate-900">Session</p>
+                  <p>{outreachContext.sessionName}</p>
+                  <p className="text-muted-foreground">{outreachContext.slotTimeLabel || "Slot time not selected"}</p>
+                  <p className="text-muted-foreground">{outreachContext.date}</p>
+                </div>
+                <div className="rounded-xl border border-white/80 bg-white/90 p-4 text-sm">
+                  <p className="font-semibold text-slate-900">Priority Score</p>
+                  <p>{outreachContext.targetPriorityScore}</p>
+                  <p className="text-muted-foreground">{outreachContext.selectedSessionBookingCount} prior bookings</p>
+                </div>
+                <div className="rounded-xl border border-white/80 bg-white/90 p-4 text-sm">
+                  <p className="font-semibold text-slate-900">Suggested Action</p>
+                  <p>{outreachContext.suggestedAction}</p>
+                </div>
+              </CardContent>
+            </Card>
+          ) : null}
+
+          <Card className="border-border bg-card shadow-sm">
+            <CardHeader>
+              <CardTitle>Strategy Configuration</CardTitle>
+              <CardDescription>Choose campaign parameters to generate a structured business recommendation.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                <label className="space-y-2 text-sm font-medium">
+                  <span>Workspace Mode</span>
+                  <select value={workspaceMode} onChange={(event) => setWorkspaceMode(event.target.value as "general" | "outreach")} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm">
+                    <option value="general">General Strategy</option>
+                    <option value="outreach">Low Occupancy Outreach</option>
+                  </select>
+                </label>
+                <label className="space-y-2 text-sm font-medium">
+                  <span>Venue Type</span>
+                  <select value={selectedVenueType} onChange={(event) => setSelectedVenueType(event.target.value as (typeof venueTypes)[number])} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm">
+                    {venueTypes.map((option) => <option key={option} value={option}>{option}</option>)}
+                  </select>
+                </label>
+                <label className="space-y-2 text-sm font-medium">
+                  <span>Customer Segment</span>
+                  <select value={selectedSegment} onChange={(event) => setSelectedSegment(event.target.value)} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm">
+                    {targetSegments.map((option) => <option key={option} value={option}>{option}</option>)}
+                  </select>
+                </label>
+                <label className="space-y-2 text-sm font-medium">
+                  <span>Campaign Objective</span>
+                  <select value={selectedObjective} onChange={(event) => setSelectedObjective(event.target.value)} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm">
+                    {campaignObjectives.map((option) => <option key={option} value={option}>{option}</option>)}
+                  </select>
+                </label>
+                <label className="space-y-2 text-sm font-medium">
+                  <span>Offer Framework</span>
+                  <select value={selectedIncentive} onChange={(event) => setSelectedIncentive(event.target.value)} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm">
+                    {incentiveFrameworks.map((option) => <option key={option} value={option}>{option}</option>)}
+                  </select>
+                </label>
+                <label className="space-y-2 text-sm font-medium">
+                  <span>Message Tone</span>
+                  <select value={selectedTone} onChange={(event) => setSelectedTone(event.target.value)} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm">
+                    {copywritingTones.map((option) => <option key={option} value={option}>{option}</option>)}
+                  </select>
+                </label>
+              </div>
+              <div className="flex flex-wrap gap-3">
+                <Button className="gap-2" onClick={() => void handleGenerateStrategy()} disabled={!canGenerateAi || isGenerating || !aiStatus?.configured}>
+                  {isGenerating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                  Generate Strategy
+                </Button>
+                <Button variant="outline" className="gap-2" onClick={() => setStrategy(null)} disabled={isGenerating}>
+                  <RefreshCw className="h-4 w-4" />
+                  Clear Result
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          {!strategy ? (
+            <Card className="border-border bg-card shadow-sm">
+              <CardContent className="flex min-h-[220px] flex-col items-center justify-center gap-3 text-center text-muted-foreground">
+                <Sparkles className="h-10 w-10" />
+                <div>
+                  <p className="font-medium text-foreground">No AI strategy generated yet.</p>
+                  <p className="text-sm">Generate a strategy to populate campaign objective, offer, channel, outreach copy, and follow-up actions.</p>
+                </div>
+              </CardContent>
+            </Card>
+          ) : (
+            <Card className="border-border bg-card shadow-sm">
+              <CardHeader>
+                <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+                  <div>
+                    <CardTitle>Generated Strategy</CardTitle>
+                    <CardDescription>
+                      {formatExactDateTime(strategy.generatedAt)} ({getRelativeTime(strategy.generatedAt)})
+                    </CardDescription>
+                  </div>
+                  <Badge
+                    variant="outline"
+                    className="w-fit border-primary/20 text-primary"
+                  >
+                    {strategy.provider === "azure"
+                      ? "Generated with Azure OpenAI"
+                      : "Generated with Gemini"}
+                  </Badge>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-5">
+                <div className="flex flex-wrap gap-2">
+                  <Badge variant="secondary" className="rounded-full px-3 py-1">
+                    Objective: {strategy.strategy.campaignObjective.slice(0, 42)}
+                    {strategy.strategy.campaignObjective.length > 42 ? "..." : ""}
+                  </Badge>
+                  <Badge variant="secondary" className="rounded-full px-3 py-1">
+                    Channel: WhatsApp
+                  </Badge>
+                  <Badge variant="secondary" className="rounded-full px-3 py-1">
+                    Tone: {selectedTone}
+                  </Badge>
+                  <Badge variant="secondary" className="rounded-full px-3 py-1">
+                    Offer: {selectedIncentive}
+                  </Badge>
+                </div>
+
+                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                  <StrategyFieldCard label="Campaign Objective" value={strategy.strategy.campaignObjective} accent="blue" />
+                  <StrategyFieldCard label="Target Customer Group" value={strategy.strategy.targetCustomerGroup} accent="emerald" />
+                  <StrategyFieldCard label="Customer Behavior Reasoning" value={strategy.strategy.customerReasoning} accent="amber" />
+                  <StrategyFieldCard label="Suggested Offer / Promo" value={strategy.strategy.suggestedOffer} accent="rose" />
+                  <StrategyFieldCard label="Follow-Up Plan" value={strategy.strategy.followUpPlan} accent="slate" />
+                  <StrategyFieldCard label="Expected Business Impact" value={strategy.strategy.expectedBusinessImpact} accent="blue" />
+                </div>
+
+                <div className="rounded-2xl border border-border bg-gradient-to-br from-background to-secondary/20 p-4 shadow-sm">
+                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Data Limitation / Caveat</p>
+                  <p className="mt-2 text-sm leading-6 text-muted-foreground">{strategy.strategy.dataLimitation}</p>
+                </div>
+
+                <div className="rounded-2xl border border-border bg-gradient-to-br from-slate-50 to-background p-4 shadow-sm">
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">WhatsApp Message Draft</p>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => void handleGenerateStrategy()}
+                        disabled={!canGenerateAi || isGenerating || !aiStatus?.configured}
+                        className="gap-2 rounded-full transition-all duration-200 hover:-translate-y-0.5 hover:bg-primary/10 hover:text-primary hover:shadow-sm"
+                      >
+                        {isGenerating ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                        Regenerate Draft
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => void handleCopy(strategy.strategy.whatsappMessage)}
+                        className="gap-2 rounded-full transition-all duration-200 hover:-translate-y-0.5 hover:bg-primary/10 hover:text-primary hover:shadow-sm"
+                      >
+                        {copiedField === strategy.strategy.whatsappMessage ? (
+                          <Check className="h-4 w-4" />
+                        ) : (
+                          <Copy className="h-4 w-4" />
+                        )}
+                        {copiedField === strategy.strategy.whatsappMessage ? "Copied" : "Copy"}
+                      </Button>
+                    </div>
+                  </div>
+                  <p className="text-sm leading-6 text-slate-700">{strategy.strategy.whatsappMessage}</p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </>
+      )}
     </div>
   )
 }

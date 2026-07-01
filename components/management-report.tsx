@@ -1,9 +1,6 @@
 "use client"
 
-import { useMemo, useState } from "react"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
+import { useCallback, useEffect, useState } from "react"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -14,153 +11,472 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import { AlertTriangle, Calendar, Download, FileText, Info } from "lucide-react"
-import { toast } from "sonner"
+import { BusinessErrorAlert } from "@/components/business-error-alert"
+import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
+import { getApiUrl } from "@/lib/api"
+import { getAuthHeaders } from "@/lib/roles"
 import {
-  AreaChart,
+  AlertTriangle,
+  ArrowRight,
+  Calendar,
+  CheckCircle2,
+  Download,
+  FileText,
+  Loader2,
+  Sparkles,
+  Target,
+  TrendingUp,
+  Users,
+  Wallet,
+  ChevronDown,
+} from "lucide-react"
+import {
   Area,
-  XAxis,
-  YAxis,
+  AreaChart,
+  Bar,
+  BarChart,
   CartesianGrid,
+  Legend,
   ResponsiveContainer,
   Tooltip as RechartsTooltip,
-  BarChart,
-  Bar,
-  Legend,
+  XAxis,
+  YAxis,
 } from "recharts"
 
-const reportData = [
-  { date: "2024-01-01", label: "Jan", revenue: 4.2, occupancyRate: 62 },
-  { date: "2024-02-01", label: "Feb", revenue: 4.8, occupancyRate: 68 },
-  { date: "2024-03-01", label: "Mar", revenue: 5.1, occupancyRate: 72 },
-  { date: "2024-04-01", label: "Apr", revenue: 4.9, occupancyRate: 69 },
-  { date: "2024-05-01", label: "May", revenue: 5.5, occupancyRate: 76 },
-  { date: "2024-06-01", label: "Jun", revenue: 5.8, occupancyRate: 79 },
-  { date: "2024-07-01", label: "Jul", revenue: 5.6, occupancyRate: 74 },
-  { date: "2024-08-01", label: "Aug", revenue: 5.9, occupancyRate: 80 },
-  { date: "2024-09-01", label: "Sep", revenue: 6.2, occupancyRate: 84 },
-  { date: "2024-10-01", label: "Oct", revenue: 6.4, occupancyRate: 86 },
-  { date: "2024-11-01", label: "Nov", revenue: 6.1, occupancyRate: 82 },
-  { date: "2024-12-01", label: "Dec", revenue: 6.0, occupancyRate: 78 },
-]
-
-const formatDate = (dateString: string) => {
-  const date = new Date(dateString)
-  return date.toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  })
+interface ComparisonMetric {
+  current: number
+  previous: number
+  changePct: number | null
 }
 
-const firstDataDate = reportData[0]?.date ?? "2024-01-01"
-const lastDataDate = reportData[reportData.length - 1]?.date ?? "2024-12-31"
+interface CourtTypePerformanceRow {
+  courtType: string
+  courtLabel: string
+  revenue: number
+  bookings: number
+  bookedHours: number
+  availableHours: number
+  occupancyRate: number
+}
+
+interface SessionOccupancyRow {
+  sessionName: string
+  bookedHours: number
+  availableHours: number
+  occupancyRate: number
+  revenue: number
+}
+
+interface SegmentContributionRow {
+  segmentName: string
+  revenue: number
+  bookings: number
+  revenueShare: number
+  bookingShare: number
+}
+
+interface MetaDashboardData {
+  hasData: boolean
+  lastSyncedAt: string | null
+  summary: {
+    totalViews: number
+    totalReach: number
+    totalInteractions: number
+    totalShares: number
+    engagementRate: number
+    shareRate: number
+  }
+}
+
+interface MetaAudienceSummary {
+  hasData: boolean
+  summary: {
+    dominantGender: string
+    dominantGenderPct: number
+    dominantAgeGroup: string
+    topCity: string
+    topCityPct: number
+  }
+  personaInsight: string
+}
+
+interface ReportResponse {
+  success: boolean
+  data?: {
+    generatedAt: string
+    hasData: boolean
+    filters: {
+      startDate: string
+      endDate: string
+      courtType: string
+      bookingType: string
+      customerType: string
+    }
+    summary: {
+      totalRevenue: number
+      totalBookings: number
+      courtHourCount: number
+      availableSessions: number
+      occupancyRate: number
+      avgRevenuePerBooking: number
+    }
+    period: {
+      startDate: string
+      endDate: string
+      label: string
+    }
+    comparisonPeriod: {
+      startDate: string
+      endDate: string
+      label: string
+    }
+    revenueTrend: Array<{
+      key: string
+      label: string
+      revenue: number
+      bookings: number
+    }>
+    bookingTypeBreakdown: Record<string, number>
+    courtTypePerformance: CourtTypePerformanceRow[]
+    sessionOccupancy: SessionOccupancyRow[]
+    lowOccupancySessions: SessionOccupancyRow[]
+    highOccupancySessions: SessionOccupancyRow[]
+    segmentContribution: SegmentContributionRow[]
+    segmentationSummary: {
+      runDate: string
+      totalCustomers: number
+    } | null
+    comparison: {
+      revenue: ComparisonMetric
+      bookings: ComparisonMetric
+      occupancyRate: ComparisonMetric
+      avgRevenuePerBooking: ComparisonMetric
+    }
+    insights: {
+      executiveSummary: string
+      occupancyInsight: string
+      revenueInsight: string
+      segmentationInsight: string
+      keyFindings: string[]
+      actionPlan: string[]
+      recommendations: string[]
+    }
+  }
+  message?: string
+}
+
+// startDate/endDate will be set by `applyDefaultRange` (from API or fallback)
+
+const formatCurrency = (value: number) => `IDR ${Math.round(value).toLocaleString("id-ID")}`
+
+const formatPercent = (value: number | null | undefined) => (value === null || value === undefined ? "-" : `${value >= 0 ? "+" : ""}${value.toFixed(1)}%`)
+
+const formatDateInput = (value: Date) => value.toISOString().slice(0, 10)
+
+const getLastMonthRange = () => {
+  const end = new Date()
+  end.setDate(0)
+  const start = new Date(end.getFullYear(), end.getMonth(), 1)
+
+  return {
+    startDate: formatDateInput(start),
+    endDate: formatDateInput(end),
+  }
+}
 
 export function ManagementReport() {
-  const [startDate, setStartDate] = useState<string>(firstDataDate)
-  const [endDate, setEndDate] = useState<string>(lastDataDate)
-  const [reportGenerated, setReportGenerated] = useState(false)
+  const [startDate, setStartDate] = useState<string>("")
+  const [endDate, setEndDate] = useState<string>("")
+  const [courtType, setCourtType] = useState("all")
+  const [bookingType, setBookingType] = useState("all")
+  const [report, setReport] = useState<ReportResponse["data"] | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
+  const [isApplyingDefaultRange, setIsApplyingDefaultRange] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [downloadConfirmOpen, setDownloadConfirmOpen] = useState(false)
+  const [lastRefreshedAt, setLastRefreshedAt] = useState<string | null>(null)
+  const [metaDashboard, setMetaDashboard] = useState<MetaDashboardData | null>(null)
+  const [metaAudienceSummary, setMetaAudienceSummary] = useState<MetaAudienceSummary | null>(null)
 
-  const filteredData = useMemo(() => {
-    const start = new Date(startDate)
-    const end = new Date(endDate)
-    if (isNaN(start.getTime()) || isNaN(end.getTime()) || start > end) {
-      return []
-    }
+  useEffect(() => {
+    const applyDefaultRange = async () => {
+      try {
+        const response = await fetch(getApiUrl("/operations/status"), {
+          method: "GET",
+          cache: "no-store",
+          headers: getAuthHeaders(),
+        })
 
-    return reportData.filter((item) => {
-      const itemDate = new Date(item.date)
-      return itemDate >= start && itemDate <= end
-    })
-  }, [startDate, endDate])
+        const result = await response.json().catch(() => null)
+        const range = result?.success ? result?.data?.transactionMonthRange : null
 
-  const summary = useMemo(() => {
-    if (!filteredData.length) {
-      return {
-        totalRevenue: 0,
-        avgOccupancy: 0,
-        peakOccupancy: 0,
-        periodLabel: `${formatDate(startDate)} – ${formatDate(endDate)}`,
+        if (range?.min && range?.max) {
+          try {
+            // Prefer using the reported max transaction date to determine the latest month
+            const maxDate = new Date(range.max)
+            if (!isNaN(maxDate.getTime())) {
+              const end = new Date(maxDate.getFullYear(), maxDate.getMonth() + 1, 0) // last day of that month
+              const start = new Date(maxDate.getFullYear(), maxDate.getMonth(), 1)
+              setStartDate(formatDateInput(start))
+              setEndDate(formatDateInput(end))
+              return
+            }
+          } catch {
+            // fall back to last calendar month below
+          }
+        }
+      } catch {
+        // fall back to the last calendar month below
+      } finally {
+        setIsApplyingDefaultRange(false)
       }
+
+      const fallbackRange = getLastMonthRange()
+      setStartDate(fallbackRange.startDate)
+      setEndDate(fallbackRange.endDate)
     }
 
-    const totalRevenue = filteredData.reduce((sum, item) => sum + item.revenue, 0)
-    const avgOccupancy =
-      filteredData.reduce((sum, item) => sum + item.occupancyRate, 0) /
-      filteredData.length
-    const peakOccupancy = Math.max(...filteredData.map((item) => item.occupancyRate))
+    void applyDefaultRange()
+  }, [])
 
-    return {
-      totalRevenue,
-      avgOccupancy,
-      peakOccupancy,
-      periodLabel: `${formatDate(startDate)} – ${formatDate(endDate)}`,
+  const loadReport = useCallback(async () => {
+    try {
+      setIsLoading(true)
+      setError(null)
+
+      const params = new URLSearchParams({
+        startDate,
+        endDate,
+        courtType,
+        bookingType,
+      })
+
+      const [reportResponse, metaDashboardResponse, metaAudienceResponse] = await Promise.all([
+        fetch(getApiUrl(`/operations/management-report?${params.toString()}`), {
+          method: "GET",
+          cache: "no-store",
+          headers: getAuthHeaders(),
+        }),
+        fetch(getApiUrl(`/meta/dashboard?since=${startDate}&until=${endDate}`), {
+          method: "GET",
+          cache: "no-store",
+          headers: getAuthHeaders(),
+        }).catch(() => null),
+        fetch(getApiUrl("/meta/audience-summary"), {
+          method: "GET",
+          cache: "no-store",
+          headers: getAuthHeaders(),
+        }).catch(() => null),
+      ])
+
+      const result: ReportResponse | null = await reportResponse.json().catch(() => null)
+      if (!reportResponse.ok || !result?.success || !result.data) {
+        throw new Error(result?.message || "Management report could not be loaded.")
+      }
+
+      const metaDashboardResult = metaDashboardResponse ? await metaDashboardResponse.json().catch(() => null) : null
+      const metaAudienceResult = metaAudienceResponse ? await metaAudienceResponse.json().catch(() => null) : null
+
+      setReport(result.data)
+      setMetaDashboard(metaDashboardResult?.success ? metaDashboardResult.data : null)
+      setMetaAudienceSummary(metaAudienceResult?.success ? metaAudienceResult.data : null)
+      setLastRefreshedAt(new Date().toISOString())
+    } catch (loadError) {
+      setReport(null)
+      setMetaDashboard(null)
+      setMetaAudienceSummary(null)
+      setError(loadError instanceof Error ? loadError.message : "Management report could not be loaded.")
+    } finally {
+      setIsLoading(false)
     }
-  }, [filteredData, startDate, endDate])
+  }, [bookingType, courtType, endDate, startDate])
 
-  const handleGenerateReport = () => {
-    setReportGenerated(true)
-  }
-
-  const handleDownloadPdf = () => {
-    if (typeof window !== "undefined") {
-      window.print()
-    }
-  }
+  useEffect(() => {
+    if (isApplyingDefaultRange) return
+    void loadReport()
+  }, [isApplyingDefaultRange, loadReport])
 
   const handleConfirmDownload = () => {
     setDownloadConfirmOpen(false)
-    handleDownloadPdf()
-    toast.success("Report ready", {
-      description: "Your management report has been downloaded.",
-    })
+    window.setTimeout(() => window.print(), 50)
   }
+
+  const breakdownRows = report
+    ? Object.entries(report.bookingTypeBreakdown).map(([label, value]) => ({ label, value }))
+    : []
+
+  const reportBadges = report
+    ? [
+        { label: "Revenue", value: formatCurrency(report.summary.totalRevenue), icon: Wallet, tone: "emerald" as const },
+        { label: "Bookings", value: report.summary.totalBookings.toLocaleString("en-US"), icon: Users, tone: "sky" as const },
+        { label: "Occupancy", value: `${report.summary.occupancyRate}%`, icon: Target, tone: "amber" as const },
+        { label: "Avg Value", value: formatCurrency(report.summary.avgRevenuePerBooking), icon: TrendingUp, tone: "rose" as const },
+      ]
+    : []
+
+  const toneStyles: Record<"emerald" | "sky" | "amber" | "rose", string> = {
+    emerald: "border-emerald-200 bg-emerald-50 text-emerald-700",
+    sky: "border-sky-200 bg-sky-50 text-sky-700",
+    amber: "border-amber-200 bg-amber-50 text-amber-700",
+    rose: "border-rose-200 bg-rose-50 text-rose-700",
+  }
+
+  const reportPeriodLabel = report?.period.label || "-"
+  const comparisonPeriodLabel = report?.comparisonPeriod.label || "-"
+  const generatedAtLabel = report
+    ? new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short" }).format(new Date(report.generatedAt))
+    : "-"
+  const refreshedAtLabel = lastRefreshedAt
+    ? new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short" }).format(new Date(lastRefreshedAt))
+    : "-"
+
+  const courtPerformanceRows = report?.courtTypePerformance ?? []
+  const sessionOccupancyRows = report?.sessionOccupancy ?? []
+  const segmentContributionRows = report?.segmentContribution ?? []
+  const comparisonCards = (() => {
+    if (!report?.comparison) return []
+
+    return [
+      {
+        label: "Revenue",
+        current: formatCurrency(report.comparison.revenue.current),
+        previous: formatCurrency(report.comparison.revenue.previous),
+        change: formatPercent(report.comparison.revenue.changePct),
+        tone: "emerald" as const,
+        icon: Wallet,
+      },
+      {
+        label: "Bookings",
+        current: report.comparison.bookings.current.toLocaleString("en-US"),
+        previous: report.comparison.bookings.previous.toLocaleString("en-US"),
+        change: formatPercent(report.comparison.bookings.changePct),
+        tone: "sky" as const,
+        icon: Users,
+      },
+      {
+        label: "Occupancy",
+        current: `${report.comparison.occupancyRate.current.toFixed(1)}%`,
+        previous: `${report.comparison.occupancyRate.previous.toFixed(1)}%`,
+        change: formatPercent(report.comparison.occupancyRate.changePct),
+        tone: "amber" as const,
+        icon: Target,
+      },
+      {
+        label: "Avg Booking Value",
+        current: formatCurrency(report.comparison.avgRevenuePerBooking.current),
+        previous: formatCurrency(report.comparison.avgRevenuePerBooking.previous),
+        change: formatPercent(report.comparison.avgRevenuePerBooking.changePct),
+        tone: "rose" as const,
+        icon: TrendingUp,
+      },
+    ]
+  })()
+
+  const metaInsightSummary = (() => {
+    if (!metaDashboard?.hasData && !metaAudienceSummary?.hasData) return null
+
+    const lines = []
+
+    if (metaDashboard?.hasData) {
+      lines.push(
+        `Meta reach is ${metaDashboard.summary.totalReach.toLocaleString("en-US")} with ${metaDashboard.summary.engagementRate.toFixed(1)}% engagement and ${metaDashboard.summary.shareRate.toFixed(1)}% share rate.`
+      )
+    }
+
+    if (metaAudienceSummary?.hasData) {
+      lines.push(
+        `Audience is led by ${metaAudienceSummary.summary.dominantGender.toLowerCase()} followers in the ${metaAudienceSummary.summary.dominantAgeGroup} age band, especially around ${metaAudienceSummary.summary.topCity}.`
+      )
+      lines.push(metaAudienceSummary.personaInsight)
+    }
+
+    return lines
+  })()
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <h1 className="text-3xl font-bold">Management Report</h1>
           <p className="text-base text-muted-foreground">
-            Marketing revenue and occupancy performance for Maiin Gandaria.
+            Executive summary, KPI highlights, occupancy insight, revenue insight, and segmentation context for MaiinSight.
           </p>
+          <div className="mt-3 flex flex-wrap gap-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+            <span className="rounded-full border border-border bg-secondary/40 px-3 py-1.5">Report period: {reportPeriodLabel}</span>
+            <span className="rounded-full border border-border bg-secondary/40 px-3 py-1.5">Generated at: {generatedAtLabel}</span>
+            {comparisonPeriodLabel !== "-" ? (
+              <span className="rounded-full border border-border bg-secondary/40 px-3 py-1.5">Comparison: {comparisonPeriodLabel}</span>
+            ) : null}
+          </div>
         </div>
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-          <div className="grid gap-3 sm:grid-cols-2">
-            <label className="min-w-[170px] text-sm font-medium text-muted-foreground">
-              Start date
+      </div>
+
+      <div className="rounded-2xl border border-border/70 bg-card/80 p-3 shadow-sm backdrop-blur">
+        <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+          <p className="shrink-0 text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">Report filters</p>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <div className="group relative min-w-[132px]">
+              <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[9px] font-semibold uppercase tracking-[0.12em] text-muted-foreground transition-colors group-focus-within:text-foreground">
+                Start
+              </span>
               <Input
                 type="date"
                 value={startDate}
                 onChange={(event) => setStartDate(event.target.value)}
-                className="mt-2 w-full"
+                className="h-10 w-full rounded-lg border border-border/70 bg-background/90 pl-[3.6rem] pr-2.5 text-xs shadow-sm outline-none transition hover:border-primary/35 hover:bg-background focus:border-primary focus:ring-2 focus:ring-primary/15"
               />
-            </label>
-            <label className="min-w-[170px] text-sm font-medium text-muted-foreground">
-              End date
+            </div>
+            <div className="group relative min-w-[132px]">
+              <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[9px] font-semibold uppercase tracking-[0.12em] text-muted-foreground transition-colors group-focus-within:text-foreground">
+                End
+              </span>
               <Input
                 type="date"
                 value={endDate}
                 onChange={(event) => setEndDate(event.target.value)}
-                className="mt-2 w-full"
+                className="h-10 w-full rounded-lg border border-border/70 bg-background/90 pl-[3.2rem] pr-2.5 text-xs shadow-sm outline-none transition hover:border-primary/35 hover:bg-background focus:border-primary focus:ring-2 focus:ring-primary/15"
               />
-            </label>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button variant="secondary" size="sm" className="gap-2" onClick={handleGenerateReport}>
-              <Calendar className="h-4 w-4" />
-              Refresh Report
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="gap-2"
-              onClick={() => setDownloadConfirmOpen(true)}
-            >
-              <Download className="h-4 w-4" />
-              Download PDF
-            </Button>
+            </div>
+            <div className="group relative min-w-[128px]">
+              <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[9px] font-semibold uppercase tracking-[0.12em] text-muted-foreground transition-colors group-focus-within:text-foreground">
+                Court
+              </span>
+              <select
+                value={courtType}
+                onChange={(event) => setCourtType(event.target.value)}
+                className="h-10 w-full appearance-none rounded-lg border border-border/70 bg-background/90 pl-[3.2rem] pr-8 text-xs font-medium text-foreground shadow-sm outline-none transition hover:border-primary/35 hover:bg-background focus:border-primary focus:ring-2 focus:ring-primary/15"
+              >
+                <option value="all">All courts</option>
+                <option value="mini_soccer">Mini Soccer</option>
+                <option value="basketball">Basketball</option>
+              </select>
+                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground transition-transform group-hover:translate-y-[-45%] group-focus-within:text-foreground" />
+            </div>
+            <div className="group relative min-w-[150px]">
+              <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[9px] font-semibold uppercase tracking-[0.12em] text-muted-foreground transition-colors group-focus-within:text-foreground">
+                Booking
+              </span>
+              <select
+                value={bookingType}
+                onChange={(event) => setBookingType(event.target.value)}
+                className="h-10 w-full appearance-none rounded-lg border border-border/70 bg-background/90 pl-[4.2rem] pr-8 text-xs font-medium text-foreground shadow-sm outline-none transition hover:border-primary/35 hover:bg-background focus:border-primary focus:ring-2 focus:ring-primary/15"
+              >
+                <option value="all">All booking types</option>
+                <option value="regular_booking">Regular booking</option>
+                <option value="member_internal_booking">Member / internal</option>
+                <option value="other">Other</option>
+              </select>
+                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground transition-transform group-hover:translate-y-[-45%] group-focus-within:text-foreground" />
+            </div>
+            <div className="inline-flex h-10 items-center rounded-xl border border-border/70 bg-background/80 p-1 shadow-sm">
+              <Button variant="outline" size="sm" className="h-8 gap-1 px-2.5 text-[11px]" onClick={() => setDownloadConfirmOpen(true)} disabled={!report?.hasData}>
+                <Download className="h-3 w-3" />
+                Export PDF
+              </Button>
+            </div>
           </div>
         </div>
       </div>
@@ -168,153 +484,259 @@ export function ManagementReport() {
       <AlertDialog open={downloadConfirmOpen} onOpenChange={setDownloadConfirmOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Download PDF report?</AlertDialogTitle>
+            <AlertDialogTitle>Export management report as PDF?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will open the printable version of the current management report.
+              This will open the printable report layout so you can save it as a PDF from the browser print dialog.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleConfirmDownload}>
-              Continue
-            </AlertDialogAction>
+            <AlertDialogAction onClick={handleConfirmDownload}>Continue</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
 
-      <div className="grid gap-4 lg:grid-cols-3">
-        <Card className="bg-card border-border shadow-sm">
-          <CardHeader>
-            <CardTitle>Total Revenue</CardTitle>
-            <CardDescription>Revenue in the selected reporting period</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <p className="text-3xl font-semibold">Rp {summary.totalRevenue.toFixed(2)}M</p>
-            <p className="text-sm text-muted-foreground mt-2">
-              Period: {summary.periodLabel}
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-card border-border shadow-sm">
-          <CardHeader>
-            <CardTitle>Average Occupancy</CardTitle>
-            <CardDescription>Average venue utilization for the date range</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <p className="text-3xl font-semibold">{summary.avgOccupancy.toFixed(1)}%</p>
-            <p className="text-sm text-muted-foreground mt-2">
-              Highest occupancy: {summary.peakOccupancy}%
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-card border-border shadow-sm">
-          <CardHeader>
-            <CardTitle>Report Status</CardTitle>
-            <CardDescription>Saved as a printable management summary</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <FileText className="h-4 w-4" />
-              {reportGenerated ? "Report ready for PDF export." : "Choose a date range and refresh."}
-            </div>
-            {(!filteredData.length || startDate > endDate) && (
-              <div className="flex items-start gap-2 rounded-lg border border-amber-300/40 bg-amber-100/50 p-3 text-sm text-amber-900">
-                <AlertTriangle className="h-4 w-4" />
-                <span>
-                  Please select a valid date range that includes available data.
-                </span>
+      <div className="print-report hidden">
+        {report?.hasData ? (
+          <div className="space-y-6 p-8 text-slate-900">
+            <div className="border-b border-emerald-200 pb-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-700">MaiinSight</p>
+              <h1 className="mt-2 text-3xl font-bold">Management Report</h1>
+              <p className="mt-2 text-sm text-slate-600">
+                {new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short" }).format(new Date(report.generatedAt))}
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2 text-[10px] font-semibold uppercase tracking-[0.12em]">
+                <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-emerald-700">Report period: {reportPeriodLabel}</span>
+                <span className="rounded-full border border-sky-200 bg-sky-50 px-3 py-1.5 text-sky-700">Comparison period: {comparisonPeriodLabel}</span>
               </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-
-      <div className="grid gap-6 lg:grid-cols-2">
-        <Card className="bg-card border-border shadow-sm">
-          <CardHeader>
-            <CardTitle>Revenue Trend</CardTitle>
-            <CardDescription>Revenue performance across the selected range</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="h-[320px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={filteredData.length ? filteredData : reportData}>
-                  <defs>
-                    <linearGradient id="revenueGradient" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="var(--chart-1)" stopOpacity={0.35} />
-                      <stop offset="95%" stopColor="var(--chart-1)" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-                  <XAxis dataKey="label" stroke="var(--muted-foreground)" tickLine={false} axisLine={false} />
-                  <YAxis stroke="var(--muted-foreground)" tickLine={false} axisLine={false} tickFormatter={(value) => `${value}M`} />
-                  <RechartsTooltip
-                    contentStyle={{
-                      backgroundColor: "var(--popover)",
-                      border: "1px solid var(--border)",
-                      borderRadius: "8px",
-                      color: "var(--foreground)",
-                    }}
-                    formatter={(value: number) => [`Rp ${value}M`, "Revenue"]}
-                  />
-                  <Legend />
-                  <Area type="monotone" dataKey="revenue" stroke="var(--chart-1)" fill="url(#revenueGradient)" strokeWidth={2} />
-                </AreaChart>
-              </ResponsiveContainer>
             </div>
-          </CardContent>
-        </Card>
 
-        <Card className="bg-card border-border shadow-sm">
-          <CardHeader>
-            <CardTitle>Occupancy Rate</CardTitle>
-            <CardDescription>Venue utilization by month</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="h-[320px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={filteredData.length ? filteredData : reportData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-                  <XAxis dataKey="label" stroke="var(--muted-foreground)" tickLine={false} axisLine={false} />
-                  <YAxis stroke="var(--muted-foreground)" tickLine={false} axisLine={false} tickFormatter={(value) => `${value}%`} />
-                  <RechartsTooltip
-                    contentStyle={{
-                      backgroundColor: "var(--popover)",
-                      border: "1px solid var(--border)",
-                      borderRadius: "8px",
-                      color: "var(--foreground)",
-                    }}
-                    formatter={(value: number) => [`${value}%`, "Occupancy"]}
-                  />
-                  <Legend />
-                  <Bar dataKey="occupancyRate" fill="var(--chart-2)" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
+            {/* Printable KPI summary removed per request */}
+
+            <div className="grid gap-4 lg:grid-cols-2">
+              <div className="rounded-2xl border border-border p-5">
+                <h2 className="text-sm font-semibold uppercase tracking-[0.14em] text-emerald-700">Executive Summary</h2>
+                <div className="mt-3 space-y-2 text-sm leading-6 text-slate-700">
+                  <p>{report.insights.executiveSummary}</p>
+                  <p>{report.insights.occupancyInsight}</p>
+                  <p>{report.insights.revenueInsight}</p>
+                  <p>{report.insights.segmentationInsight}</p>
+                </div>
+              </div>
+              <div className="rounded-2xl border border-border p-5">
+                <h2 className="text-sm font-semibold uppercase tracking-[0.14em] text-emerald-700">Recommendations</h2>
+                <div className="mt-3 space-y-2 text-sm leading-6 text-slate-700">
+                  {report.insights.recommendations.map((recommendation) => (
+                    <div key={recommendation} className="rounded-lg border border-border/70 p-3">
+                      {recommendation}
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
-          </CardContent>
-        </Card>
-      </div>
 
-      <Card className="bg-card border-border shadow-sm">
-        <CardHeader>
-          <CardTitle>Report Notes</CardTitle>
-          <CardDescription>
-            This report is designed for management review and may be exported directly as a PDF.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-3 text-sm text-muted-foreground">
-            <p>
-              The report aggregates marketing operational revenue and occupancy rate performance across the selected date range. Use the print dialog to save a polished PDF file.
-            </p>
-            <p>
-              If you need a more detailed export, use the calendar filters and refresh before downloading.
-            </p>
+            <div className="rounded-2xl border border-border p-5">
+              <h2 className="text-sm font-semibold uppercase tracking-[0.14em] text-emerald-700">Revenue Trend</h2>
+              <table className="mt-3 w-full border-collapse text-left text-sm">
+                <thead>
+                  <tr className="border-b border-border text-emerald-700">
+                    <th className="py-2 font-medium">Label</th>
+                    <th className="py-2 font-medium">Revenue</th>
+                    <th className="py-2 font-medium">Bookings</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {report.revenueTrend.map((row) => (
+                    <tr key={row.key} className="border-b border-border/70">
+                      <td className="py-2">{row.label}</td>
+                      <td className="py-2">{formatCurrency(row.revenue)}</td>
+                      <td className="py-2">{row.bookings}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
-        </CardContent>
-      </Card>
+        ) : null}
+      </div>
+
+      {error ? (
+        <BusinessErrorAlert
+          title="Report Unavailable"
+          message="The management report could not be prepared."
+          suggestion="Please review the selected date range and try again. Contact IT Support if the issue continues."
+          technicalDetails={error}
+        />
+      ) : null}
+
+      {isLoading ? (
+        <Card className="border-border bg-card shadow-sm">
+          <CardContent className="flex min-h-[260px] items-center justify-center gap-2 text-sm text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Preparing management report...
+          </CardContent>
+        </Card>
+      ) : !report || !report.hasData ? (
+        <Card className="border-border bg-card shadow-sm">
+          <CardContent className="flex min-h-[260px] flex-col items-center justify-center gap-3 text-center">
+            <AlertTriangle className="h-10 w-10 text-amber-600" />
+            <div>
+              <p className="font-medium">No transaction data is available for this reporting period.</p>
+              <p className="text-sm text-muted-foreground">
+                Upload a transaction file from Data Center or choose a different date range.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      ) : (
+        <>
+          {/* KPI cards removed per request */}
+
+          <Card className="border-border bg-gradient-to-br from-emerald-50 via-background to-sky-50 shadow-sm">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Sparkles className="h-4 w-4 text-primary" />
+                Meta Signal
+              </CardTitle>
+              <CardDescription>Reach and audience profile from synced Meta data</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3 text-sm text-muted-foreground">
+              {metaInsightSummary ? (
+                metaInsightSummary.map((line) => (
+                  <div key={line} className="rounded-2xl border border-border bg-card/90 p-4 text-foreground shadow-sm">
+                    <p className="leading-6">{line}</p>
+                  </div>
+                ))
+              ) : (
+                <div className="rounded-2xl border border-dashed border-border bg-background/70 p-4 text-foreground">
+                  <p className="font-medium">No Meta data is available for this period.</p>
+                  <p className="mt-1 text-sm text-muted-foreground">Sync InstaSight first to include reach and audience signals in the management report.</p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <div className="grid gap-6 lg:grid-cols-2">
+            <Card className="border-border bg-card shadow-sm">
+              <CardHeader>
+                <CardTitle>Revenue Trend</CardTitle>
+                <CardDescription>Revenue progression across the selected reporting period</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="h-[320px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={report.revenueTrend}>
+                      <defs>
+                        <linearGradient id="reportRevenueGradient" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="var(--chart-1)" stopOpacity={0.35} />
+                          <stop offset="95%" stopColor="var(--chart-1)" stopOpacity={0} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                      <XAxis dataKey="label" stroke="var(--muted-foreground)" tickLine={false} axisLine={false} />
+                      <YAxis stroke="var(--muted-foreground)" tickLine={false} axisLine={false} tickFormatter={(value) => `${Math.round(Number(value) / 1000000)}M`} />
+                      <RechartsTooltip formatter={(value: number) => [formatCurrency(value), "Revenue"]} />
+                      <Area type="monotone" dataKey="revenue" stroke="var(--chart-1)" fill="url(#reportRevenueGradient)" strokeWidth={2} />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="border-border bg-card shadow-sm">
+              <CardHeader>
+                <CardTitle>Booking Mix</CardTitle>
+                <CardDescription>Booking type distribution for the selected reporting period</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="h-[320px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={breakdownRows}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                      <XAxis dataKey="label" stroke="var(--muted-foreground)" tickLine={false} axisLine={false} />
+                      <YAxis stroke="var(--muted-foreground)" tickLine={false} axisLine={false} allowDecimals={false} />
+                      <RechartsTooltip formatter={(value: number) => [`${value} bookings`, "Bookings"]} />
+                      <Legend />
+                      <Bar dataKey="value" name="Bookings" fill="var(--chart-2)" radius={[6, 6, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+
+          <div className="grid gap-6 lg:grid-cols-2">
+            <Card className="border-border bg-card shadow-sm">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Sparkles className="h-4 w-4 text-primary" />
+                  Executive Summary
+                </CardTitle>
+                <CardDescription>Presentation-ready summary for management review</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3 text-sm text-muted-foreground">
+                <div className="rounded-2xl border border-border bg-gradient-to-br from-background to-secondary/20 p-4 text-foreground shadow-sm">
+                  <p className="leading-6">{report.insights.executiveSummary}</p>
+                </div>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <div className="rounded-2xl border border-amber-200 bg-amber-50/70 p-4 text-amber-900 shadow-sm">
+                    <p className="mb-1 text-xs font-semibold uppercase tracking-[0.14em]">Occupancy</p>
+                    <p className="leading-6">{report.insights.occupancyInsight}</p>
+                  </div>
+                  <div className="rounded-2xl border border-sky-200 bg-sky-50/70 p-4 text-sky-900 shadow-sm">
+                    <p className="mb-1 text-xs font-semibold uppercase tracking-[0.14em]">Revenue</p>
+                    <p className="leading-6">{report.insights.revenueInsight}</p>
+                  </div>
+                </div>
+                <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-4 text-emerald-900 shadow-sm">
+                  <p className="mb-1 text-xs font-semibold uppercase tracking-[0.14em]">Segmentation</p>
+                  <p className="leading-6">{report.insights.segmentationInsight}</p>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="border-border bg-card shadow-sm">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <CheckCircle2 className="h-4 w-4 text-primary" />
+                  Recommendations / Notes
+                </CardTitle>
+                <CardDescription>Business-friendly follow-up suggestions based on the selected period</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3 text-sm text-muted-foreground">
+                {report.insights.recommendations.map((recommendation) => (
+                  <div key={recommendation} className="flex items-start gap-3 rounded-2xl border border-border bg-gradient-to-br from-background to-secondary/20 p-4 shadow-sm">
+                    <ArrowRight className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                    <span className="leading-6 text-foreground">{recommendation}</span>
+                  </div>
+                ))}
+                <div className="rounded-2xl border border-border bg-secondary/20 p-3 text-xs">
+                  Generated at {new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short" }).format(new Date(report.generatedAt))}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </>
+      )}
     </div>
   )
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

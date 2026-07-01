@@ -24,6 +24,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { AccessDenied } from "@/components/access-denied"
+import { BusinessErrorAlert } from "@/components/business-error-alert"
 import { toast } from "sonner"
 import {
   getStoredRole,
@@ -33,6 +34,7 @@ import {
   USER_ROLES,
 } from "@/lib/roles"
 import { getApiUrl } from "@/lib/api"
+import { notifySegmentationUpdated, runCustomerSegmentation } from "@/lib/segmentation"
 import {
   Dialog,
   DialogContent,
@@ -60,8 +62,6 @@ import {
   Info,
   Trash2,
   Download,
-  Play,
-  Pause,
   Eye,
   type LucideIcon,
 } from "lucide-react"
@@ -71,13 +71,14 @@ type SyncStatus = "queued" | "processing" | "completed" | "failed"
 interface SyncJob {
   id: string
   name: string
-  type: "api" | "csv"
+  type: "api" | "file"
   status: SyncStatus
   progress: number
   records: number
   startedAt: string
   completedAt?: string
   error?: string
+  businessError?: BusinessErrorState | null
 }
 
 interface DataSource {
@@ -89,9 +90,19 @@ interface DataSource {
   records: number
 }
 
-interface UploadCsvResponse {
+interface FriendlyErrorResponse {
+  errorCode?: string
+  message?: string
+  suggestion?: string
+  technicalMessage?: string
+}
+
+interface UploadImportResponse {
   success: boolean
+  errorCode?: string
   message: string
+  suggestion?: string
+  technicalMessage?: string
   data?: {
     batchId: number
     fileName: string
@@ -144,6 +155,13 @@ interface RawRowsResponse {
   }
 }
 
+interface BusinessErrorState {
+  title: string
+  message: string
+  suggestion?: string | null
+  errorCode?: string | null
+  technicalDetails?: string | null
+}
 interface DataCenterResponse {
   dataCenter: {
     sources: DataSource[]
@@ -183,6 +201,13 @@ interface PlaytimeMlRunResponse {
   }
 }
 
+interface CombinedMlSummary {
+  playtimeSessions: number
+  playtimeCustomers: number
+  segmentationCustomers: number
+  selectedK: number | null
+}
+
 interface MlSummary {
   lastRun: string
   records: number
@@ -194,7 +219,7 @@ const defaultDataSources: DataSource[] = [
     id: "1",
     name: "MaiinSight Database",
     type: "database",
-    status: "connected",
+    status: "disconnected",
     lastSync: "Not synced yet",
     records: 0,
   },
@@ -202,7 +227,7 @@ const defaultDataSources: DataSource[] = [
     id: "2",
     name: "Meta Graph API",
     type: "api",
-    status: "connected",
+    status: "disconnected",
     lastSync: "Not synced yet",
     records: 0,
   },
@@ -210,24 +235,13 @@ const defaultDataSources: DataSource[] = [
     id: "3",
     name: "AI Strategy Engine",
     type: "api",
-    status: "connected",
+    status: "disconnected",
     lastSync: "Not synced yet",
     records: 0,
   },
 ]
 
-const initialSyncJobs: SyncJob[] = [
-  {
-    id: "ready",
-    name: "Data Center Ready",
-    type: "api",
-    status: "completed",
-    progress: 100,
-    records: 0,
-    startedAt: "Ready",
-    completedAt: "Ready",
-  },
-]
+const initialSyncJobs: SyncJob[] = []
 
 const statusConfig: Record<
   SyncStatus,
@@ -264,10 +278,52 @@ const statusConfig: Record<
   },
 }
 
-const isCsvFile = (file: File) => {
-  return file.type === "text/csv" || file.name.toLowerCase().endsWith(".csv")
+const SUPPORTED_IMPORT_EXTENSIONS = [".csv", ".xlsx", ".xls"]
+
+const getFileExtension = (fileName: string) => {
+  const lowerName = fileName.toLowerCase()
+  return (
+    SUPPORTED_IMPORT_EXTENSIONS.find((extension) => lowerName.endsWith(extension)) || null
+  )
 }
 
+const isSupportedImportFile = (file: File) => {
+  return getFileExtension(file.name) !== null
+}
+
+const createUnsupportedFileError = (): BusinessErrorState => ({
+  title: "Unsupported File Type",
+  message: "MaiinSight only supports CSV and Excel transaction files.",
+  suggestion: "Please upload a .csv, .xlsx, or .xls file.",
+  errorCode: "UNSUPPORTED_FILE_TYPE",
+})
+
+const createFriendlyImportError = (
+  response: FriendlyErrorResponse | null,
+  fallbackTitle = "Import Failed"
+): BusinessErrorState => ({
+  title: fallbackTitle,
+  message: response?.message || "We couldn't process the uploaded file.",
+  suggestion:
+    response?.suggestion ||
+    "Please make sure the file follows the required MaiinSight transaction template, then try again. Contact IT Support if the issue continues.",
+  errorCode: response?.errorCode || "IMPORT_FAILED",
+  technicalDetails: response?.technicalMessage || null,
+})
+
+const createBusinessErrorState = ({
+  title,
+  message,
+  suggestion,
+  errorCode,
+  technicalDetails,
+}: BusinessErrorState): BusinessErrorState => ({
+  title,
+  message,
+  suggestion,
+  errorCode,
+  technicalDetails,
+})
 const getCurrentTime = () => {
   return new Date().toLocaleTimeString([], {
     hour: "2-digit",
@@ -344,7 +400,7 @@ const mapImportJobToSyncJob = (job: ImportJobResponse): SyncJob => {
   return {
     id: String(job.id),
     name: job.fileName,
-    type: "csv",
+    type: "file",
     status,
     progress: status === "completed" ? 100 : status === "processing" ? 60 : 0,
     records: job.rowCount || 0,
@@ -384,7 +440,7 @@ const createSyncJob = (source: DataSource, status: SyncStatus, progress: number)
 export function DataManagement() {
   const [isRunningMl, setIsRunningMl] = useState(false)
 const [mlMessage, setMlMessage] = useState("")
-const [mlError, setMlError] = useState("")
+const [mlError, setMlError] = useState<BusinessErrorState | null>(null)
 const [mlSummary, setMlSummary] = useState<MlSummary>({
   lastRun: "Not run yet",
   records: 0,
@@ -399,17 +455,18 @@ const [mlSummary, setMlSummary] = useState<MlSummary>({
   const [uploadProgress, setUploadProgress] = useState(0)
   const [isUploading, setIsUploading] = useState(false)
   const [uploadMessage, setUploadMessage] = useState("")
-  const [uploadError, setUploadError] = useState("")
+  const [uploadError, setUploadError] = useState<BusinessErrorState | null>(null)
 
   const [isLoadingJobs, setIsLoadingJobs] = useState(false)
   const [removingJobId, setRemovingJobId] = useState<string | null>(null)
 
   const [rawModalOpen, setRawModalOpen] = useState(false)
+  const [templatePreviewOpen, setTemplatePreviewOpen] = useState(false)
   const [selectedRawJob, setSelectedRawJob] = useState<SyncJob | null>(null)
   const [rawRows, setRawRows] = useState<RawTransactionRow[]>([])
   const [rawHeaders, setRawHeaders] = useState<string[]>([])
   const [isLoadingRawRows, setIsLoadingRawRows] = useState(false)
-  const [rawRowsError, setRawRowsError] = useState("")
+  const [rawRowsError, setRawRowsError] = useState<BusinessErrorState | null>(null)
   const [syncingSourceId, setSyncingSourceId] = useState<string | null>(null)
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [downloadConfirmOpen, setDownloadConfirmOpen] = useState(false)
@@ -419,6 +476,9 @@ const [mlSummary, setMlSummary] = useState<MlSummary>({
   const canAccessDataCenter =
     userRole === USER_ROLES.OPERATIONAL|| userRole === USER_ROLES.IT_SUPPORT
   const canManageCsv = canAccessFeature(userRole, "uploadCsv")
+  const canRunMachineLearning =
+    userRole === USER_ROLES.OPERATIONAL || userRole === USER_ROLES.IT_SUPPORT
+  const canViewTechnicalDetails = userRole === USER_ROLES.IT_SUPPORT
 
  const fetchDataCenter = useCallback(async () => {
   try {
@@ -429,27 +489,71 @@ const [mlSummary, setMlSummary] = useState<MlSummary>({
       return
     }
 
-    const response = await fetch(getApiUrl("/dashboard/data-center"), {
-      method: "GET",
-      cache: "no-store",
-      headers: {
-        ...getAuthHeaders(),
-      },
-    })
+    const [summaryResponse, metaStatusResponse] = await Promise.all([
+      fetch(getApiUrl("/dashboard/data-center"), {
+        method: "GET",
+        cache: "no-store",
+        headers: {
+          ...getAuthHeaders(),
+        },
+      }),
+      fetch(getApiUrl("/meta/status"), {
+        method: "GET",
+        cache: "no-store",
+        headers: {
+          ...getAuthHeaders(),
+        },
+      }),
+    ])
 
-    const result = await response.json().catch(() => null)
+    const summaryResult = await summaryResponse.json().catch(() => null)
+    const metaStatusResult = await metaStatusResponse.json().catch(() => null)
 
-    if (!response.ok || !result?.success) {
+    if (!summaryResponse.ok || !summaryResult?.success || !summaryResult?.data) {
       console.warn("Invalid data center summary response:", {
-        status: response.status,
-        result,
+        status: summaryResponse.status,
+        result: summaryResult,
       })
 
       setDataSources(defaultDataSources)
       return
     }
 
-    setDataSources(defaultDataSources)
+    const latestBatch = summaryResult.data.latestBatch
+    const latestBatchTime = latestBatch?.updatedAt || latestBatch?.createdAt || null
+    const metaConfigured = Boolean(metaStatusResult?.success && metaStatusResult?.data?.configured)
+    const latestMetaSync = metaStatusResult?.data?.latestSync?.startedAt || null
+
+    setDataSources([
+      {
+        id: "1",
+        name: "MaiinSight Database",
+        type: "database",
+        status: summaryResult.data.totalFacilityTransactions > 0 ? "connected" : "disconnected",
+        lastSync: formatDisplaySyncTime(latestBatchTime),
+        records: Number(summaryResult.data.totalFacilityTransactions || 0),
+      },
+      {
+        id: "2",
+        name: "Meta Graph API",
+        type: "api",
+        status: metaConfigured
+          ? metaStatusResult?.data?.latestSync?.status?.toLowerCase() === "failed"
+            ? "error"
+            : "connected"
+          : "disconnected",
+        lastSync: metaConfigured ? formatDisplaySyncTime(latestMetaSync) : "Not connected",
+        records: 0,
+      },
+      {
+        id: "3",
+        name: "AI Strategy Engine",
+        type: "api",
+        status: "connected",
+        lastSync: latestBatchTime ? formatDisplaySyncTime(latestBatchTime) : "Ready when data is available",
+        records: Number(summaryResult.data.totalBatches || 0),
+      },
+    ])
   } catch (error) {
     console.warn("Failed to fetch data center summary:", error)
     setDataSources(defaultDataSources)
@@ -721,7 +825,7 @@ if (!response.ok) {
     setUploadFile(null)
     setUploadProgress(0)
     setUploadMessage("")
-    setUploadError("")
+    setUploadError(null)
     setIsDragging(false)
   }
 
@@ -749,7 +853,7 @@ if (!response.ok) {
     e.preventDefault()
     setIsDragging(false)
     setUploadMessage("")
-    setUploadError("")
+    setUploadError(null)
 
     const files = e.dataTransfer.files
 
@@ -757,8 +861,8 @@ if (!response.ok) {
 
     const file = files[0]
 
-    if (!isCsvFile(file)) {
-      setUploadError("Only CSV files are allowed.")
+    if (!isSupportedImportFile(file)) {
+      setUploadError(createUnsupportedFileError())
       return
     }
 
@@ -767,7 +871,7 @@ if (!response.ok) {
 
   const handleFileSelect = (e: ChangeEvent<HTMLInputElement>) => {
     setUploadMessage("")
-    setUploadError("")
+    setUploadError(null)
 
     const files = e.target.files
 
@@ -775,46 +879,55 @@ if (!response.ok) {
 
     const file = files[0]
 
-    if (!isCsvFile(file)) {
-      setUploadError("Only CSV files are allowed.")
+    if (!isSupportedImportFile(file)) {
+      setUploadError(createUnsupportedFileError())
       return
     }
 
     setUploadFile(file)
   }
 
-  const handleUploadCsv = async () => {
-  const userRole = getStoredRole()
-  if (!canAccessFeature(userRole, "uploadCsv")) {
-    const message = "Upload is available to Marketing and IT Support only."
-    setUploadError(`Access denied: ${message}`)
-    toast.error("Access denied", {
-      description: message,
-    })
-    return
-  }
+  const handleUploadImport = async () => {
+    const userRole = getStoredRole()
 
-  if (!uploadFile) {
-    setUploadError("Please select a CSV file first.")
-    return
-  }
+    if (!canAccessFeature(userRole, "uploadCsv")) {
+      const message = "Upload is available to Marketing Operational and IT Support only."
+      setUploadError({
+        title: "Access Denied",
+        message,
+        suggestion: "Please sign in with a Marketing Operational or IT Support account.",
+        errorCode: "ACCESS_DENIED",
+      })
+      toast.error("Access denied", {
+        description: message,
+      })
+      return
+    }
 
-  const currentFile = uploadFile
-  const jobId = `csv-${Date.now()}`
-  const startedAt = getCurrentTime()
+    if (!uploadFile) {
+      setUploadError({
+        title: "No File Selected",
+        message: "Please select a transaction file first.",
+        suggestion: "Upload a CSV or Excel transaction file to continue.",
+        errorCode: "FILE_REQUIRED",
+      })
+      return
+    }
 
-  try {
-    setIsUploading(true)
-    setUploadProgress(10)
-    setUploadMessage("")
-    setUploadError("")
+    const currentFile = uploadFile
+    const jobId = `import-${Date.now()}`
+    const startedAt = getCurrentTime()
 
-    // lanjutkan code lama kamu di bawah sini...
+    try {
+      setIsUploading(true)
+      setUploadProgress(10)
+      setUploadMessage("")
+      setUploadError(null)
 
       const newJob: SyncJob = {
         id: jobId,
         name: currentFile.name,
-        type: "csv",
+        type: "file",
         status: "processing",
         progress: 10,
         records: 0,
@@ -828,27 +941,23 @@ if (!response.ok) {
 
       setUploadProgress(40)
 
-      const response = await fetch(getApiUrl("/imports/upload-csv"), {
-      method: "POST",
-      headers: getAuthHeaders(),
-      body: formData,
-    })
+      const response = await fetch(getApiUrl("/imports/upload-file"), {
+        method: "POST",
+        headers: getAuthHeaders(),
+        body: formData,
+      })
 
       setUploadProgress(75)
 
-      const result: UploadCsvResponse = await response.json()
+      const result: UploadImportResponse | null = await response.json().catch(() => null)
 
-      if (!response.ok || !result.success || !result.data) {
-        throw new Error(
-          result.message ||
-            "Failed to upload CSV file. Please check your login and try again.",
-        )
+      if (!response.ok || !result?.success || !result.data) {
+        throw createFriendlyImportError(result, "Import Failed")
       }
 
       setUploadProgress(100)
-
       setUploadMessage(
-        `Upload success! ${result.data.rowCount.toLocaleString()} rows imported from ${result.data.fileName}.`,
+        `Upload success. ${result.data.rowCount.toLocaleString()} rows imported from ${result.data.fileName}.`
       )
       toast.success("Upload complete", {
         description: `${result.data.fileName} has been imported.`,
@@ -863,12 +972,14 @@ if (!response.ok) {
         resetUploadState()
       }, 1200)
     } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : "Upload failed."
+      const friendlyError =
+        error && typeof error === "object" && "title" in error
+          ? (error as BusinessErrorState)
+          : createFriendlyImportError(null, "Import Failed")
 
-      setUploadError(errorMessage)
-      toast.error("Upload failed", {
-        description: errorMessage,
+      setUploadError(friendlyError)
+      toast.error(friendlyError.title, {
+        description: friendlyError.message,
       })
 
       setSyncJobs((prev) =>
@@ -878,85 +989,114 @@ if (!response.ok) {
                 ...job,
                 status: "failed",
                 progress: 0,
-                error: errorMessage,
+                error: friendlyError.message,
               }
-            : job,
-        ),
+            : job
+        )
       )
     } finally {
       setIsUploading(false)
     }
   }
-  
+
   const handleRunMachineLearning = async () => {
-  try {
-    setIsRunningMl(true)
-    setMlMessage("")
-    setMlError("")
+    if (!canRunMachineLearning) {
+      const businessError = createBusinessErrorState({
+        title: "Access Denied",
+        message: "Machine learning is available to Marketing Operational and IT Support only.",
+        suggestion: "Please sign in with a Marketing Operational or IT Support account.",
+        errorCode: "ACCESS_DENIED",
+      })
 
-    const response = await fetch(getApiUrl("/ml/playtime/run"), {
-      method: "POST",
-      cache: "no-store",
-      headers: {
-        ...getAuthHeaders(),
-      },
-    })
-
-    const result: PlaytimeMlRunResponse = await response
-      .json()
-      .catch(() => null)
-
-    if (!response.ok || !result?.success) {
-      throw new Error(result?.message || "Failed to run machine learning.")
+      setMlError(businessError)
+      toast.error(businessError.title, {
+        description: businessError.message,
+      })
+      return
     }
 
-    await fetchMlSummary()
+    try {
+      setIsRunningMl(true)
+      setMlMessage("")
+      setMlError(null)
 
-    setMlMessage(
-      `Machine learning completed. Total sessions: ${
-        result.data?.totalSessions || 0
-      }.`
-    )
+      const playtimeResponse = await fetch(getApiUrl("/ml/playtime/run"), {
+        method: "POST",
+        cache: "no-store",
+        headers: {
+          ...getAuthHeaders(),
+        },
+      })
 
-    toast.success("Machine learning completed", {
-      description: `Processed ${
-        result.data?.totalSessions || 0
-      } sessions.`,
-    })
+      const playtimeResult: PlaytimeMlRunResponse | null = await playtimeResponse
+        .json()
+        .catch(() => null)
 
-    publishLastSyncTime()
-  } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Failed to run machine learning."
+      if (!playtimeResponse.ok || !playtimeResult?.success) {
+        throw new Error(playtimeResult?.message || "Failed to run play-time behavior ML.")
+      }
 
-    setMlError(message)
+      const segmentationResult = await runCustomerSegmentation()
 
-    toast.error("Machine learning failed", {
-      description: message,
-    })
-  } finally {
-    setIsRunningMl(false)
+      const summary: CombinedMlSummary = {
+        playtimeSessions: playtimeResult.data?.totalSessions || 0,
+        playtimeCustomers: playtimeResult.data?.totalCustomers || 0,
+        segmentationCustomers: segmentationResult.run?.totalCustomers || 0,
+        selectedK: segmentationResult.selectedK,
+      }
+
+      await fetchMlSummary()
+      await fetchDataCenter()
+      await fetchSyncJobs()
+
+      publishLastSyncTime()
+      notifySegmentationUpdated()
+
+      setMlMessage(
+        `Machine learning completed. Play-Time Behavior processed ${summary.playtimeSessions.toLocaleString()} sessions, and Customer Value Segmentation processed ${summary.segmentationCustomers.toLocaleString()} customers with Business Segmentation K: ${summary.selectedK ?? 4}.`
+      )
+
+      toast.success("Machine learning completed", {
+        description: `Customer Value Segmentation is ready with Business Segmentation K: ${summary.selectedK ?? 4}.`,
+      })
+    } catch (error) {
+      const businessError = createBusinessErrorState({
+        title: "Machine Learning Failed",
+        message: "We couldn't complete the machine learning run.",
+        suggestion: "Please try again after the latest data import is complete. Contact IT Support if the issue continues.",
+        errorCode: "ML_RUN_FAILED",
+        technicalDetails:
+          error instanceof Error ? error.message : "Failed to run machine learning.",
+      })
+
+      setMlError(businessError)
+
+      toast.error(businessError.title, {
+        description: businessError.message,
+      })
+    } finally {
+      setIsRunningMl(false)
+    }
   }
-}
 
 const handleViewRawRows= async (job: SyncJob) => {
   try {
     setSelectedRawJob(job)
     setRawModalOpen(true)
     setIsLoadingRawRows(true)
-    setRawRowsError("")
+    setRawRowsError(null)
     setRawRows([])
     setRawHeaders([])
 
     const response = await fetch(getApiUrl(`/imports/batches/${job.id}/rows`), {
-  method: "GET",
-  cache: "no-store",
-  headers: getAuthHeaders(),
-})
-    const result = await response.json()
+      method: "GET",
+      cache: "no-store",
+      headers: getAuthHeaders(),
+    })
+    const result = await response.json().catch(() => null)
 
-    if (!response.ok || !result.success) {
-      throw new Error(result.message || "Failed to fetch raw transaction rows.")
+    if (!response.ok || !result?.success) {
+      throw createFriendlyImportError(result, "Raw Data Preview Failed")
     }
 
     const rows = Array.isArray(result.data)
@@ -972,16 +1112,31 @@ const handleViewRawRows= async (job: SyncJob) => {
       setRawHeaders(Object.keys(firstRowData))
     }
   } catch (error) {
-    const errorMessage =
-      error instanceof Error ? error.message : "Failed to load raw data."
+    const friendlyError =
+      error && typeof error === "object" && "title" in error
+        ? (error as BusinessErrorState)
+        : createBusinessErrorState({
+            title: "Raw Data Preview Failed",
+            message: "We couldn't load the uploaded transaction preview.",
+            suggestion: "Please try again. Contact IT Support if the issue continues.",
+            errorCode: "RAW_DATA_PREVIEW_FAILED",
+            technicalDetails:
+              error instanceof Error ? error.message : "Failed to load raw data.",
+          })
 
-    setRawRowsError(errorMessage)
+    setRawRowsError(friendlyError)
   } finally {
     setIsLoadingRawRows(false)
   }
 }
-
   const handleRemoveJob = async (job: SyncJob) => {
+  if (job.type !== "file") {
+    toast.error("Delete unavailable", {
+      description: "Only imported transaction files can be deleted.",
+    })
+    return
+  }
+
   const userRole = getStoredRole()
   if (!canAccessFeature(userRole, "deleteImport")) {
     toast.error("Access denied", {
@@ -1028,6 +1183,13 @@ const handleViewRawRows= async (job: SyncJob) => {
   }
 
   const handleDownloadReport = async (job: SyncJob) => {
+    if (job.type !== "file") {
+      toast.error("Download unavailable", {
+        description: "Only imported transaction files can be exported from this view.",
+      })
+      return
+    }
+
     const toastId = toast.loading(`Preparing export for "${job.name}"...`)
 
     try {
@@ -1114,14 +1276,14 @@ if (!canAccessDataCenter) {
           <div>
             <h1 className="text-2xl font-bold">Data Management Center</h1>
             <p className="text-muted-foreground">
-              API synchronization and data import tools
+              Sync data and upload your transaction files
             </p>
           </div>
           <Dialog open={uploadModalOpen} onOpenChange={handleDialogOpenChange} >
             <DialogTrigger asChild>
               <Button className="gap-2" disabled={!canManageCsv}>
                 <Upload className="h-4 w-4" />
-                Upload CSV
+                Upload Data File
               </Button>
             </DialogTrigger>
 
@@ -1130,7 +1292,7 @@ if (!canAccessDataCenter) {
                 <DialogHeader className="text-left">
                   <DialogTitle>Upload Data File</DialogTitle>
                   <DialogDescription>
-                    Upload a CSV file to import transaction data into MaiinSight.
+                    Upload a CSV or Excel transaction file to import data into MaiinSight.
                   </DialogDescription>
                 </DialogHeader>
               </div>
@@ -1164,7 +1326,7 @@ if (!canAccessDataCenter) {
                         onClick={() => {
                           setUploadFile(null)
                           setUploadMessage("")
-                          setUploadError("")
+                          setUploadError(null)
                         }}
                         className="text-destructive"
                         disabled={isUploading}
@@ -1176,7 +1338,7 @@ if (!canAccessDataCenter) {
                     <div className="flex flex-col items-center gap-2">
                       <Upload className="h-10 w-10 text-muted-foreground" />
                       <p className="text-sm text-muted-foreground">
-                        Drag and drop your CSV file here, or
+                        Drag and drop your transaction file here, or
                       </p>
 
                       <Label htmlFor="file-upload" className="cursor-pointer">
@@ -1186,7 +1348,7 @@ if (!canAccessDataCenter) {
                         <Input
                           id="file-upload"
                           type="file"
-                          accept=".csv"
+                          accept=".csv,.xlsx,.xls"
                           className="hidden"
                           onChange={handleFileSelect}
                           disabled={isUploading}
@@ -1195,6 +1357,8 @@ if (!canAccessDataCenter) {
                     </div>
                   )}
                 </div>
+
+                <p className="text-sm text-muted-foreground">Supported formats: CSV, XLSX, XLS</p>
 
                 {isUploading && (
                   <div className="space-y-2">
@@ -1213,14 +1377,19 @@ if (!canAccessDataCenter) {
                 )}
 
                 {uploadError && (
-                  <div className="rounded-md border border-destructive/20 bg-destructive/5 p-3 text-sm text-destructive">
-                    {uploadError}
-                  </div>
+                  <BusinessErrorAlert
+                    title={uploadError.title}
+                    message={uploadError.message}
+                    suggestion={uploadError.suggestion}
+                    errorCode={uploadError.errorCode}
+                    technicalDetails={uploadError.technicalDetails}
+                    showTechnicalDetails={canViewTechnicalDetails}
+                  />
                 )}
                 <Button
                   className="w-full shrink-0"
                   disabled={!canManageCsv || !uploadFile || isUploading}
-                  onClick={handleUploadCsv}
+                  onClick={handleUploadImport}
                 >
                   {isUploading ? (
                     <>
@@ -1294,7 +1463,7 @@ if (!canAccessDataCenter) {
         <h3 className="mb-1 font-semibold">{source.name}</h3>
 
         <p className="mb-3 text-sm text-muted-foreground">
-          {source.records.toLocaleString()} records • Last sync:{" "}
+          {source.records.toLocaleString()} records - Last sync:{" "}
           {source.lastSync}
         </p>
 
@@ -1335,7 +1504,7 @@ if (!canAccessDataCenter) {
       <h3 className="mb-1 font-semibold">Machine Learning Engine</h3>
 
       <p className="mb-1 text-sm text-muted-foreground">
-        {mlSummary.records.toLocaleString()} sessions • Last run:{" "}
+        {mlSummary.records.toLocaleString()} sessions - Last run:{" "}
         {mlSummary.lastRun}
       </p>
 
@@ -1347,7 +1516,7 @@ if (!canAccessDataCenter) {
         variant="outline"
         size="sm"
         className="w-full gap-2"
-        disabled={isRunningMl}
+        disabled={isRunningMl || !canRunMachineLearning}
         onClick={handleRunMachineLearning}
       >
         {isRunningMl ? (
@@ -1373,10 +1542,55 @@ if (!canAccessDataCenter) {
 )}
 
 {mlError && (
-  <div className="rounded-md border border-destructive/20 bg-destructive/5 p-3 text-sm text-destructive">
-    {mlError}
-  </div>
+  <BusinessErrorAlert
+    title={mlError.title}
+    message={mlError.message}
+    suggestion={mlError.suggestion}
+    errorCode={mlError.errorCode}
+    technicalDetails={mlError.technicalDetails}
+    showTechnicalDetails={canViewTechnicalDetails}
+  />
 )}
+        <Card className="border-border bg-card shadow-sm">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-sm">
+              Format File to Upload
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Info className="h-4 w-4 cursor-help text-muted-foreground" />
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Preview the upload structure before using a real transaction file.</p>
+                </TooltipContent>
+              </Tooltip>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <div className="flex items-center justify-between gap-4 rounded-lg border bg-background px-4 py-3">
+              <div className="flex min-w-0 items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-md bg-primary/10">
+                  <FileSpreadsheet className="h-5 w-5 text-primary" />
+                </div>
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium">maiin-upload-template.csv</p>
+                  <p className="text-xs text-muted-foreground">CSV, XLSX, or XLS upload structure</p>
+                </div>
+              </div>
+
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="ghost" size="icon" className="shrink-0" onClick={() => setTemplatePreviewOpen(true)}>
+                    <Eye className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>View the file structure example.</p>
+                </TooltipContent>
+              </Tooltip>
+            </div>
+          </CardContent>
+        </Card>
+
         <Card className="border-border bg-card shadow-sm">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -1409,7 +1623,7 @@ if (!canAccessDataCenter) {
                 {syncJobs.map((job) => {
                   const config = statusConfig[job.status]
                   const StatusIcon = config.icon
-                  const isCsvJob = job.type === "csv" && job.id !== "ready"
+                  const isFileJob = job.type === "file" && job.id !== "ready"
 
                   return (
                     <div
@@ -1426,11 +1640,11 @@ if (!canAccessDataCenter) {
                         />
                       </div>
 
-                      <div className="min-w-0 flex-1">
+                      <div className="min-w-0 flex-1 space-y-3">
                         <div className="mb-1 flex items-center gap-2">
                           <h4 className="truncate font-medium">{job.name}</h4>
                           <Badge variant="outline" className="text-xs">
-                            {job.type.toUpperCase()}
+                            {job.type === "file" ? "FILE" : job.type.toUpperCase()}
                           </Badge>
                         </div>
 
@@ -1440,54 +1654,33 @@ if (!canAccessDataCenter) {
                           {job.completedAt && (
                             <span>Completed: {job.completedAt}</span>
                           )}
-
-                          {job.records > 0 && (
-                            <span>{job.records.toLocaleString()} records</span>
-                          )}
                         </div>
 
-                        {job.error && (
-                          <p className="mt-1 text-sm text-destructive">
-                            {job.error}
-                          </p>
+                        {job.businessError && (
+                          <BusinessErrorAlert
+                            title={job.businessError.title}
+                            message={job.businessError.message}
+                            suggestion={job.businessError.suggestion}
+                            errorCode={job.businessError.errorCode}
+                            technicalDetails={job.businessError.technicalDetails}
+                            showTechnicalDetails={canViewTechnicalDetails}
+                            variant="warning"
+                          />
+                        )}
+
+                        {(job.status === "processing" || job.status === "queued") && (
+                          <div className="w-full sm:w-32">
+                            <div className="mb-1 flex justify-between text-xs text-muted-foreground">
+                              <span>{config.label}</span>
+                              <span>{job.progress}%</span>
+                            </div>
+                            <Progress value={job.progress} className="h-2" />
+                          </div>
                         )}
                       </div>
 
-                      {(job.status === "processing" ||
-                        job.status === "queued") && (
-                        <div className="w-full sm:w-32">
-                          <div className="mb-1 flex justify-between text-xs text-muted-foreground">
-                            <span>{config.label}</span>
-                            <span>{job.progress}%</span>
-                          </div>
-                          <Progress value={job.progress} className="h-2" />
-                        </div>
-                      )}
-
                       <div className="flex items-center gap-2">
-                        {job.status === "processing" && (
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button variant="ghost" size="icon" className="h-8 w-8">
-                                <Pause className="h-4 w-4" />
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>Pause</TooltipContent>
-                          </Tooltip>
-                        )}
-
-                        {job.status === "queued" && (
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button variant="ghost" size="icon" className="h-8 w-8">
-                                <Play className="h-4 w-4" />
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>Start</TooltipContent>
-                          </Tooltip>
-                        )}
-
-                        {isCsvJob && (
+                        {isFileJob && (
                           <Tooltip>
                             <TooltipTrigger asChild>
                               <Button
@@ -1499,11 +1692,11 @@ if (!canAccessDataCenter) {
                                 <Eye className="h-4 w-4" />
                               </Button>
                             </TooltipTrigger>
-                            <TooltipContent>View Raw Data</TooltipContent>
+                            <TooltipContent>View Cleaned Data</TooltipContent>
                           </Tooltip>
                         )}
 
-                        {job.status === "completed" && (
+                        {isFileJob && job.status === "completed" && (
                           <Tooltip>
                             <TooltipTrigger asChild>
                               <Button
@@ -1522,27 +1715,29 @@ if (!canAccessDataCenter) {
                           </Tooltip>
                         )}
 
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                              disabled={!canManageCsv || removingJobId === job.id}
-                              onClick={() => {
-                                setPendingJob(job)
-                                setDeleteConfirmOpen(true)
-                              }}
-                            >
+                        {isFileJob ? (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                                disabled={!canManageCsv || removingJobId === job.id}
+                                onClick={() => {
+                                  setPendingJob(job)
+                                  setDeleteConfirmOpen(true)
+                                }}
+                              >
                               {removingJobId === job.id ? (
                                 <Loader2 className="h-4 w-4 animate-spin" />
                               ) : (
                                 <Trash2 className="h-4 w-4" />
                               )}
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent>Remove</TooltipContent>
-                        </Tooltip>
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>Remove</TooltipContent>
+                          </Tooltip>
+                        ) : null}
                       </div>
                     </div>
                   )
@@ -1600,13 +1795,41 @@ if (!canAccessDataCenter) {
           </AlertDialogContent>
         </AlertDialog>
 
+        <Dialog open={templatePreviewOpen} onOpenChange={setTemplatePreviewOpen}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>Format File to Upload</DialogTitle>
+              <DialogDescription>
+                Compact preview of the transaction file structure expected by MaiinSight.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              {[
+                ["Order ID", "ORD-001"],
+                ["Nama", "Test Customer"],
+                ["Tanggal Transaksi", "2026-06-27"],
+                ["Tanggal Main", "2026-06-28"],
+                ["Jam Main", "08:00 - 09:00"],
+                ["Venue", "Mini Soccer"],
+                ["Lapangan", "Court 1"],
+                ["Harga Bersih", "100000"],
+              ].map(([label, value]) => (
+                <div key={label} className="rounded-lg border bg-muted/20 px-3 py-2">
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">{label}</p>
+                  <p className="mt-1 text-sm font-medium">{value}</p>
+                </div>
+              ))}
+            </div>
+          </DialogContent>
+        </Dialog>
         <Dialog open={rawModalOpen} onOpenChange={setRawModalOpen}>
-          <DialogContent className="max-h-[85vh] max-w-[95vw] overflow-hidden sm:max-w-6xl">
+          <DialogContent className="max-h-[92vh] max-w-[98vw] overflow-hidden sm:max-w-[98vw]">
             <DialogHeader>
               <DialogTitle>Raw Uploaded Data</DialogTitle>
               <DialogDescription>
                 {selectedRawJob
-                  ? `${selectedRawJob.name} • ${selectedRawJob.records.toLocaleString()} records`
+                  ? `${selectedRawJob.name} - ${selectedRawJob.records.toLocaleString()} records`
                   : "Preview uploaded transaction data"}
               </DialogDescription>
             </DialogHeader>
@@ -1616,10 +1839,15 @@ if (!canAccessDataCenter) {
                 <Loader2 className="h-4 w-4 animate-spin" />
                 Loading raw data...
               </div>
-            ) : rawRowsError ? (
-              <div className="rounded-md border border-destructive/20 bg-destructive/5 p-3 text-sm text-destructive">
-                {rawRowsError}
-              </div>
+                        ) : rawRowsError ? (
+              <BusinessErrorAlert
+                title={rawRowsError.title}
+                message={rawRowsError.message}
+                suggestion={rawRowsError.suggestion}
+                errorCode={rawRowsError.errorCode}
+                technicalDetails={rawRowsError.technicalDetails}
+                showTechnicalDetails={canViewTechnicalDetails}
+              />
             ) : rawRows.length === 0 ? (
               <div className="rounded-md border p-4 text-sm text-muted-foreground">
                 No raw data found for this upload history.
@@ -1627,58 +1855,60 @@ if (!canAccessDataCenter) {
             ) : (
               <div className="space-y-3">
                 <p className="text-sm text-muted-foreground">
-                  Showing first {rawRows.length} rows from uploaded CSV.
+                  Showing first {rawRows.length} rows from the uploaded transaction file.
                 </p>
 
-                <div className="max-h-[55vh] overflow-auto rounded-lg border">
-                  <table className="w-full min-w-max border-collapse text-sm">
-                    <thead className="sticky top-0 z-10 bg-background">
-                      <tr>
-                        <th className="border-b border-r px-3 py-2 text-left font-semibold">
-                          Row
-                        </th>
-
-                        {rawHeaders.map((header) => (
-                          <th
-                            key={header}
-                            className="border-b border-r px-3 py-2 text-left font-semibold"
-                          >
-                            {header}
+                                <div className="max-h-[68vh] overflow-auto rounded-xl border bg-muted/20 p-2">
+                  <div className="inline-block min-w-full align-top rounded-lg border bg-background shadow-sm">
+                    <table className="min-w-max border-separate border-spacing-0 text-sm">
+                      <thead className="sticky top-0 z-20 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/90">
+                        <tr>
+                          <th className="sticky left-0 z-30 min-w-[72px] border-b border-r bg-background px-3 py-2 text-left font-semibold">
+                            Row
                           </th>
-                        ))}
-                      </tr>
-                    </thead>
 
-                    <tbody>
-                      {rawRows.map((row) => (
-                        <tr key={row.id} className="hover:bg-muted/50">
-                          <td className="border-b border-r px-3 py-2 text-muted-foreground">
-                            {row.rowNumber}
-                          </td>
-
-                          {rawHeaders.map((header) => {
-                            const value = row.data?.[header]
-
-                            return (
-                              <td
-                                key={`${row.id}-${header}`}
-                                className="max-w-[220px] truncate border-b border-r px-3 py-2"
-                                title={
-                                  value === null || value === undefined
-                                    ? "-"
-                                    : String(value)
-                                }
-                              >
-                                {value === null || value === undefined || value === ""
-                                  ? "-"
-                                  : String(value)}
-                              </td>
-                            )
-                          })}
+                          {rawHeaders.map((header) => (
+                            <th
+                              key={header}
+                              className="min-w-[160px] border-b border-r bg-background px-3 py-2 text-left font-semibold last:border-r-0"
+                            >
+                              {header}
+                            </th>
+                          ))}
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      </thead>
+
+                      <tbody>
+                        {rawRows.map((row) => (
+                          <tr key={row.id} className="hover:bg-muted/40">
+                            <td className="sticky left-0 z-10 border-b border-r bg-background px-3 py-2 text-muted-foreground">
+                              {row.rowNumber}
+                            </td>
+
+                            {rawHeaders.map((header) => {
+                              const value = row.data?.[header]
+
+                              return (
+                                <td
+                                  key={`${row.id}-${header}`}
+                                  className="min-w-[180px] border-b border-r px-3 py-2 align-top whitespace-pre-wrap break-words last:border-r-0"
+                                  title={
+                                    value === null || value === undefined
+                                      ? "-"
+                                      : String(value)
+                                  }
+                                >
+                                  {value === null || value === undefined || value === ""
+                                    ? "-"
+                                    : String(value)}
+                                </td>
+                              )
+                            })}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               </div>
             )}
@@ -1688,3 +1918,28 @@ if (!canAccessDataCenter) {
     </TooltipProvider>
   )
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

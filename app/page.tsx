@@ -14,11 +14,43 @@ type LoginResponse = {
 }
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:5000"
+const DEFAULT_PAGE: PageId = "dashboard"
+const VALID_PAGES = new Set<PageId>([
+  "dashboard",
+  "segments",
+  "data",
+  "targeting",
+  "genai",
+  "instasight",
+  "history",
+  "settings",
+  "reports",
+])
+
+const getRequestedPage = (): PageId => {
+  if (typeof window === "undefined") return DEFAULT_PAGE
+
+  const page = new URLSearchParams(window.location.search).get("page") as PageId | null
+  return page && VALID_PAGES.has(page) ? page : DEFAULT_PAGE
+}
+
+const syncPageToUrl = (page: PageId) => {
+  if (typeof window === "undefined") return
+
+  const url = new URL(window.location.href)
+  if (page === DEFAULT_PAGE) {
+    url.searchParams.delete("page")
+  } else {
+    url.searchParams.set("page", page)
+  }
+
+  window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`)
+}
 
 export default function Home() {
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [userRole, setUserRole] = useState<UserRole>("operational")
-  const [currentPage, setCurrentPage] = useState<PageId>("dashboard")
+  const [currentPage, setCurrentPage] = useState<PageId>(DEFAULT_PAGE)
   const [isLoading, setIsLoading] = useState(false)
   const [authError, setAuthError] = useState<string | null>(null)
 
@@ -28,6 +60,7 @@ export default function Home() {
 
     if (storedToken && storedRole) {
       setUserRole(storedRole)
+      setCurrentPage(getRequestedPage())
       setIsAuthenticated(true)
     } else {
       localStorage.removeItem("maiinToken")
@@ -39,7 +72,7 @@ export default function Home() {
   const handleLogin = (token: string, user: LoginResponse["user"]) => {
   setIsAuthenticated(true)
   setUserRole(user.role)
-  setCurrentPage("dashboard")
+  setCurrentPage(getRequestedPage())
 
   localStorage.setItem("maiinToken", token)
   localStorage.setItem("maiinRole", user.role)
@@ -56,7 +89,7 @@ export default function Home() {
 
   const handleLogout = () => {
   setIsAuthenticated(false)
-  setCurrentPage("dashboard")
+  setCurrentPage(DEFAULT_PAGE)
   setAuthError(null)
 
   localStorage.removeItem("maiinToken")
@@ -73,6 +106,7 @@ export default function Home() {
 
   const handleNavigate = (page: PageId) => {
     setCurrentPage(page)
+    syncPageToUrl(page)
   }
 
   const handleLoginSubmit = async (email: string, password: string) => {
