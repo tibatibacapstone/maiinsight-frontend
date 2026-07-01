@@ -1,9 +1,39 @@
 "use client"
 
-import { useEffect, useState } from "react"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
+import { useEffect, useMemo, useState } from "react"
+import {
+  AlertCircle,
+  BrainCircuit,
+  ChevronDown,
+  Info,
+  Loader2,
+  RefreshCw,
+  TrendingDown,
+  TrendingUp,
+  Users,
+} from "lucide-react"
+import {
+  Bar,
+  BarChart,
+  Cell,
+  CartesianGrid,
+  Legend,
+  PolarAngleAxis,
+  PolarGrid,
+  PolarRadiusAxis,
+  Radar,
+  RadarChart,
+  ResponsiveContainer,
+  Tooltip as RechartsTooltip,
+  XAxis,
+  YAxis,
+} from "recharts"
+
+import { getApiUrl } from "@/lib/api"
+import { getAuthHeaders } from "@/lib/roles"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import {
   Table,
   TableBody,
@@ -19,18 +49,6 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import {
-  Bar,
-  BarChart,
-  Cell,
-  CartesianGrid,
-  Legend,
-  ResponsiveContainer,
-  Tooltip as RechartsTooltip,
-  XAxis,
-  YAxis,
-} from "recharts"
-import { AlertCircle, BrainCircuit, Info, Loader2, RefreshCw, Target, TrendingUp, Users } from "lucide-react"
-import {
   CUSTOMER_SEGMENT_COLORS,
   SEGMENTATION_UPDATED_EVENT,
   fetchSegmentationCustomers,
@@ -42,6 +60,34 @@ import {
   type SegmentationLatestData,
   type SegmentationSummaryData,
 } from "@/lib/segmentation"
+
+interface OverviewKpiData {
+  occupancyRate: number
+  occupancyChange: number
+  totalRevenue: number
+  revenueChange: number
+  lowSessionLabel: string
+  lowSessionCount: number
+  peakSessionLabel: string
+  peakSessionRevenue: number
+  totalBookedSessions: number
+  availableSessions: number
+}
+
+interface HeatmapSummary {
+  slots: Array<{
+    day_short: string
+    startHour: string
+    session_count: number
+    session_label?: string
+  }>
+  mostEmptySlot: {
+    dayLabel: string
+    hourLabel: string
+    sessionLabel: string
+    sessionCount: number
+  } | null
+}
 
 const formatNumber = (value: number | null | undefined, maximumFractionDigits = 1) => {
   if (value === null || value === undefined || Number.isNaN(value)) return "-"
@@ -60,6 +106,24 @@ const formatCurrency = (value: number | null | undefined) => {
     currency: "IDR",
     maximumFractionDigits: 0,
   }).format(value)
+}
+
+const formatPercent = (value: number | null | undefined) => {
+  if (value === null || value === undefined || Number.isNaN(value)) return "-"
+  return `${new Intl.NumberFormat("en-US", {
+    maximumFractionDigits: 1,
+    minimumFractionDigits: 0,
+  }).format(value)}%`
+}
+
+const formatChange = (value: number | null | undefined) => {
+  if (value === null || value === undefined || Number.isNaN(value)) return "-"
+
+  const prefix = value > 0 ? "+" : ""
+  return `${prefix}${new Intl.NumberFormat("en-US", {
+    maximumFractionDigits: 1,
+    minimumFractionDigits: 0,
+  }).format(value)}%`
 }
 
 const formatRunDate = (value?: string | null) => {
@@ -126,12 +190,133 @@ const EmptyState = () => (
   </Card>
 )
 
+export const HeatmapGrid = ({ heatmapSummary }: { heatmapSummary: HeatmapSummary | null }) => {
+  const slots = heatmapSummary?.slots || []
+  const mostEmptySlot = heatmapSummary?.mostEmptySlot
+  const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+  const hours = Array.from(new Set(slots.map((slot) => slot.startHour)))
+
+  if (hours.length === 0) {
+    return (
+      <Card className="border-border bg-card shadow-sm">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            Empty Slot Heatmap
+          </CardTitle>
+          <CardDescription>No empty slot pattern available yet.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="rounded-2xl border border-orange-200 bg-gradient-to-br from-orange-50 via-amber-50 to-white p-4 text-sm text-orange-900/80">
+            Waiting for playtime ML output.
+          </div>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  return (
+    <Card className="border-border bg-card shadow-sm">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          Empty Slot Heatmap
+          <Tooltip>
+            <TooltipTrigger>
+              <Info className="h-4 w-4 text-muted-foreground" />
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>Orange palette highlights the slowest hours across the month.</p>
+            </TooltipContent>
+          </Tooltip>
+        </CardTitle>
+          <CardDescription>
+            {mostEmptySlot
+              ? `${mostEmptySlot.dayLabel} ${mostEmptySlot.hourLabel} is usually the emptiest slot this month.`
+              : "No empty slot pattern available yet."}
+          </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="overflow-x-auto">
+          <div className="min-w-[900px] rounded-2xl border border-orange-200 bg-gradient-to-br from-orange-50 via-amber-50 to-white p-4">
+            <div
+              className="grid gap-1"
+              style={{ gridTemplateColumns: `80px repeat(${hours.length}, minmax(18px, 1fr))` }}
+            >
+              <div />
+              {hours.map((hour) => (
+                <div key={hour} className="text-[10px] font-medium text-orange-700">
+                  {hour}
+                </div>
+              ))}
+                  {days.map((day) => (
+                <div key={day} className="contents">
+                  <div className="text-xs font-medium text-orange-900">{day}</div>
+                  {hours.map((hour) => {
+                    const slot = slots.find((item) => item.day_short === day && item.startHour === hour)
+                    const count = slot?.session_count || 0
+                    // Compute alpha based on relative booked sessions so that emptier slots render thinner.
+                    const maxCount = Math.max(1, ...slots.map((s) => s.session_count || 0))
+                    const normalizedBooked = count / maxCount
+                    const minAlpha = 0.08
+                    const maxAlpha = 0.95
+                    const alpha = Math.max(minAlpha, Math.min(maxAlpha, minAlpha + normalizedBooked * (maxAlpha - minAlpha)))
+
+                    return (
+                      <Tooltip key={`${day}-${hour}`}>
+                        <TooltipTrigger asChild>
+                          <div
+                            className="h-4 rounded-sm border border-orange-200"
+                            style={{
+                              backgroundColor: `rgba(249, 115, 22, ${alpha})`,
+                            }}
+                          />
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p className="text-xs">
+                            {day} {hour}:00
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            Empty sessions: {count}
+                          </p>
+                        </TooltipContent>
+                      </Tooltip>
+                    )
+                  })}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+        <div className="mt-4 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+          <span className="inline-flex items-center gap-2">
+            <span className="h-3 w-3 rounded-sm bg-orange-200" />
+            Low empty rate
+          </span>
+          <span className="inline-flex items-center gap-2">
+            <span className="h-3 w-3 rounded-sm bg-orange-400" />
+            Moderate
+          </span>
+          <span className="inline-flex items-center gap-2">
+            <span className="h-3 w-3 rounded-sm bg-orange-600" />
+            High empty rate
+          </span>
+          <span className="text-xs text-muted-foreground">| The thinner the color, the emptier it is</span>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
 export function SegmentVisualization() {
   const [summaryData, setSummaryData] = useState<SegmentationSummaryData | null>(null)
   const [latestData, setLatestData] = useState<SegmentationLatestData | null>(null)
+  const [overviewKpi, setOverviewKpi] = useState<OverviewKpiData | null>(null)
+  const [heatmapSummary, setHeatmapSummary] = useState<HeatmapSummary | null>(null)
   const [customers, setCustomers] = useState<CustomerRfmScore[]>([])
   const [selectedSegment, setSelectedSegment] = useState<string | null>(null)
-  const [viewMode, setViewMode] = useState<"distribution" | "profile">("distribution")
+  const [viewMode, setViewMode] = useState<"distribution" | "profile" | "radar">("distribution")
+  // Default these detail cards to hidden
+  const [showWhyThisSegment, setShowWhyThisSegment] = useState(false)
+  const [showBestBusinessUse, setShowBestBusinessUse] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
   const [isLoadingCustomers, setIsLoadingCustomers] = useState(false)
   const [error, setError] = useState("")
@@ -168,6 +353,33 @@ export function SegmentVisualization() {
           ? current
           : sortedClusters[0]?.segmentName || null
       )
+
+      const referenceRunDate = normalizedLatest.run?.runDate || new Date().toISOString()
+      const runDate = new Date(referenceRunDate)
+      const overviewParams = new URLSearchParams({
+        month: String(runDate.getMonth() + 1),
+        year: String(runDate.getFullYear()),
+        periodType: "MTD",
+        venue: "All Venue",
+        customerType: "All Type",
+      })
+
+      const [kpiResponse, playtimeResponse] = await Promise.all([
+        fetch(getApiUrl(`/dashboard/overview-kpis?${overviewParams.toString()}`), {
+          headers: getAuthHeaders(),
+          cache: "no-store",
+        }),
+        fetch(getApiUrl("/ml/playtime/latest"), {
+          headers: getAuthHeaders(),
+          cache: "no-store",
+        }),
+      ])
+
+      const kpiResult = await kpiResponse.json().catch(() => null)
+      const playtimeResult = await playtimeResponse.json().catch(() => null)
+
+      setOverviewKpi(kpiResult?.success ? kpiResult.data : null)
+      setHeatmapSummary(playtimeResult?.success ? (playtimeResult.data?.heatmapSummary as HeatmapSummary) : null)
     } catch (loadError) {
       setError(
         loadError instanceof Error
@@ -176,6 +388,8 @@ export function SegmentVisualization() {
       )
       setSummaryData(null)
       setLatestData(null)
+      setOverviewKpi(null)
+      setHeatmapSummary(null)
       setSelectedSegment(null)
     } finally {
       setIsLoading(false)
@@ -225,7 +439,7 @@ export function SegmentVisualization() {
     void loadCustomers()
   }, [latestData?.run?.id, selectedSegment])
 
-  const clusters = summaryData?.clusters || []
+  const clusters = useMemo(() => summaryData?.clusters || [], [summaryData])
   const selectedCluster =
     clusters.find((cluster) => cluster.segmentName === selectedSegment) || clusters[0] || null
   const selectedCustomers = selectedSegment
@@ -241,6 +455,47 @@ export function SegmentVisualization() {
     avgFScore: cluster.avgFScore,
     avgMScore: cluster.avgMScore,
   }))
+
+  const radarData = useMemo(() => {
+    const maxRecency = Math.max(...clusters.map((cluster) => cluster.avgRecency), 1)
+    const maxFrequency = Math.max(...clusters.map((cluster) => cluster.avgFrequency), 1)
+    const maxMonetary = Math.max(...clusters.map((cluster) => cluster.avgMonetary), 1)
+
+    return [
+      {
+        metric: "Recency",
+        value: selectedCluster ? Math.max(10, 100 - (selectedCluster.avgRecency / maxRecency) * 100) : 0,
+      },
+      {
+        metric: "Frequency",
+        value: selectedCluster ? Math.max(10, (selectedCluster.avgFrequency / maxFrequency) * 100) : 0,
+      },
+      {
+        metric: "Monetary",
+        value: selectedCluster ? Math.max(10, (selectedCluster.avgMonetary / maxMonetary) * 100) : 0,
+      },
+      {
+        metric: "R Score",
+        value: selectedCluster ? Math.max(10, (selectedCluster.avgRScore / 5) * 100) : 0,
+      },
+      {
+        metric: "F Score",
+        value: selectedCluster ? Math.max(10, (selectedCluster.avgFScore / 5) * 100) : 0,
+      },
+      {
+        metric: "M Score",
+        value: selectedCluster ? Math.max(10, (selectedCluster.avgMScore / 5) * 100) : 0,
+      },
+    ]
+  }, [clusters, selectedCluster])
+  const chartHeightClass =
+    viewMode === "radar" ? "h-[clamp(320px,52vw,520px)]" : "h-[clamp(300px,48vw,440px)]"
+  const selectedCustomerCount = selectedCustomers.length
+  const topCustomer = selectedCustomers[0] || null
+  const uniqueBookingTypes = new Set(
+    selectedCustomers.map((customer) => customer.bookingTypeDominant || "Unknown")
+  ).size
+
   if (isLoading) {
     return (
       <div className="space-y-6">
@@ -278,6 +533,9 @@ export function SegmentVisualization() {
     return <EmptyState />
   }
 
+  const previousTotalCustomers = latestData.previousRun?.totalCustomers || 0
+  const totalCustomersChange = latestData.totalCustomers - previousTotalCustomers
+
   return (
     <TooltipProvider>
       <div className="space-y-6">
@@ -304,8 +562,11 @@ export function SegmentVisualization() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-muted-foreground">Total Customers</p>
-                  <p className="text-2xl font-bold">
-                    {formatNumber(latestData.totalCustomers, 0)}
+                  <p className="text-2xl font-bold">{formatNumber(latestData.totalCustomers, 0)}</p>
+                  <p className={`mt-1 text-xs ${totalCustomersChange < 0 ? "text-destructive" : "text-emerald-600"}`}>
+                    {previousTotalCustomers
+                      ? `${formatChange((totalCustomersChange / previousTotalCustomers) * 100)} vs last month`
+                      : "No comparison available"}
                   </p>
                 </div>
                 <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
@@ -319,27 +580,18 @@ export function SegmentVisualization() {
             <CardContent className="pt-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-muted-foreground">Active Segments</p>
-                  <p className="text-2xl font-bold">{clusters.length}</p>
-                </div>
-                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
-                  <Target className="h-6 w-6 text-primary" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="border-border bg-card shadow-sm">
-            <CardContent className="pt-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground">Current Focus Segment</p>
+                  <p className="text-sm text-muted-foreground">Top Segment</p>
                   <p className="text-2xl font-bold">
-                    {selectedCluster?.segmentName || "-"}
+                    {clusters.length > 0 && clusters.reduce((a, b) => (a.customerCount && b.customerCount ? (b.customerCount > a.customerCount ? b : a) : a)).segmentName}
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {clusters.length > 0 && latestData?.totalCustomers
+                      ? `${Math.round((clusters.reduce((a, b) => (a.customerCount && b.customerCount ? (b.customerCount > a.customerCount ? b : a) : a)).customerCount || 0) / latestData.totalCustomers * 100)}% of customers`
+                      : "No data available"}
                   </p>
                 </div>
                 <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
-                  <TrendingUp className="h-6 w-6 text-primary" />
+                  <Users className="h-6 w-6 text-primary" />
                 </div>
               </div>
             </CardContent>
@@ -349,8 +601,32 @@ export function SegmentVisualization() {
             <CardContent className="pt-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-muted-foreground">Latest Data Scope</p>
-                  <p className="text-2xl font-bold">Cleaned</p>
+                  <p className="text-sm text-muted-foreground">Top 3 Segment Share</p>
+                  <p className="text-2xl font-bold">
+                    {clusters.length > 0 && latestData?.totalCustomers
+                      ? `${Math.round((clusters
+                        .slice(0)
+                        .sort((x, y) => (y.customerCount || 0) - (x.customerCount || 0))
+                        .slice(0, 3)
+                        .reduce((sum, c) => sum + (c.customerCount || 0), 0) / latestData.totalCustomers) * 100)}%`
+                      : "-"}
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">Share of customers in top 3 segments</p>
+                </div>
+                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
+                  <BrainCircuit className="h-6 w-6 text-primary" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border-border bg-card shadow-sm">
+            <CardContent className="pt-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-muted-foreground">Active Segments</p>
+                  <p className="text-2xl font-bold">{clusters.length}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">{selectedCluster?.segmentName || "No segment selected"}</p>
                 </div>
                 <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
                   <BrainCircuit className="h-6 w-6 text-primary" />
@@ -389,10 +665,7 @@ export function SegmentVisualization() {
                       : "border-border bg-secondary/50 hover:border-primary/50"
                   }`}
                 >
-                  <span
-                    className="h-3 w-3 rounded-full"
-                    style={{ backgroundColor: cluster.color }}
-                  />
+                  <span className="h-3 w-3 rounded-full" style={{ backgroundColor: cluster.color }} />
                   <span className="font-medium">{cluster.segmentName}</span>
                   <Badge variant="secondary" className="text-xs">
                     {formatNumber(cluster.customerCount, 0)} customers
@@ -403,23 +676,25 @@ export function SegmentVisualization() {
           </CardContent>
         </Card>
 
-        <div className="grid gap-6 lg:grid-cols-3">
-          <Card className="border-border bg-card shadow-sm lg:col-span-2">
-            <CardHeader>
+        <div className="grid gap-6 xl:grid-cols-[minmax(0,1.7fr)_minmax(320px,1fr)]">
+          <Card className="border-border bg-card shadow-sm">
+            <CardHeader className="pb-4">
               <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                 <div>
                   <CardTitle>
                     {viewMode === "distribution" && "Segment Distribution"}
                     {viewMode === "profile" && "Segment Profile Comparison"}
+                    {viewMode === "radar" && "Segment Radar Analysis"}
                   </CardTitle>
                   <CardDescription>
                     {viewMode === "distribution" && "How customers are split across the main business segments"}
                     {viewMode === "profile" && "Compare booking recency, frequency, and value across segments"}
+                    {viewMode === "radar" && "A compact radar view of the selected segment"}
                   </CardDescription>
                 </div>
 
-                <div className="flex overflow-hidden rounded-lg border border-border">
-                  {(["distribution", "profile"] as const).map((mode) => (
+                <div className="flex w-full flex-wrap overflow-hidden rounded-lg border border-border bg-background/80 sm:w-auto">
+                  {(["distribution", "profile", "radar"] as const).map((mode) => (
                     <Button
                       key={mode}
                       variant={viewMode === mode ? "secondary" : "ghost"}
@@ -433,34 +708,54 @@ export function SegmentVisualization() {
                 </div>
               </div>
             </CardHeader>
-            <CardContent>
-              <div className="h-[380px]">
+            <CardContent className="pt-0">
+              <div className="rounded-2xl border border-border bg-muted/20 p-4 shadow-inner">
+                <div className={`${chartHeightClass} min-h-[300px] w-full`}>
                 <ResponsiveContainer width="100%" height="100%">
                   {viewMode === "distribution" ? (
-                    <BarChart data={distributionData}>
+                    <BarChart data={distributionData} margin={{ top: 10, right: 16, left: 0, bottom: 0 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
                       <XAxis dataKey="segmentName" stroke="var(--muted-foreground)" fontSize={12} />
                       <YAxis stroke="var(--muted-foreground)" fontSize={12} allowDecimals={false} />
                       <RechartsTooltip formatter={(value) => [`${value} customers`, "Customer Count"]} />
-                      <Bar dataKey="customerCount" radius={[8, 8, 0, 0]}>
+                      <Bar dataKey="customerCount" radius={[10, 10, 0, 0]} barSize={48}>
                         {distributionData.map((entry) => (
                           <Cell key={entry.segmentName} fill={entry.color} />
                         ))}
                       </Bar>
                     </BarChart>
-                  ) : (
-                    <BarChart data={profileComparisonData}>
+                  ) : viewMode === "profile" ? (
+                    <BarChart data={profileComparisonData} margin={{ top: 10, right: 16, left: 0, bottom: 0 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
                       <XAxis dataKey="segmentName" stroke="var(--muted-foreground)" fontSize={12} />
                       <YAxis stroke="var(--muted-foreground)" fontSize={12} domain={[0, 5]} />
                       <Legend />
                       <RechartsTooltip />
-                      <Bar dataKey="avgRScore" name="Avg R Score" fill="var(--chart-1)" radius={[6, 6, 0, 0]} />
-                      <Bar dataKey="avgFScore" name="Avg F Score" fill="var(--chart-2)" radius={[6, 6, 0, 0]} />
-                      <Bar dataKey="avgMScore" name="Avg M Score" fill="var(--chart-3)" radius={[6, 6, 0, 0]} />
+                      <Bar dataKey="avgRScore" name="Avg R Score" fill="var(--chart-1)" radius={[8, 8, 0, 0]} barSize={18} />
+                      <Bar dataKey="avgFScore" name="Avg F Score" fill="var(--chart-2)" radius={[8, 8, 0, 0]} barSize={18} />
+                      <Bar dataKey="avgMScore" name="Avg M Score" fill="var(--chart-3)" radius={[8, 8, 0, 0]} barSize={18} />
                     </BarChart>
+                  ) : (
+                    <RadarChart data={radarData} outerRadius="75%">
+                      <PolarGrid stroke="var(--border)" />
+                      <PolarAngleAxis dataKey="metric" tick={{ fill: "var(--muted-foreground)", fontSize: 12 }} />
+                      <PolarRadiusAxis angle={30} domain={[0, 100]} tick={{ fill: "var(--muted-foreground)", fontSize: 10 }} />
+                      <Radar
+                        name={selectedCluster?.segmentName || "Selected Segment"}
+                        dataKey="value"
+                        stroke="var(--chart-1)"
+                        fill="var(--chart-1)"
+                        fillOpacity={0.25}
+                        strokeWidth={2}
+                      />
+                      <Legend />
+                      <RechartsTooltip
+                        formatter={(value) => [`${Number(value).toFixed(1)}%`, selectedCluster?.segmentName || "Selected Segment"]}
+                      />
+                    </RadarChart>
                   )}
                 </ResponsiveContainer>
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -518,18 +813,60 @@ export function SegmentVisualization() {
                     </div>
                   </div>
 
-                  <div className="rounded-2xl border border-border bg-gradient-to-br from-emerald-50 to-background p-4 text-sm shadow-sm">
-                    <p className="mb-2 font-medium">Why This Segment Matters</p>
-                    <p className="text-muted-foreground">
-                      {buildSegmentActionContext(selectedCluster.segmentName, selectedCluster.labelReason)}
-                    </p>
+                  <div className="rounded-2xl border border-border bg-background/80 shadow-sm">
+                    <button
+                      type="button"
+                      onClick={() => setShowWhyThisSegment((current) => !current)}
+                      className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition-colors hover:bg-secondary/40"
+                    >
+                      <div>
+                        <p className="text-sm font-medium">Why This Segment Matters</p>
+                        <p className="text-xs text-muted-foreground">Business context and relevance</p>
+                      </div>
+                      <ChevronDown
+                        className={`h-4 w-4 text-muted-foreground transition-transform ${
+                          showWhyThisSegment ? "rotate-180" : ""
+                        }`}
+                      />
+                    </button>
+
+                    {showWhyThisSegment ? (
+                      <div className="border-t border-border p-4">
+                        <div className="rounded-2xl border border-border bg-gradient-to-br from-emerald-50 to-background p-4 text-sm shadow-sm">
+                          <p className="text-muted-foreground">
+                            {buildSegmentActionContext(selectedCluster.segmentName, selectedCluster.labelReason)}
+                          </p>
+                        </div>
+                      </div>
+                    ) : null}
                   </div>
 
-                  <div className="rounded-2xl border border-border bg-gradient-to-br from-sky-50 to-background p-4 text-sm shadow-sm">
-                    <p className="mb-2 font-medium">Best Business Use</p>
-                    <p className="text-muted-foreground">
-                      {selectedCluster.recommendedAction || "Use this segment for targeted retention, upsell, or reactivation campaigns."}
-                    </p>
+                  <div className="rounded-2xl border border-border bg-background/80 shadow-sm">
+                    <button
+                      type="button"
+                      onClick={() => setShowBestBusinessUse((current) => !current)}
+                      className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition-colors hover:bg-secondary/40"
+                    >
+                      <div>
+                        <p className="text-sm font-medium">Best Business Use</p>
+                        <p className="text-xs text-muted-foreground">Recommended action for this segment</p>
+                      </div>
+                      <ChevronDown
+                        className={`h-4 w-4 text-muted-foreground transition-transform ${
+                          showBestBusinessUse ? "rotate-180" : ""
+                        }`}
+                      />
+                    </button>
+
+                    {showBestBusinessUse ? (
+                      <div className="border-t border-border p-4">
+                        <div className="rounded-2xl border border-border bg-gradient-to-br from-sky-50 to-background p-4 text-sm shadow-sm">
+                          <p className="text-muted-foreground">
+                            {selectedCluster.recommendedAction || "Use this segment for targeted retention, upsell, or reactivation campaigns."}
+                          </p>
+                        </div>
+                      </div>
+                    ) : null}
                   </div>
                 </>
               ) : (
@@ -541,58 +878,57 @@ export function SegmentVisualization() {
           </Card>
         </div>
 
-        <Card className="border-border bg-card shadow-sm">
-          <CardHeader>
-            <CardTitle>Segment Playbook</CardTitle>
-            <CardDescription>
-              Simple guidance for how the business should use the selected segment in campaigns.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="grid gap-4 md:grid-cols-3">
-            <div className="rounded-2xl border border-border bg-gradient-to-br from-background to-secondary/20 p-4 shadow-sm">
-              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Business Summary</p>
-              <p className="mt-2 text-sm leading-6">
-                {buildSegmentBusinessSummary(selectedSegment || selectedCluster?.segmentName || "", selectedCluster?.segmentDescription)}
-              </p>
-            </div>
-            <div className="rounded-2xl border border-border bg-gradient-to-br from-background to-secondary/20 p-4 shadow-sm">
-              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Recommended Use</p>
-              <p className="mt-2 text-sm leading-6">
-                {selectedCluster?.recommendedAction || "Use this group for targeted follow-up, retention, and conversion campaigns."}
-              </p>
-            </div>
-            <div className="rounded-2xl border border-border bg-gradient-to-br from-background to-secondary/20 p-4 shadow-sm">
-              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Best Campaign Angle</p>
-              <p className="mt-2 text-sm leading-6">
-                {selectedCluster?.labelReason || "This segment is separated because its booking pattern and value profile differ from the others."}
-              </p>
-            </div>
-          </CardContent>
-        </Card>
+        {/* Segment Playbook removed per request */}
+
+        <HeatmapGrid heatmapSummary={heatmapSummary} />
 
         <Card className="border-border bg-card shadow-sm">
           <CardHeader>
-            <CardTitle>Customer Table</CardTitle>
-            <CardDescription>
-              {selectedSegment
-                ? `Customer rows for ${selectedSegment}`
-                : "Latest customer rows from the cleaned segmentation result"}
-            </CardDescription>
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+              <div>
+                <CardTitle>Customer Table</CardTitle>
+                <CardDescription>
+                  {selectedSegment
+                    ? `Customer rows for ${selectedSegment}`
+                    : "Latest customer rows from the cleaned segmentation result"}
+                </CardDescription>
+              </div>
+
+              <div className="grid gap-2 sm:grid-cols-3">
+                <div className="rounded-2xl border border-border bg-muted/30 px-3 py-2">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                    Rows
+                  </p>
+                  <p className="mt-1 text-lg font-semibold">{formatNumber(selectedCustomerCount, 0)}</p>
+                </div>
+                <div className="rounded-2xl border border-border bg-muted/30 px-3 py-2">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                    Booking Types
+                  </p>
+                  <p className="mt-1 text-lg font-semibold">{uniqueBookingTypes}</p>
+                </div>
+                <div className="rounded-2xl border border-border bg-muted/30 px-3 py-2">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                    Top Customer
+                  </p>
+                  <p className="mt-1 truncate text-sm font-semibold">
+                    {topCustomer?.customerName || topCustomer?.customerKey || "-"}
+                  </p>
+                </div>
+              </div>
+            </div>
           </CardHeader>
           <CardContent>
-            <div className="mb-4 grid gap-3 sm:grid-cols-3">
-              <div className="rounded-2xl border border-border bg-gradient-to-br from-background to-secondary/20 p-4 shadow-sm">
-                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Selected Segment</p>
-                <p className="mt-2 text-sm font-medium text-foreground">{selectedSegment || "All segments"}</p>
-              </div>
-              <div className="rounded-2xl border border-border bg-gradient-to-br from-background to-secondary/20 p-4 shadow-sm">
-                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Visible Customers</p>
-                <p className="mt-2 text-sm font-medium text-foreground">{formatNumber(selectedCustomers.length, 0)}</p>
-              </div>
-              <div className="rounded-2xl border border-border bg-gradient-to-br from-background to-secondary/20 p-4 shadow-sm">
-                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Business Use</p>
-                <p className="mt-2 text-sm font-medium text-foreground">Target follow-up and retention planning</p>
-              </div>
+            <div className="mb-4 flex flex-wrap gap-2">
+              <Badge variant="outline" className="rounded-full bg-secondary/40 px-3 py-1">
+                Selected Segment: {selectedSegment || "All segments"}
+              </Badge>
+              <Badge variant="outline" className="rounded-full bg-secondary/40 px-3 py-1">
+                {selectedCustomerCount} customer profiles
+              </Badge>
+              <Badge variant="outline" className="rounded-full bg-secondary/40 px-3 py-1">
+                {uniqueBookingTypes} booking type groups
+              </Badge>
             </div>
             <p className="mb-4 text-sm text-muted-foreground">
               This table is built from completed payments and manual/walk-in bookings only, so the records shown here are already filtered for business use.
@@ -603,39 +939,85 @@ export function SegmentVisualization() {
                 Loading customer rows...
               </div>
             ) : customers.length === 0 ? (
-              <div className="flex min-h-[160px] items-center justify-center text-sm text-muted-foreground">
-                No customer rows available for this segment.
+              <div className="flex min-h-[180px] flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-border bg-gradient-to-br from-background to-secondary/20 text-sm text-muted-foreground">
+                <Users className="h-10 w-10 text-muted-foreground/50" />
+                <div className="text-center">
+                  <p className="font-medium">No customer rows available for this segment.</p>
+                  <p className="text-xs text-muted-foreground">
+                    Try another segment or refresh the latest segmentation run.
+                  </p>
+                </div>
               </div>
             ) : (
-              <div className="overflow-hidden rounded-lg border border-border">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Customer</TableHead>
-                      <TableHead>Booking Type</TableHead>
-                      <TableHead>Last Visit</TableHead>
-                      <TableHead>Visit Frequency</TableHead>
-                      <TableHead>Value</TableHead>
-                      <TableHead>Segment</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {customers.map((customer) => (
-                      <TableRow key={`${customer.customerKey}-${customer.segmentName}`}>
-                        <TableCell className="font-medium">
-                          {customer.customerName || customer.customerKey}
-                        </TableCell>
-                        <TableCell>{customer.bookingTypeDominant || "Unknown"}</TableCell>
-                        <TableCell>{customer.recency} days ago</TableCell>
-                        <TableCell>{customer.frequency} visits</TableCell>
-                        <TableCell>{formatCurrency(customer.monetary)}</TableCell>
-                        <TableCell>
-                          <Badge variant="secondary">{customer.segmentName}</Badge>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+              <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
+                <div className="border-b border-border bg-gradient-to-r from-background to-secondary/20 px-4 py-3">
+                  <div className="grid grid-cols-[1.6fr_1fr_1fr_1fr_1fr_0.8fr] gap-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                    <div>Customer</div>
+                    <div>Booking Type</div>
+                    <div>Last Visit</div>
+                    <div>Frequency</div>
+                    <div>Value</div>
+                    <div>Segment</div>
+                  </div>
+                </div>
+                <div className="divide-y divide-border/60">
+                  {customers.map((customer, index) => {
+                    const scoreTone =
+                      customer.monetary >= (selectedCluster?.avgMonetary || 0)
+                        ? "from-emerald-50 to-background"
+                        : index % 2 === 0
+                          ? "from-background to-secondary/10"
+                          : "from-background to-muted/10"
+
+                    return (
+                      <div
+                        key={`${customer.customerKey}-${customer.segmentName}`}
+                        className={`grid grid-cols-[1.6fr_1fr_1fr_1fr_1fr_0.8fr] items-center gap-3 px-4 py-4 transition-all hover:-translate-y-[1px] hover:bg-gradient-to-r ${scoreTone}`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary">
+                            {(customer.customerName || customer.customerKey || "?").charAt(0).toUpperCase()}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="truncate font-medium text-foreground">
+                              {customer.customerName || customer.customerKey}
+                            </p>
+                            <p className="truncate text-xs text-muted-foreground">
+                              {customer.customerKey}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div>
+                          <Badge variant="secondary" className="rounded-full">
+                            {customer.bookingTypeDominant || "Unknown"}
+                          </Badge>
+                        </div>
+
+                        <div className="text-sm text-muted-foreground">
+                          <span className="font-medium text-foreground">{customer.recency}</span> days ago
+                        </div>
+
+                        <div className="text-sm text-muted-foreground">
+                          <span className="font-medium text-foreground">{customer.frequency}</span> visits
+                        </div>
+
+                        <div className="text-sm font-medium text-foreground">
+                          {formatCurrency(customer.monetary)}
+                        </div>
+
+                        <div>
+                          <Badge
+                            className="rounded-full bg-orange-500/10 text-orange-700 hover:bg-orange-500/10"
+                            variant="outline"
+                          >
+                            {customer.segmentName}
+                          </Badge>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
               </div>
             )}
           </CardContent>

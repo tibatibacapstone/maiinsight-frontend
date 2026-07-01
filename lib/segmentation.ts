@@ -83,6 +83,7 @@ export interface SegmentationSummaryData {
 export interface SegmentationLatestData extends SegmentationSummaryData {
   customers: CustomerRfmScore[]
   totalCustomers: number
+  previousRun?: SegmentationRun | null
   pagination: {
     limit: number
     offset: number

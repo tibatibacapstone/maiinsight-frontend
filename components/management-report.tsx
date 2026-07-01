@@ -168,11 +168,7 @@ interface ReportResponse {
   message?: string
 }
 
-const today = new Date()
-const defaultEndDate = today.toISOString().slice(0, 10)
-const defaultStartDate = new Date(today.getFullYear(), today.getMonth(), 1)
-  .toISOString()
-  .slice(0, 10)
+// startDate/endDate will be set by `applyDefaultRange` (from API or fallback)
 
 const formatCurrency = (value: number) => `IDR ${Math.round(value).toLocaleString("id-ID")}`
 
@@ -192,8 +188,8 @@ const getLastMonthRange = () => {
 }
 
 export function ManagementReport() {
-  const [startDate, setStartDate] = useState(defaultStartDate)
-  const [endDate, setEndDate] = useState(defaultEndDate)
+  const [startDate, setStartDate] = useState<string>("")
+  const [endDate, setEndDate] = useState<string>("")
   const [courtType, setCourtType] = useState("all")
   const [bookingType, setBookingType] = useState("all")
   const [report, setReport] = useState<ReportResponse["data"] | null>(null)
@@ -218,11 +214,19 @@ export function ManagementReport() {
         const range = result?.success ? result?.data?.transactionMonthRange : null
 
         if (range?.min && range?.max) {
-          const current = new Date()
-          current.setDate(0)
-          setStartDate(formatDateInput(new Date(current.getFullYear(), current.getMonth(), 1)))
-          setEndDate(formatDateInput(current))
-          return
+          try {
+            // Prefer using the reported max transaction date to determine the latest month
+            const maxDate = new Date(range.max)
+            if (!isNaN(maxDate.getTime())) {
+              const end = new Date(maxDate.getFullYear(), maxDate.getMonth() + 1, 0) // last day of that month
+              const start = new Date(maxDate.getFullYear(), maxDate.getMonth(), 1)
+              setStartDate(formatDateInput(start))
+              setEndDate(formatDateInput(end))
+              return
+            }
+          } catch {
+            // fall back to last calendar month below
+          }
         }
       } catch {
         // fall back to the last calendar month below
@@ -507,24 +511,7 @@ export function ManagementReport() {
               </div>
             </div>
 
-            <div className="grid grid-cols-4 gap-4">
-              <div className="rounded-xl border border-border p-4">
-                <p className="text-xs uppercase tracking-[0.14em] text-emerald-700">Revenue</p>
-                <p className="mt-2 text-xl font-semibold">{formatCurrency(report.summary.totalRevenue)}</p>
-              </div>
-              <div className="rounded-xl border border-border p-4">
-                <p className="text-xs uppercase tracking-[0.14em] text-emerald-700">Bookings</p>
-                <p className="mt-2 text-xl font-semibold">{report.summary.totalBookings.toLocaleString("en-US")}</p>
-              </div>
-              <div className="rounded-xl border border-border p-4">
-                <p className="text-xs uppercase tracking-[0.14em] text-emerald-700">Occupancy</p>
-                <p className="mt-2 text-xl font-semibold">{report.summary.occupancyRate}%</p>
-              </div>
-              <div className="rounded-xl border border-border p-4">
-                <p className="text-xs uppercase tracking-[0.14em] text-emerald-700">Avg Booking Value</p>
-                <p className="mt-2 text-xl font-semibold">{formatCurrency(report.summary.avgRevenuePerBooking)}</p>
-              </div>
-            </div>
+            {/* Printable KPI summary removed per request */}
 
             <div className="grid gap-4 lg:grid-cols-2">
               <div className="rounded-2xl border border-border p-5">
@@ -603,63 +590,7 @@ export function ManagementReport() {
         </Card>
       ) : (
         <>
-          <div className="grid gap-4 lg:grid-cols-4">
-            {reportBadges.map((item) => {
-              const Icon = item.icon
-              return (
-                <Card key={item.label} className="group border-border bg-card shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md">
-                  <CardContent className="pt-6">
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="space-y-2">
-                        <Badge variant="outline" className={`rounded-full px-3 py-1 ${toneStyles[item.tone]}`}>
-                          <Icon className="mr-1 h-3.5 w-3.5" />
-                          {item.label}
-                        </Badge>
-                        <p className="text-2xl font-semibold tracking-tight">{item.value}</p>
-                        <p className="text-sm text-muted-foreground">
-                          {item.label === "Revenue" && "Revenue in the selected reporting period"}
-                          {item.label === "Bookings" && "Booking records included in this report"}
-                          {item.label === "Occupancy" && "Court-hour utilization for the selected period"}
-                          {item.label === "Avg Value" && "Average revenue per booking"}
-                        </p>
-                      </div>
-                      <div className={`flex h-12 w-12 items-center justify-center rounded-2xl border ${toneStyles[item.tone]}`}>
-                        <Icon className="h-6 w-6" />
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              )
-            })}
-          </div>
-
-          <div className="grid gap-4 lg:grid-cols-4">
-            {comparisonCards.map((item) => {
-              const Icon = item.icon
-              return (
-                <Card key={item.label} className="border-border bg-card shadow-sm">
-                  <CardContent className="pt-6">
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="space-y-2">
-                        <Badge variant="outline" className={`rounded-full px-3 py-1 ${toneStyles[item.tone]}`}>
-                          <Icon className="mr-1 h-3.5 w-3.5" />
-                          {item.label}
-                        </Badge>
-                        <p className="text-2xl font-semibold tracking-tight">{item.current}</p>
-                        <div className="space-y-1 text-sm text-muted-foreground">
-                          <p>Previous period: {item.previous}</p>
-                          <p>{item.change ? `Change: ${item.change} vs previous period` : "Previous period comparison is not available."}</p>
-                        </div>
-                      </div>
-                      <div className={`flex h-12 w-12 items-center justify-center rounded-2xl border ${toneStyles[item.tone]}`}>
-                        <Icon className="h-6 w-6" />
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              )
-            })}
-          </div>
+          {/* KPI cards removed per request */}
 
           <Card className="border-border bg-gradient-to-br from-emerald-50 via-background to-sky-50 shadow-sm">
             <CardHeader>

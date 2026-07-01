@@ -33,6 +33,7 @@ import {
 } from "recharts"
 
 import { BusinessErrorAlert } from "@/components/business-error-alert"
+import { HeatmapGrid } from "@/components/segment-visualization"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -1304,7 +1305,7 @@ export function AnalyticsDashboard() {
             </Card>
           </div>
 
-          <div className="grid gap-6 xl:grid-cols-2">
+          <div className="grid gap-6 sm:grid-cols-1 lg:grid-cols-2 xl:grid-cols-3">
             <Card className="border-border bg-card shadow-sm">
               <CardHeader>
                 <CardTitle><TitleWithTooltip title="Occupancy Trend" tooltip="Shows how many court hours were booked during the selected period." /></CardTitle>
@@ -1372,6 +1373,10 @@ export function AnalyticsDashboard() {
                 </div>
               </CardContent>
             </Card>
+          </div>
+
+          <div className="mt-6">
+            <HeatmapGrid heatmapSummary={(playtimeMlData as any)?.heatmapSummary ?? null} />
           </div>
 
           <div className="grid gap-6 xl:grid-cols-2">
