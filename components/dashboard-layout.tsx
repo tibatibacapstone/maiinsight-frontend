@@ -10,7 +10,6 @@ import { LowOccupancyTargeting } from "./low-occupancy-targeting"
 import { GenAIWorkspace } from "./genai-workspace"
 import { InstaSightHub } from "./instasight-hub"
 import { ActivityLogs } from "./activity-logs"
-import { Notifications } from "./notifications"
 import { SystemSettings } from "./system-settings"
 import { ManagementReport } from "./management-report"
 import { AccessDenied } from "./access-denied"
@@ -69,8 +68,6 @@ export function DashboardLayout({
         return <ManagementReport />
       case "history":
         return <ActivityLogs />
-      case "notifications":
-        return <Notifications />
       case "settings":
         return <SystemSettings />
       default:
@@ -87,7 +84,7 @@ export function DashboardLayout({
         userRole={userRole}
       />
       <main className="flex-1 overflow-auto">
-        <div className="mx-auto w-full max-w-[1680px] p-5 lg:p-7">{renderPage()}</div>
+        <div className="mx-auto w-full max-w-7xl p-3 sm:p-4 md:p-5 lg:p-6">{renderPage()}</div>
       </main>
     </div>
   )

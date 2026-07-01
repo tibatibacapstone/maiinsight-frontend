@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useState } from "react"
 
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -10,8 +10,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
-import { canAccessPage, getAuthHeaders, getRoleDisplayName, UserRole } from "@/lib/roles"
-import { getApiUrl } from "@/lib/api"
+import { canAccessPage, getRoleDisplayName, UserRole } from "@/lib/roles"
 import {
   BarChart3,
   LayoutDashboard,
@@ -23,7 +22,6 @@ import {
   ChevronLeft,
   ChevronRight,
   LogOut,
-  Bell,
   GitGraph,
   FileText,
   Target,
@@ -37,7 +35,6 @@ export type PageId =
   | "genai"
   | "instasight"
   | "history"
-  | "notifications"
   | "settings"
   | "reports"
 
@@ -57,7 +54,6 @@ const navItems = [
   { id: "genai" as PageId, label: "GenAI Workspace", icon: Sparkles },
   { id: "instasight" as PageId, label: "InstaSight", icon: GitGraph },
   { id: "history" as PageId, label: "History", icon: History },
-  { id: "notifications" as PageId, label: "Notifications", icon: Bell },
   { id: "settings" as PageId, label: "Settings", icon: Settings },
 ]
 
@@ -68,42 +64,10 @@ export function DashboardSidebar({
   userRole,
 }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false)
-  const [notifications, setNotifications] = useState(0)
 
   const visibleNavItems = navItems.filter((item) =>
     userRole ? canAccessPage(userRole, item.id) : true
   )
-
-  useEffect(() => {
-    const loadUnreadCount = async () => {
-      if (!userRole || !canAccessPage(userRole, "notifications")) {
-        setNotifications(0)
-        return
-      }
-
-      try {
-        const response = await fetch(getApiUrl("/operations/notifications/unread-count"), {
-          method: "GET",
-          cache: "no-store",
-          headers: getAuthHeaders(),
-        })
-
-        const result = await response.json().catch(() => null)
-        if (!response.ok || !result?.success) {
-          setNotifications(0)
-          return
-        }
-
-        setNotifications(Number(result.data?.unreadCount || 0))
-      } catch {
-        setNotifications(0)
-      }
-    }
-
-    void loadUnreadCount()
-    window.addEventListener("focus", loadUnreadCount)
-    return () => window.removeEventListener("focus", loadUnreadCount)
-  }, [userRole])
 
   return (
     <TooltipProvider delayDuration={0}>
@@ -134,22 +98,11 @@ export function DashboardSidebar({
           {visibleNavItems.map((item) => {
             const Icon = item.icon
             const isActive = currentPage === item.id
-            const badgeCount = item.id === "notifications" ? notifications : 0
 
             const content = (
               <>
                 <Icon className="h-5 w-5" />
                 {!collapsed && <span className="truncate">{item.label}</span>}
-                {badgeCount > 0 ? (
-                  <span
-                    className={cn(
-                      "flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1 text-[10px] text-destructive-foreground",
-                      collapsed ? "absolute right-2 top-2" : "ml-auto"
-                    )}
-                  >
-                    {badgeCount > 99 ? "99+" : badgeCount}
-                  </span>
-                ) : null}
               </>
             )
 

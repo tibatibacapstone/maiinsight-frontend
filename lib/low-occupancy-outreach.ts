@@ -14,6 +14,9 @@ export interface LowOccupancyOutreachContext {
   bookingTypeDominant: string | null
   courtType: string
   sessionName: string
+  sessionStartHour?: string | null
+  sessionEndHour?: string | null
+  slotTimeLabel?: string | null
   date: string
   preferredSession: string | null
   selectedSessionBookingCount: number

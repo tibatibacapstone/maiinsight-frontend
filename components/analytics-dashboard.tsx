@@ -5,12 +5,14 @@ import {
   AlertTriangle,
   BarChart3,
   ChevronDown,
+  Clock,
   Info,
   Loader2,
   Sparkles,
   TrendingDown,
   TrendingUp,
   Users,
+  Zap,
 } from "lucide-react"
 import {
   Area,
@@ -58,6 +60,8 @@ interface OverviewKpiData {
   lowSessionCount: number
   lowSessionBasis?: "selected_period" | "previous_month" | "no_data"
   lowSessionDetail?: string
+  peakSessionLabel: string
+  peakSessionRevenue: number
   totalBookedSessions: number
   availableSessions: number
 }
@@ -153,6 +157,7 @@ interface MetaTrendPoint {
   reach: number
   views: number
   interactions: number
+  engagementRate?: number
 }
 
 interface MetaDashboardData {
@@ -189,6 +194,7 @@ interface BusinessInsightState {
 }
 
 const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+const DEFAULT_MONTH_OPTION = "All Month"
 const venues = [
   { value: "All Venue", label: "All Venue" },
   { value: "Mini Soccer", label: "Mini Soccer" },
@@ -290,16 +296,6 @@ const formatMonthValue = (month: string, year: string) => {
   return `${year}-${String(monthIndex + 1).padStart(2, "0")}`
 }
 
-const parseMonthValue = (value: string) => {
-  const [year, monthValue] = value.split("-")
-  const monthIndex = Math.max(1, Number(monthValue) || 1) - 1
-
-  return {
-    month: months[monthIndex] || months[0],
-    year: year || String(new Date().getFullYear()),
-  }
-}
-
 const buildYearOptions = (min?: string | null, max?: string | null, fallbackYear?: string) => {
   const minYear = min ? Number(min.slice(0, 4)) : Number(fallbackYear)
   const maxYear = max ? Number(max.slice(0, 4)) : Number(fallbackYear)
@@ -318,29 +314,16 @@ const buildYearOptions = (min?: string | null, max?: string | null, fallbackYear
 const getAvailableMonthValuesForYear = (year: string, availableMonthValues: string[]) =>
   availableMonthValues.filter((value) => value.startsWith(`${year}-`))
 
-const getLatestAvailableMonthValue = (availableMonthValues: string[]) =>
-  availableMonthValues.length ? availableMonthValues[availableMonthValues.length - 1] : null
-
-const getFallbackMonthValueForYear = (year: string, preferredMonth: string, availableMonthValues: string[]) => {
-  const availableMonthsForYear = getAvailableMonthValuesForYear(year, availableMonthValues)
-  if (!availableMonthsForYear.length) return null
-
-  const preferredValue = formatMonthValue(preferredMonth, year)
-  if (preferredValue && availableMonthsForYear.includes(preferredValue)) return preferredValue
-
-  return availableMonthsForYear[availableMonthsForYear.length - 1]
-}
-
 const getDefaultMonthSelection = () => {
   const now = new Date()
 
   return {
-    month: months[now.getMonth()] || months[0],
+    month: DEFAULT_MONTH_OPTION,
     year: String(now.getFullYear()),
   }
 }
 
-const resolveDateRange = (month: string, year: string, periodType: "MTD" | "YTD") => {
+const resolveDateRange = (month: string, year: string, periodType: "MTD" | "YTD" | null) => {
   const yearNumber = Number(year)
   const now = new Date()
   const monthIndex = months.indexOf(month)
@@ -352,7 +335,15 @@ const resolveDateRange = (month: string, year: string, periodType: "MTD" | "YTD"
     }
   }
 
+  if (month === DEFAULT_MONTH_OPTION) {
+    return {
+      startDate: new Date(yearNumber, 0, 1),
+      endDate: yearNumber === now.getFullYear() ? now : new Date(yearNumber, 11, 31),
+    }
+  }
+
   const safeMonthIndex = monthIndex >= 0 ? monthIndex : now.getMonth()
+
   if (periodType === "YTD") {
     return {
       startDate: new Date(yearNumber, 0, 1),
@@ -367,14 +358,14 @@ const resolveDateRange = (month: string, year: string, periodType: "MTD" | "YTD"
 }
 
 const defaultStrategyPayload = (): StrategyPayload => ({
-  campaignObjective: "Belum ada objective utama yang bisa diringkas dari data saat ini.",
-  targetCustomerGroup: "Target customer belum bisa diprioritaskan dari data saat ini.",
-  customerReasoning: "Alasan bisnis belum bisa dirangkum karena data pendukung masih terbatas.",
-  suggestedOffer: "Belum ada usulan promo yang cukup kuat dari data saat ini.",
-  whatsappMessage: "Belum ada draft pesan yang dihasilkan dari context overview ini.",
-  followUpPlan: "Belum ada follow-up plan yang bisa disusun dari data saat ini.",
-  expectedBusinessImpact: "Dampak bisnis belum bisa diperkirakan secara meyakinkan.",
-  dataLimitation: "Insight ini masih bergantung pada data historis yang sudah di-upload.",
+  campaignObjective: "No main campaign goal could be found in the current data.",
+  targetCustomerGroup: "Target customer groups cannot be prioritized from the current data.",
+  customerReasoning: "Business reasoning cannot be determined because there is not enough data yet.",
+  suggestedOffer: "No promotion suggestion could be made from the current data.",
+  whatsappMessage: "No message was generated from this overview.",
+  followUpPlan: "No follow-up plan could be made from the current data.",
+  expectedBusinessImpact: "Business impact cannot be estimated with confidence yet.",
+  dataLimitation: "This insight is based on uploaded historical data only.",
 })
 
 const buildFallbackBusinessInsight = ({
@@ -383,32 +374,50 @@ const buildFallbackBusinessInsight = ({
   topSegment,
   metaDashboard,
 }: {
-  overviewKpi: OverviewKpiData
-  reportData: RevenueReportData
+  overviewKpi: OverviewKpiData | null
+  reportData: RevenueReportData | null
   topSegment: { name: string; percentage: number } | null
   metaDashboard: MetaDashboardData | null
 }): BusinessInsightState => {
-  const focusSession = overviewKpi.lowSessionLabel || "session terlemah"
+  if (!overviewKpi || !reportData) {
+    return {
+      source: "fallback",
+      generatedAt: null,
+      providerLabel: null,
+      strategy: {
+        campaignObjective: "Plan next-month growth around the weakest available time slot.",
+        targetCustomerGroup: "Latest customer groups are not available yet.",
+        customerReasoning: "Historical revenue and occupancy context is still loading.",
+        suggestedOffer: "Create a small promotion or bundle for the next month.",
+        whatsappMessage: "This overview doesn't generate messages. Use GenAI Workspace to draft messages.",
+        followUpPlan: "Review bookings and revenue after the next campaign.",
+        expectedBusinessImpact: "Promotions work best when targeting the weakest time slots for the next month.",
+        dataLimitation: "This insight is based on uploaded historical data only.",
+      },
+    }
+  }
+
+  const focusSession = overviewKpi?.lowSessionLabel || "low-demand time slot"
   const topSegmentLabel = topSegment
     ? `${topSegment.name} (${formatPercent(topSegment.percentage)})`
-    : "segment customer terbaru belum tersedia"
+    : "Latest customer groups not yet available"
   const metaContext = metaDashboard?.hasData
-    ? `Meta reach pada periode yang sama mencapai ${formatCompactNumber(metaDashboard.summary.totalReach)} dengan engagement rate ${formatPercent(metaDashboard.summary.engagementRate)}.`
-    : "Data Meta belum tersedia, jadi perbandingan exposure vs revenue masih terbatas."
+    ? `Meta reached ${formatCompactNumber(metaDashboard.summary.totalReach)} with ${formatPercent(metaDashboard.summary.engagementRate)} engagement rate.`
+    : "Meta data is not available yet, so we cannot compare ads reach with revenue."
 
   return {
     source: "fallback",
     generatedAt: null,
     providerLabel: null,
     strategy: {
-      campaignObjective: `Prioritaskan peningkatan okupansi untuk ${focusSession} sambil menjaga revenue by play date tetap sehat pada periode terpilih.`,
-      targetCustomerGroup: `Fokus utama saat ini adalah ${topSegmentLabel}.`,
+      campaignObjective: `Plan June growth around ${focusSession} while keeping revenue healthy.`,
+      targetCustomerGroup: `Main focus for June is ${topSegmentLabel}.`,
       customerReasoning: `${reportData.insights.occupancyInsight} ${reportData.insights.segmentationInsight}`,
-      suggestedOffer: `Siapkan promo ringan atau bundling untuk session ${focusSession} dengan pesan yang relevan terhadap audience prioritas.`,
-      whatsappMessage: "Overview insight tidak otomatis membuat pesan outreach. Gunakan GenAI Workspace jika ingin draft pesan siap pakai.",
-      followUpPlan: `${metaContext} Setelah itu review kembali performa okupansi dan revenue by play date pada session yang diprioritaskan.`,
-      expectedBusinessImpact: `${reportData.insights.revenueInsight} Jika promo diarahkan ke session terlemah, peluang perbaikan okupansi biasanya paling cepat terlihat di sana.`,
-      dataLimitation: "Insight ini berasal dari data historis yang di-upload dan tidak menunjukkan ketersediaan slot secara real time.",
+      suggestedOffer: `Create a small promotion or bundle for June around ${focusSession} that appeals to the priority audience.`,
+      whatsappMessage: "This overview doesn't generate messages. Use GenAI Workspace to draft messages.",
+      followUpPlan: `${metaContext} Then review if the June promotions improved bookings and revenue.`,
+      expectedBusinessImpact: `${reportData.insights.revenueInsight} Promotions work best when targeting the weakest time slots for the next month.`,
+      dataLimitation: "This insight comes from uploaded historical data and doesn't show real-time availability.",
     },
   }
 }
@@ -462,15 +471,15 @@ const buildMetaComparisonInsight = ({
   metaDashboard: MetaDashboardData | null
 }) => {
   if (!reportData) {
-    return "Revenue by play date belum tersedia untuk dibandingkan dengan performa Meta."
+    return "Revenue data is not available yet for comparison with Meta."
   }
 
   if (!metaDashboard?.configured) {
-    return "Meta belum terhubung. Sync InstaSight dulu kalau ingin membandingkan revenue by play date dengan exposure campaign."
+    return "Meta is not connected yet. Sync Instagram data first if you want to compare revenue with ads reach."
   }
 
   if (!metaDashboard.hasData) {
-    return "Belum ada data Meta pada periode ini. Revenue by play date sudah tampil, tapi exposure campaign belum bisa dibandingkan."
+    return "No Meta data for this period yet. Revenue data is ready, but ads reach data is not available for comparison."
   }
 
   const revenue = reportData.summary.totalRevenue
@@ -478,7 +487,7 @@ const buildMetaComparisonInsight = ({
   const engagementRate = metaDashboard.summary.engagementRate
   const revenuePer1kReach = reach > 0 ? revenue / (reach / 1000) : 0
 
-  return `Revenue by play date mencapai ${formatCurrency(revenue)} dibanding ${formatCompactNumber(reach)} reach Meta pada periode yang sama. Itu setara sekitar ${formatCurrency(revenuePer1kReach)} per 1K reach dengan engagement rate ${formatPercent(engagementRate)}.`
+  return `Revenue was ${formatCurrency(revenue)} with ${formatCompactNumber(reach)} reach from Meta ads in this period. That's about ${formatCurrency(revenuePer1kReach)} per 1K reach with ${formatPercent(engagementRate)} engagement rate.`
 }
 
 const pieLabelRenderer = ({
@@ -553,7 +562,7 @@ export function AnalyticsDashboard() {
   const [selectedYear, setSelectedYear] = useState(defaultSelection.year)
   const [selectedVenue, setSelectedVenue] = useState("All Venue")
   const [selectedCustomerType, setSelectedCustomerType] = useState("All Type")
-  const [periodType, setPeriodType] = useState<"MTD" | "YTD">("MTD")
+  const [periodType, setPeriodType] = useState<"MTD" | "YTD" | null>("MTD")
   const [status, setStatus] = useState<DashboardStatus | null>(null)
   const [overviewKpi, setOverviewKpi] = useState<OverviewKpiData | null>(null)
   const [occupancyTrend, setOccupancyTrend] = useState<OccupancyTrendPoint[]>([])
@@ -563,13 +572,13 @@ export function AnalyticsDashboard() {
   const [metaDashboard, setMetaDashboard] = useState<MetaDashboardData | null>(null)
   const [businessInsight, setBusinessInsight] = useState<BusinessInsightState | null>(null)
   const [isLoadingBusinessInsight, setIsLoadingBusinessInsight] = useState(false)
-  const [isBusinessInsightVisible, setIsBusinessInsightVisible] = useState(true)
+  const [isBusinessInsightVisible, setIsBusinessInsightVisible] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   const currentRole = getStoredRole()
   const canGenerateBusinessInsight = currentRole === "operational" || currentRole === "it_support"
-  const availableMonthValues = status?.transactionAvailableMonths || []
+  const availableMonthValues = useMemo(() => status?.transactionAvailableMonths || [], [status?.transactionAvailableMonths])
   const businessInsightCacheRef = useRef<Map<string, BusinessInsightState>>(new Map())
 
   const yearOptions = useMemo(() => {
@@ -604,30 +613,18 @@ export function AnalyticsDashboard() {
       }
 
       const statusData = statusResult.data as DashboardStatus
-      const availablePeriods = statusData.transactionAvailableMonths || []
-      const fallbackMonthValue =
-        getFallbackMonthValueForYear(selectedYear, selectedMonth, availablePeriods) ||
-        getLatestAvailableMonthValue(availablePeriods) ||
-        formatMonthValue(defaultSelection.month, defaultSelection.year) ||
-        `${defaultSelection.year}-01`
-      const currentMonthValue = formatMonthValue(selectedMonth, selectedYear)
-      const effectiveMonthValue = currentMonthValue && availablePeriods.includes(currentMonthValue)
-        ? currentMonthValue
-        : fallbackMonthValue
-      const effectiveSelection = parseMonthValue(effectiveMonthValue)
-
-      if (effectiveSelection.month !== selectedMonth || effectiveSelection.year !== selectedYear) {
-        setSelectedMonth(effectiveSelection.month)
-        setSelectedYear(effectiveSelection.year)
+      const effectiveSelection = {
+        month: selectedMonth,
+        year: selectedYear,
       }
 
-      const { startDate, endDate } = resolveDateRange(effectiveSelection.month, effectiveSelection.year, periodType)
+      const { startDate, endDate } = resolveDateRange(effectiveSelection.month, effectiveSelection.year, periodType || "MTD")
       const startDateIso = formatLocalDate(startDate)
       const endDateIso = formatLocalDate(endDate)
       const overviewParams = new URLSearchParams({
         month: effectiveSelection.month,
         year: effectiveSelection.year,
-        periodType,
+        periodType: periodType || "MTD",
         venue: selectedVenue,
         customerType: selectedCustomerType,
       })
@@ -640,6 +637,8 @@ export function AnalyticsDashboard() {
             : selectedVenue === "Basketball"
               ? "basketball"
               : "all",
+        customerType: selectedCustomerType,
+        bookingType: "all",
       })
       const metaParams = new URLSearchParams({
         since: startDateIso,
@@ -691,7 +690,7 @@ export function AnalyticsDashboard() {
     } finally {
       setIsLoading(false)
     }
-  }, [defaultSelection.month, defaultSelection.year, periodType, selectedCustomerType, selectedMonth, selectedVenue, selectedYear])
+  }, [periodType, selectedCustomerType, selectedMonth, selectedVenue, selectedYear])
 
   useEffect(() => {
     void loadDashboard()
@@ -738,7 +737,7 @@ export function AnalyticsDashboard() {
       return "No historical play-time preference insight is available yet."
     }
 
-    return `${dominantPlaytime.name} currently dominates the imported historical dataset with ${formatPercent(dominantPlaytime.percentage)} of booked sessions from the latest ML run.`
+    return `Most bookings are in the ${dominantPlaytime.name} slot with ${formatPercent(dominantPlaytime.percentage)} of all bookings.`
   }, [dominantPlaytime, playtimeMlData])
 
   const segmentChart = useMemo(
@@ -793,23 +792,32 @@ export function AnalyticsDashboard() {
     [bookingTypeMixChart, bookingTypeMixTotal]
   )
 
+  const revenueTrendHasData = Boolean(reportData?.revenueTrend?.length)
+  const revenueTrendSubtitle = revenueTrendHasData
+    ? reportData?.insights.revenueInsight || "Revenue from bookings in the selected period, grouped by play date."
+    : "The current Month to Date period has no available transactions."
+
   const revenueMetaComparisonData = useMemo(() => {
     if (!reportData?.revenueTrend?.length) return []
 
-    const metaDailyMap = new Map<string, { reach: number; views: number }>()
-    const metaMonthlyMap = new Map<string, { reach: number; views: number }>()
+    const metaDailyMap = new Map<string, { reach: number; views: number; interactions: number; engagementRate?: number }>()
+    const metaMonthlyMap = new Map<string, { reach: number; views: number; interactions: number; engagementRate?: number }>()
 
     metaDashboard?.trend?.forEach((item) => {
       const dailyKey = item.date
       const monthlyKey = item.date.slice(0, 7)
-      const daily = metaDailyMap.get(dailyKey) || { reach: 0, views: 0 }
+      const daily = metaDailyMap.get(dailyKey) || { reach: 0, views: 0, interactions: 0 }
       daily.reach += Number(item.reach || 0)
       daily.views += Number(item.views || 0)
+      daily.interactions += Number(item.interactions || 0)
+      const dailyEngagementRate = Number(item.engagementRate ?? NaN)
+      if (Number.isFinite(dailyEngagementRate)) daily.engagementRate = dailyEngagementRate
       metaDailyMap.set(dailyKey, daily)
 
-      const monthly = metaMonthlyMap.get(monthlyKey) || { reach: 0, views: 0 }
+      const monthly = metaMonthlyMap.get(monthlyKey) || { reach: 0, views: 0, interactions: 0 }
       monthly.reach += Number(item.reach || 0)
       monthly.views += Number(item.views || 0)
+      monthly.interactions += Number(item.interactions || 0)
       metaMonthlyMap.set(monthlyKey, monthly)
     })
 
@@ -818,14 +826,23 @@ export function AnalyticsDashboard() {
         ? metaMonthlyMap.get(point.key)
         : metaDailyMap.get(point.key)
 
+      const reach = Number(metaPoint?.reach || 0)
+      const interactions = Number(metaPoint?.interactions || 0)
+      const engagementRate = Number(metaPoint?.engagementRate ?? NaN)
+
       return {
         label: point.label,
         revenue: Number(point.revenue || 0),
-        reach: Number(metaPoint?.reach || 0),
+        reach,
         views: Number(metaPoint?.views || 0),
+        engagementRate: Number.isFinite(engagementRate)
+          ? engagementRate
+          : reach > 0
+            ? Number(((interactions / reach) * 100).toFixed(2))
+            : 0,
       }
     })
-  }, [metaDashboard?.trend, reportData?.revenueTrend])
+  }, [metaDashboard?.trend, reportData])
 
   const metaComparisonInsight = useMemo(
     () => buildMetaComparisonInsight({ reportData, metaDashboard }),
@@ -835,13 +852,24 @@ export function AnalyticsDashboard() {
   const businessInsightRequest = useMemo(() => {
     if (!overviewKpi || !reportData) return null
 
+    const currentMonthIndex = months.indexOf(selectedMonth)
+    const planningMonthDate = new Date(Number(selectedYear), (currentMonthIndex >= 0 ? currentMonthIndex : new Date().getMonth()) + 1, 1)
+    const planningMonthLabel = new Intl.DateTimeFormat("en-US", { month: "long", year: "numeric" }).format(planningMonthDate)
+    const dominantPlaytimeLabel = dominantPlaytime?.name || playtimeLegend[0]?.name || null
+    const dominantPlaytimeSharePct = dominantPlaytime ? Number(dominantPlaytime.percentage.toFixed(1)) : null
+    const dominantBookingType = bookingTypeMixLegend[0] || null
+    const bookingTypeMixSummary = bookingTypeMixLegend.map((item) => ({
+      name: item.name,
+      sharePct: Number(item.percentage.toFixed(1)),
+    }))
+
     return {
       languagePreference: "Bahasa Indonesia",
       selected_filters: {
         mode: "overview_summary",
         month: selectedMonth,
         year: selectedYear,
-        periodType,
+        periodType: periodType || "MTD",
         venue: selectedVenue,
         customerType: selectedCustomerType,
       },
@@ -849,6 +877,27 @@ export function AnalyticsDashboard() {
         topSegment: topSegment?.name || "Not available",
         topSegmentSharePct: topSegment ? Number(topSegment.percentage.toFixed(1)) : null,
         totalSegmentedCustomers: segmentChartTotal,
+      },
+      planning_context: {
+        targetMonth: planningMonthLabel,
+        isForwardLooking: true,
+      },
+      audience_context: {
+        bestAudienceHint: topSegment
+          ? `${topSegment.name} customers with ${dominantPlaytimeLabel || "the current strongest play-time slot"} preference`
+          : `Customers who already book in ${dominantPlaytimeLabel || "the current strongest play-time slot"}`,
+        dominantPlaytime: dominantPlaytimeLabel,
+        dominantPlaytimeSharePct,
+        dominantBookingType: dominantBookingType?.name || null,
+        dominantBookingTypeSharePct: dominantBookingType ? Number(dominantBookingType.percentage.toFixed(1)) : null,
+      },
+      transaction_signal_context: {
+        playtimeBehaviorInsight,
+        bookingTypeMixSummary,
+        lowDemandSessionLabel: overviewKpi.lowSessionLabel,
+        lowDemandSessionDetail: overviewKpi.lowSessionDetail || "No additional detail available.",
+        bookingCount: reportData.summary.totalBookings,
+        revenuePerBooking: reportData.summary.avgRevenuePerBooking,
       },
       business_context: {
         revenueByPlayDate: reportData.summary.totalRevenue,
@@ -867,31 +916,34 @@ export function AnalyticsDashboard() {
         metaEngagementRate: metaDashboard?.summary.engagementRate || 0,
         metaInsight: metaComparisonInsight,
         historicalOnly: true,
-        revenueDefinition: "Revenue is calculated by play date from uploaded transactions.",
+        revenueDefinition: "Revenue is based on when the booking was made.",
       },
     }
-  }, [metaComparisonInsight, metaDashboard?.summary.engagementRate, metaDashboard?.summary.totalReach, metaDashboard?.summary.totalViews, overviewKpi, periodType, reportData, segmentChartTotal, selectedCustomerType, selectedMonth, selectedVenue, selectedYear, topSegment])
+  }, [bookingTypeMixLegend, dominantPlaytime, metaComparisonInsight, metaDashboard?.summary.engagementRate, metaDashboard?.summary.totalReach, metaDashboard?.summary.totalViews, overviewKpi, periodType, playtimeBehaviorInsight, playtimeLegend, reportData, segmentChartTotal, selectedCustomerType, selectedMonth, selectedVenue, selectedYear, topSegment])
 
   const businessInsightKey = useMemo(
     () => (businessInsightRequest ? JSON.stringify(businessInsightRequest) : null),
     [businessInsightRequest]
   )
 
-  useEffect(() => {
-    if (!overviewKpi || !reportData || !businessInsightKey) {
-      setBusinessInsight(null)
+  const fallbackInsight = useMemo(
+    () =>
+      buildFallbackBusinessInsight({
+        overviewKpi,
+        reportData,
+        topSegment,
+        metaDashboard,
+      }),
+    [metaDashboard, overviewKpi, reportData, topSegment]
+  )
+
+  const handleGenerateBusinessInsight = useCallback(async () => {
+    if (!overviewKpi || !reportData || !businessInsightKey || !businessInsightRequest) {
       return
     }
 
-    const fallbackInsight = buildFallbackBusinessInsight({
-      overviewKpi,
-      reportData,
-      topSegment,
-      metaDashboard,
-    })
-
     const cached = businessInsightCacheRef.current.get(businessInsightKey)
-    if (cached) {
+    if (cached?.source === "ai") {
       setBusinessInsight(cached)
       return
     }
@@ -902,62 +954,64 @@ export function AnalyticsDashboard() {
       return
     }
 
-    let cancelled = false
+    setIsLoadingBusinessInsight(true)
 
-    const generateInsight = async () => {
-      setIsLoadingBusinessInsight(true)
+    try {
+      const response = await fetch(getApiUrl("/ai-strategy/generate"), {
+        method: "POST",
+        cache: "no-store",
+        headers: {
+          ...getAuthHeaders(),
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(businessInsightRequest),
+      })
 
-      try {
-        const response = await fetch(getApiUrl("/ai-strategy/generate"), {
-          method: "POST",
-          cache: "no-store",
-          headers: {
-            ...getAuthHeaders(),
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(businessInsightRequest),
-        })
+      const result = await response.json().catch(() => null)
+      const strategy = result?.data?.strategy || result?.strategy
 
-        const result = await response.json().catch(() => null)
-        const strategy = result?.data?.strategy || result?.strategy
-
-        if (!response.ok || !result?.success || !strategy) {
-          throw new Error(result?.message || "AI strategy could not be generated.")
-        }
-
-        const aiInsight: BusinessInsightState = {
-          source: "ai",
-          generatedAt: result?.data?.generatedAt || result?.generatedAt || new Date().toISOString(),
-          providerLabel:
-            result?.data?.provider === "azure" || result?.provider === "azure"
-              ? "Azure OpenAI"
-              : "Gemini",
-          strategy: {
-            ...defaultStrategyPayload(),
-            ...strategy,
-          },
-        }
-
-        if (cancelled) return
-        businessInsightCacheRef.current.set(businessInsightKey, aiInsight)
-        setBusinessInsight(aiInsight)
-      } catch {
-        if (cancelled) return
-        businessInsightCacheRef.current.set(businessInsightKey, fallbackInsight)
-        setBusinessInsight(fallbackInsight)
-      } finally {
-        if (!cancelled) {
-          setIsLoadingBusinessInsight(false)
-        }
+      if (!response.ok || !result?.success || !strategy) {
+        throw new Error(result?.message || "AI strategy could not be generated.")
       }
+
+      const aiInsight: BusinessInsightState = {
+        source: "ai",
+        generatedAt: result?.data?.generatedAt || result?.generatedAt || new Date().toISOString(),
+        providerLabel:
+          result?.data?.provider === "azure" || result?.provider === "azure"
+            ? "Azure OpenAI"
+            : "Gemini",
+        strategy: {
+          ...defaultStrategyPayload(),
+          ...strategy,
+        },
+      }
+
+      businessInsightCacheRef.current.set(businessInsightKey, aiInsight)
+      setBusinessInsight(aiInsight)
+    } catch {
+      businessInsightCacheRef.current.set(businessInsightKey, fallbackInsight)
+      setBusinessInsight(fallbackInsight)
+    } finally {
+      setIsLoadingBusinessInsight(false)
+    }
+  }, [businessInsightKey, businessInsightRequest, canGenerateBusinessInsight, fallbackInsight, overviewKpi, reportData])
+
+  useEffect(() => {
+    if (!overviewKpi || !reportData || !businessInsightKey) {
+      setBusinessInsight(null)
+      return
     }
 
-    void generateInsight()
-
-    return () => {
-      cancelled = true
+    const cached = businessInsightCacheRef.current.get(businessInsightKey)
+    if (cached) {
+      setBusinessInsight(cached)
+      return
     }
-  }, [businessInsightKey, businessInsightRequest, canGenerateBusinessInsight, metaDashboard, overviewKpi, reportData, topSegment])
+
+    businessInsightCacheRef.current.set(businessInsightKey, fallbackInsight)
+    setBusinessInsight(fallbackInsight)
+  }, [businessInsightKey, fallbackInsight, overviewKpi, reportData])
 
   const lowSessionBadge = overviewKpi?.lowSessionBasis === "previous_month"
     ? "Predicted from previous month"
@@ -971,7 +1025,7 @@ export function AnalyticsDashboard() {
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="max-w-2xl">
             <h1 className="text-2xl font-bold">Overview</h1>
-            <p className="text-muted-foreground">Historical business performance, occupancy, segmentation, and machine learning highlights from imported transactions.</p>
+            <p className="text-muted-foreground">Business results, bookings, customer groups, and AI insights from your uploaded data.</p>
           </div>
           <div className="flex flex-wrap items-center justify-end gap-3 sm:max-w-[48%]">
             <div className="inline-flex items-center gap-2 rounded-full border border-amber-500/20 bg-amber-500/10 px-3 py-1 text-sm text-amber-700">
@@ -996,6 +1050,7 @@ export function AnalyticsDashboard() {
                   disabled={!status?.hasTransactionData && !isLoading}
                   className="h-11 w-full appearance-none rounded-xl border border-border/70 bg-background/90 pl-[4.4rem] pr-10 text-sm font-medium text-foreground shadow-sm outline-none transition hover:border-primary/35 hover:bg-background focus:border-primary focus:ring-2 focus:ring-primary/15 disabled:cursor-not-allowed disabled:opacity-60"
                 >
+                  <option value={DEFAULT_MONTH_OPTION}>{DEFAULT_MONTH_OPTION}</option>
                   {months.map((month) => {
                     const option = monthOptions.find((item) => item.value === month)
                     return <option key={month} value={month} disabled={option?.disabled}>{month}</option>
@@ -1008,13 +1063,7 @@ export function AnalyticsDashboard() {
                 <select
                   value={selectedYear}
                   onChange={(event) => {
-                    const nextYear = event.target.value
-                    const fallbackMonthValue = getFallbackMonthValueForYear(nextYear, selectedMonth, availableMonthValues)
-                    setSelectedYear(nextYear)
-                    if (fallbackMonthValue) {
-                      const nextSelection = parseMonthValue(fallbackMonthValue)
-                      setSelectedMonth(nextSelection.month)
-                    }
+                    setSelectedYear(event.target.value)
                   }}
                   disabled={!status?.hasTransactionData && !isLoading}
                   className="h-11 w-full appearance-none rounded-xl border border-border/70 bg-background/90 pl-[3.6rem] pr-10 text-sm font-medium text-foreground shadow-sm outline-none transition hover:border-primary/35 hover:bg-background focus:border-primary focus:ring-2 focus:ring-primary/15 disabled:cursor-not-allowed disabled:opacity-60"
@@ -1044,12 +1093,12 @@ export function AnalyticsDashboard() {
                   <Button
                     key={type}
                     variant={periodType === type ? "secondary" : "ghost"}
-                    className={`h-9 rounded-lg border px-4 text-sm transition ${periodType === type
+                    className={`h-8 rounded-lg border px-3 text-[11px] transition ${periodType === type
                       ? type === "MTD"
                         ? "border-amber-300 bg-amber-100 text-amber-700 hover:bg-amber-200"
                         : "border-emerald-300 bg-emerald-100 text-emerald-700 hover:bg-emerald-200"
                       : "border-transparent text-muted-foreground hover:bg-accent/80 hover:text-foreground"}`}
-                    onClick={() => setPeriodType(type)}
+                    onClick={() => setPeriodType((current) => (current === type ? null : type))}
                   >
                     {type}
                   </Button>
@@ -1057,9 +1106,6 @@ export function AnalyticsDashboard() {
               </div>
             </div>
           </div>
-          {/* <p className="mt-3 text-xs text-muted-foreground">
-            Metrics on this page are based on uploaded historical transaction data and do not reflect live slot availability.
-          </p> */}
         </div>
       </div>
 
@@ -1071,9 +1117,7 @@ export function AnalyticsDashboard() {
           technicalDetails={error}
           showTechnicalDetails={currentRole === "it_support"}
         />
-      ) : null}
-
-      {!isLoading && status && !status.hasTransactionData ? (
+      ) : null}{!isLoading && status && !status.hasTransactionData ? (
         <Card className="border-border bg-card shadow-sm">
           <CardContent className="flex min-h-[220px] flex-col items-center justify-center gap-3 text-center">
             <AlertTriangle className="h-10 w-10 text-amber-600" />
@@ -1097,8 +1141,8 @@ export function AnalyticsDashboard() {
                   </CardTitle>
                   <CardDescription>
                     {businessInsight?.source === "ai"
-                      ? "AI-generated summary from revenue by play date, occupancy, Meta exposure, and customer segmentation."
-                      : "Priority summary from historical overview metrics."}
+                      ? "AI summary from revenue, bookings, ads reach, and customer groups."
+                      : "Summary from your business metrics."}
                   </CardDescription>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
@@ -1111,9 +1155,23 @@ export function AnalyticsDashboard() {
                   <Badge variant="outline" className="border-primary/20 text-primary">
                     {businessInsight?.source === "ai" ? `${businessInsight.providerLabel || "AI"} summary` : "Historical summary"}
                   </Badge>
-                  <Badge variant="secondary">
-                    {businessInsight?.generatedAt ? `Updated ${getRelativeTime(businessInsight.generatedAt)}` : "Ready"}
-                  </Badge>
+                  {businessInsight?.source === "ai" ? (
+                    <Badge variant="secondary">
+                      {businessInsight?.generatedAt ? `Updated ${getRelativeTime(businessInsight.generatedAt)}` : "Generated"}
+                    </Badge>
+                  ) : (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      className="gap-2"
+                      onClick={() => void handleGenerateBusinessInsight()}
+                      disabled={isLoadingBusinessInsight || !canGenerateBusinessInsight}
+                    >
+                      {isLoadingBusinessInsight ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+                      Generate
+                    </Button>
+                  )}
                   <Button
                     type="button"
                     variant="ghost"
@@ -1196,7 +1254,7 @@ export function AnalyticsDashboard() {
               <CardContent>
                 <div className="flex items-end justify-between">
                   <div>
-                    <p className="text-3xl font-bold">{overviewKpi ? formatCurrency(overviewKpi.totalRevenue) : "-"}</p>
+                    <p className="text-3xl font-bold">{formatCurrency(reportData?.summary.totalRevenue ?? overviewKpi?.totalRevenue ?? 0)}</p>
                     <p className={`mt-2 flex items-center gap-1 text-xs ${overviewKpi && overviewKpi.revenueChange < 0 ? "text-destructive" : "text-primary"}`}>
                       {overviewKpi && overviewKpi.revenueChange < 0 ? <TrendingDown className="h-3 w-3" /> : <TrendingUp className="h-3 w-3" />}
                       {overviewKpi ? `${overviewKpi.revenueChange >= 0 ? "+" : ""}${overviewKpi.revenueChange}% vs previous period` : "No comparison available"}
@@ -1210,29 +1268,38 @@ export function AnalyticsDashboard() {
               <CardHeader className="space-y-3">
                 <div className="flex items-center justify-between gap-3">
                   <CardTitle className="text-sm font-medium text-muted-foreground">Lowest-Demand Session</CardTitle>
-                  <Badge variant="outline" className="text-[11px]">
-                    {lowSessionBadge}
-                  </Badge>
                 </div>
               </CardHeader>
               <CardContent>
-                <p className="text-xl font-bold">{overviewKpi?.lowSessionLabel || "No data"}</p>
-                <p className="mt-2 text-xs leading-5 text-muted-foreground">
-                  {overviewKpi?.lowSessionDetail || "Low-demand session insight will appear after data is available."}
-                </p>
+                <div className="flex items-end justify-between">
+                  <div>
+                    <p className="text-xl font-bold">{overviewKpi?.lowSessionLabel || "No data"}</p>
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      {overviewKpi?.lowSessionLabel && overviewKpi?.lowSessionLabel !== "-"
+                        ? "Lowest booking volume among all sessions"
+                        : "Session data will be available after transactions are imported."}
+                    </p>
+                  </div>
+                  <Clock className="h-5 w-5 text-muted-foreground" />
+                </div>
               </CardContent>
             </Card>
             <Card className="border-border bg-card shadow-sm">
               <CardHeader>
-                <CardTitle className="text-sm font-medium text-muted-foreground">Booked Court-Hours</CardTitle>
+                <CardTitle className="text-sm font-medium text-muted-foreground">Peak Session Revenue</CardTitle>
               </CardHeader>
               <CardContent>
-                <p className="text-xl font-bold">{overviewKpi?.totalBookedSessions?.toLocaleString("en-US") || "-"}</p>
-                <p className="mt-2 text-xs text-muted-foreground">
-                  {overviewKpi
-                    ? `${overviewKpi.totalBookedSessions.toLocaleString("en-US")} of ${overviewKpi.availableSessions.toLocaleString("en-US")} available court-hours were filled in the selected period.`
-                    : "No booking volume is available yet."}
-                </p>
+                <div className="flex items-end justify-between">
+                  <div>
+                    <p className="text-xl font-bold">{overviewKpi?.peakSessionLabel || "-"}</p>
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      {(overviewKpi?.peakSessionRevenue || 0) > 0
+                        ? formatCurrency(overviewKpi?.peakSessionRevenue || 0)
+                        : "No revenue data available"}
+                    </p>
+                  </div>
+                  <Zap className="h-5 w-5 text-primary" />
+                </div>
               </CardContent>
             </Card>
           </div>
@@ -1240,9 +1307,9 @@ export function AnalyticsDashboard() {
           <div className="grid gap-6 xl:grid-cols-2">
             <Card className="border-border bg-card shadow-sm">
               <CardHeader>
-                <CardTitle><TitleWithTooltip title="Occupancy Trend" tooltip="Shows how much of the available court-hours were occupied across the selected historical play-date period." /></CardTitle>
+                <CardTitle><TitleWithTooltip title="Occupancy Trend" tooltip="Shows how many court hours were booked during the selected period." /></CardTitle>
                 <CardDescription>
-                  {reportData?.insights.occupancyInsight || "Court-hour occupancy based on imported transactions."}
+                  {reportData?.insights.occupancyInsight || "Court hours booked in this period."}
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -1259,9 +1326,9 @@ export function AnalyticsDashboard() {
                       <XAxis dataKey="label" stroke="var(--muted-foreground)" tickLine={false} axisLine={false} />
                       <YAxis stroke="var(--muted-foreground)" tickLine={false} axisLine={false} unit="%" />
                       <RechartsTooltip formatter={(value: number, name: string, props: { payload?: OccupancyTrendPoint }) => name === "rate" ? [`${value}%`, `${props.payload?.bookedSessions || 0}/${props.payload?.availableSessions || 0} booked sessions`] : [value, name]} />
-                      {overviewKpi ? (
+                      {occupancyTrend.length > 0 ? (
                         <ReferenceLine
-                          y={overviewKpi.occupancyRate}
+                          y={occupancyTrend.length > 0 ? (occupancyTrend.reduce((sum, point) => sum + point.bookedSessions, 0) / occupancyTrend.reduce((sum, point) => sum + point.availableSessions, 0)) * 100 : 0}
                           stroke="var(--muted-foreground)"
                           strokeDasharray="6 6"
                           strokeWidth={1.5}
@@ -1271,10 +1338,10 @@ export function AnalyticsDashboard() {
                     </AreaChart>
                   </ResponsiveContainer>
                 </div>
-                {overviewKpi ? (
+                {occupancyTrend.length > 0 ? (
                   <div className="mt-4 flex items-center gap-3 text-xs text-muted-foreground">
                     <span className="inline-block w-10 border-t-2 border-dashed border-muted-foreground" />
-                    <span>Dashed line = selected period average occupancy ({formatPercent(overviewKpi.occupancyRate)}).</span>
+                    <span>Dashed line = selected period average occupancy ({formatPercent((occupancyTrend.reduce((sum, point) => sum + point.bookedSessions, 0) / occupancyTrend.reduce((sum, point) => sum + point.availableSessions, 0)) * 100)}).</span>
                   </div>
                 ) : null}
               </CardContent>
@@ -1282,22 +1349,26 @@ export function AnalyticsDashboard() {
 
             <Card className="border-border bg-card shadow-sm">
               <CardHeader>
-                <CardTitle><TitleWithTooltip title="Revenue by Play Date Trend" tooltip="Tracks revenue using the play date of each booking, not the transaction timestamp." /></CardTitle>
-                <CardDescription>
-                  {reportData?.insights.revenueInsight || "Revenue trend by play date based on imported transactions."}
-                </CardDescription>
+                <CardTitle><TitleWithTooltip title="Revenue by Play Date Trend" tooltip="Shows booking revenue grouped by play date, using the same filters as the overview card." /></CardTitle>
+                <CardDescription>{revenueTrendSubtitle}</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="h-[320px]">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={reportData?.revenueTrend || []}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-                      <XAxis dataKey="label" stroke="var(--muted-foreground)" tickLine={false} axisLine={false} />
-                      <YAxis stroke="var(--muted-foreground)" tickLine={false} axisLine={false} tickFormatter={(value) => `${Math.round(Number(value) / 1000000)}M`} />
-                      <RechartsTooltip formatter={(value: number) => [formatCurrency(value), "Revenue by Play Date"]} />
-                      <Bar dataKey="revenue" fill="var(--chart-2)" radius={[6, 6, 0, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
+                  {revenueTrendHasData ? (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={reportData?.revenueTrend || []}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                        <XAxis dataKey="label" stroke="var(--muted-foreground)" tickLine={false} axisLine={false} />
+                        <YAxis stroke="var(--muted-foreground)" tickLine={false} axisLine={false} tickFormatter={(value) => `${Math.round(Number(value) / 1000000)}M`} />
+                        <RechartsTooltip formatter={(value: number) => [formatCurrency(value), "Booking revenue by play date"]} />
+                        <Bar dataKey="revenue" fill="var(--chart-2)" radius={[6, 6, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <div className="flex h-full items-center justify-center rounded-2xl border border-dashed border-border bg-muted/20 px-6 text-center text-sm text-muted-foreground">
+                      No revenue trend data is available for the selected period. Check the active filters or uploaded transactions.
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -1306,8 +1377,8 @@ export function AnalyticsDashboard() {
           <div className="grid gap-6 xl:grid-cols-2">
             <Card className="border-border bg-card shadow-sm">
               <CardHeader>
-                <CardTitle><TitleWithTooltip title="Revenue vs Meta Insight" tooltip="Compares revenue by play date with the latest synced Meta API reach so Marketing Ops can judge whether campaign exposure is keeping pace with booked revenue." /></CardTitle>
-                <CardDescription>Revenue by play date compared with the latest synced Meta API reach for the selected historical period.</CardDescription>
+                <CardTitle><TitleWithTooltip title="Revenue vs Meta Insight" tooltip="Compares booking revenue with Meta reach and engagement rate to see if marketing is working well." /></CardTitle>
+                <CardDescription>Compare booking revenue with Meta reach and engagement rate for this period.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 {metaDashboard?.hasData && revenueMetaComparisonData.length > 0 ? (
@@ -1318,29 +1389,32 @@ export function AnalyticsDashboard() {
                         <XAxis dataKey="label" stroke="var(--muted-foreground)" tickLine={false} axisLine={false} />
                         <YAxis yAxisId="left" stroke="var(--muted-foreground)" tickLine={false} axisLine={false} tickFormatter={(value) => `${Math.round(Number(value) / 1000000)}M`} />
                         <YAxis yAxisId="right" orientation="right" stroke="var(--muted-foreground)" tickLine={false} axisLine={false} tickFormatter={(value) => formatCompactNumber(Number(value))} />
+                        <YAxis yAxisId="engagement" orientation="right" hide domain={[0, "auto"]} tickFormatter={(value) => `${Number(value).toFixed(0)}%`} />
                         <RechartsTooltip
                           formatter={(value: number, name: string) => {
-                            if (name === "revenue") return [formatCurrency(value), "Revenue by Play Date"]
+                            if (name === "revenue") return [formatCurrency(value), "Booking revenue by play date"]
                             if (name === "reach") return [formatCompactNumber(value), "Meta Reach"]
+                            if (name === "engagementRate") return [formatPercent(value), "Meta Engagement Rate"]
                             return [formatCompactNumber(value), "Meta Views"]
                           }}
                         />
                         <Bar yAxisId="left" dataKey="revenue" fill="var(--chart-2)" radius={[6, 6, 0, 0]} />
                         <Line yAxisId="right" type="monotone" dataKey="reach" stroke="var(--chart-1)" strokeWidth={2.5} dot={false} />
+                        <Line yAxisId="engagement" type="monotone" dataKey="engagementRate" stroke="var(--chart-3)" strokeWidth={2} strokeDasharray="6 4" dot={false} />
                       </ComposedChart>
                     </ResponsiveContainer>
                   </div>
                 ) : (
                   <div className="flex min-h-[280px] items-center justify-center rounded-xl border border-dashed border-border px-6 text-center text-sm text-muted-foreground">
                     {metaDashboard?.configured
-                      ? "Meta is connected, but there is no synced exposure data for this period yet."
-                      : "Meta is not connected yet, so this comparison still needs InstaSight data."}
+                      ? "Meta is connected, but there's no data for this period yet."
+                      : "Meta is not connected yet, so we need InstaSight data for this."}
                   </div>
                 )}
 
                 <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                   <div className="rounded-xl border border-border bg-secondary/20 p-3">
-                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Revenue by Play Date</p>
+                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Booking revenue by play date</p>
                     <p className="mt-2 text-lg font-semibold text-slate-900">{formatCurrency(reportData?.summary.totalRevenue || 0)}</p>
                   </div>
                   <div className="rounded-xl border border-border bg-secondary/20 p-3">
@@ -1374,8 +1448,8 @@ export function AnalyticsDashboard() {
 
             <Card className="border-border bg-card shadow-sm">
               <CardHeader>
-                <CardTitle><TitleWithTooltip title="Booking Type Mix" tooltip="Shows how the selected historical bookings are split between membership and non-membership activity, which is more directly actionable for daily operational campaigns." /></CardTitle>
-                <CardDescription>Operational booking mix for the selected period.</CardDescription>
+                <CardTitle><TitleWithTooltip title="Booking Type Mix" tooltip="Shows how bookings are split between members and guests." /></CardTitle>
+                <CardDescription>Mix of member vs guest bookings.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="h-[280px]">
@@ -1418,7 +1492,7 @@ export function AnalyticsDashboard() {
                 )}
                 {bookingTypeMixLegend.length > 0 ? (
                   <p className="text-xs text-muted-foreground">
-                    Percentages show each booking type's share of total bookings in the selected historical period.
+                    Shows what percentage of bookings are members vs guests.
                   </p>
                 ) : null}
               </CardContent>
@@ -1427,7 +1501,7 @@ export function AnalyticsDashboard() {
 
           <Card className="border-border bg-card shadow-sm">
             <CardHeader>
-              <CardTitle><TitleWithTooltip title="Play-Time Preference Mix" tooltip="Shows the historical mix of booked sessions from the latest play-time clustering run. Use it to see whether Morning, Afternoon, or Night demand dominates the imported dataset." /></CardTitle>
+              <CardTitle><TitleWithTooltip title="Play-Time Preference Mix" tooltip="Shows which time of day (morning, afternoon, or night) is most popular for bookings." /></CardTitle>
               <CardDescription>{playtimeBehaviorInsight}</CardDescription>
             </CardHeader>
             <CardContent>
@@ -1435,7 +1509,7 @@ export function AnalyticsDashboard() {
                 <div className="h-[320px]">
                   {playtimeChart.every((item) => item.value === 0) || playtimeChart.length === 0 ? (
                     <div className="flex h-full items-center justify-center text-center text-sm text-muted-foreground">
-                      No play-time ML result is available yet. Run Machine Learning from Data Center to generate a historical session-preference profile.
+                      No time preference data yet. Run Machine Learning from Data Center to see which times are most popular.
                     </div>
                   ) : (
                     <ResponsiveContainer width="100%" height="100%">
@@ -1468,7 +1542,7 @@ export function AnalyticsDashboard() {
                     </p>
                   </div>
                   <div className="rounded-xl border border-border bg-secondary/20 p-4 text-sm text-muted-foreground">
-                    This chart reflects imported historical play-date sessions, not live slot availability. Use it as a demand baseline before deciding which session window needs promotion.
+                    This chart shows past bookings by time of day. Use it to see which times are usually busy before planning promotions.
                   </div>
                   {playtimeLegend.map((item) => (
                     <div key={item.name} className="rounded-xl border border-border bg-secondary/20 p-4">
@@ -1498,14 +1572,6 @@ export function AnalyticsDashboard() {
     </div>
   )
 }
-
-
-
-
-
-
-
-
 
 
 

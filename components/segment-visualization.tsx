@@ -23,29 +23,13 @@ import {
   BarChart,
   Cell,
   CartesianGrid,
-  ComposedChart,
   Legend,
-  Line,
-  PolarAngleAxis,
-  PolarGrid,
-  PolarRadiusAxis,
-  Radar,
-  RadarChart,
   ResponsiveContainer,
   Tooltip as RechartsTooltip,
   XAxis,
   YAxis,
 } from "recharts"
-import {
-  AlertCircle,
-  BrainCircuit,
-  Info,
-  Loader2,
-  RefreshCw,
-  Target,
-  TrendingUp,
-  Users,
-} from "lucide-react"
+import { AlertCircle, BrainCircuit, Info, Loader2, RefreshCw, Target, TrendingUp, Users } from "lucide-react"
 import {
   CUSTOMER_SEGMENT_COLORS,
   SEGMENTATION_UPDATED_EVENT,
@@ -55,7 +39,6 @@ import {
   sortClusterProfiles,
   type ClusterProfile,
   type CustomerRfmScore,
-  type KEvaluationItem,
   type SegmentationLatestData,
   type SegmentationSummaryData,
 } from "@/lib/segmentation"
@@ -93,7 +76,7 @@ const formatRunDate = (value?: string | null) => {
 
 const buildBusinessSegmentationMessage = (latest: SegmentationLatestData | null) => {
   if (!latest?.selectedK) {
-    return "Business Segmentation K is not available yet. Run ML from Data Center to generate customer segments."
+    return "No segment results are available yet. Run ML from Data Center to generate customer groups."
   }
 
   if (
@@ -101,10 +84,32 @@ const buildBusinessSegmentationMessage = (latest: SegmentationLatestData | null)
     latest.bestSilhouetteK !== undefined &&
     latest.bestSilhouetteK !== latest.selectedK
   ) {
-    return "K=4 is used for business-facing segmentation because it balances customer behavior detail and Marketing Operational efficiency. K evaluation is shown as validation evidence."
+    return "This is the business-facing segment setup used for day-to-day marketing decisions."
   }
 
-  return latest.selectionReason || "Business Segmentation K is used for the production-facing customer segment view."
+  return latest.selectionReason || "This is the production-facing customer segment view."
+}
+
+const buildSegmentBusinessSummary = (segmentName: string, description?: string | null) => {
+  const summaryMap: Record<string, string> = {
+    "Prime Players": "High-value customers worth protecting with priority treatment and loyalty perks.",
+    "Routine Players": "Stable repeat customers who respond well to consistency and light incentives.",
+    "Growth Players": "Promising customers who may spend more with the right nudge and follow-up.",
+    "Re-Engagement Players": "Inactive or low-frequency customers who need a simple reactivation push.",
+  }
+
+  return summaryMap[segmentName] || description || "This segment reflects a distinct booking pattern and customer value profile."
+}
+
+const buildSegmentActionContext = (segmentName: string, recommendedAction?: string | null) => {
+  const actionMap: Record<string, string> = {
+    "Prime Players": "Use retention offers, VIP treatment, and priority booking reminders.",
+    "Routine Players": "Keep them engaged with consistent offers and recurring booking packages.",
+    "Growth Players": "Push follow-up campaigns, bundles, and repeat-booking incentives.",
+    "Re-Engagement Players": "Send a simple reactivation message and make it easy to book again.",
+  }
+
+  return recommendedAction || actionMap[segmentName] || "Use the segment for targeted follow-up and campaign planning."
 }
 
 const EmptyState = () => (
@@ -126,9 +131,7 @@ export function SegmentVisualization() {
   const [latestData, setLatestData] = useState<SegmentationLatestData | null>(null)
   const [customers, setCustomers] = useState<CustomerRfmScore[]>([])
   const [selectedSegment, setSelectedSegment] = useState<string | null>(null)
-  const [viewMode, setViewMode] = useState<"distribution" | "profile" | "validation">(
-    "distribution"
-  )
+  const [viewMode, setViewMode] = useState<"distribution" | "profile">("distribution")
   const [isLoading, setIsLoading] = useState(true)
   const [isLoadingCustomers, setIsLoadingCustomers] = useState(false)
   const [error, setError] = useState("")
@@ -225,7 +228,9 @@ export function SegmentVisualization() {
   const clusters = summaryData?.clusters || []
   const selectedCluster =
     clusters.find((cluster) => cluster.segmentName === selectedSegment) || clusters[0] || null
-  const kEvaluationItems: KEvaluationItem[] = latestData?.kEvaluation?.testedK || []
+  const selectedCustomers = selectedSegment
+    ? customers.filter((customer) => customer.segmentName === selectedSegment)
+    : customers
   const distributionData = clusters.map((cluster) => ({
     ...cluster,
     color: CUSTOMER_SEGMENT_COLORS[cluster.segmentName] || "var(--chart-5)",
@@ -236,14 +241,6 @@ export function SegmentVisualization() {
     avgFScore: cluster.avgFScore,
     avgMScore: cluster.avgMScore,
   }))
-  const radarData = selectedCluster
-    ? [
-        { metric: "R Score", value: selectedCluster.avgRScore },
-        { metric: "F Score", value: selectedCluster.avgFScore },
-        { metric: "M Score", value: selectedCluster.avgMScore },
-      ]
-    : []
-
   if (isLoading) {
     return (
       <div className="space-y-6">
@@ -288,13 +285,12 @@ export function SegmentVisualization() {
           <div>
             <h1 className="text-2xl font-bold">Customer Segmentation</h1>
             <p className="text-muted-foreground">
-              RFM customer-value segmentation from the finalized backend K-Means pipeline
+              Business-ready customer groups based on completed bookings and walk-in activity only
             </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <Badge variant="outline">Latest Run: {formatRunDate(latestData.run.runDate)}</Badge>
-            <Badge>Business Segmentation K: {latestData.selectedK ?? 4}</Badge>
+            <Badge variant="outline">Latest Run Engine: {formatRunDate(latestData.run.runDate)}</Badge>
             <Button variant="outline" size="sm" onClick={() => void loadSegmentation()}>
               <RefreshCw className="mr-2 h-4 w-4" />
               Refresh
@@ -323,8 +319,8 @@ export function SegmentVisualization() {
             <CardContent className="pt-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-muted-foreground">Business Segmentation K</p>
-                  <p className="text-2xl font-bold">{latestData.selectedK ?? 4}</p>
+                  <p className="text-sm text-muted-foreground">Active Segments</p>
+                  <p className="text-2xl font-bold">{clusters.length}</p>
                 </div>
                 <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
                   <Target className="h-6 w-6 text-primary" />
@@ -337,9 +333,9 @@ export function SegmentVisualization() {
             <CardContent className="pt-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-muted-foreground">Best Silhouette K</p>
+                  <p className="text-sm text-muted-foreground">Current Focus Segment</p>
                   <p className="text-2xl font-bold">
-                    {latestData.bestSilhouetteK ?? latestData.optimalK ?? "-"}
+                    {selectedCluster?.segmentName || "-"}
                   </p>
                 </div>
                 <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
@@ -353,10 +349,8 @@ export function SegmentVisualization() {
             <CardContent className="pt-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-muted-foreground">Silhouette Score</p>
-                  <p className="text-2xl font-bold">
-                    {formatNumber(latestData.silhouetteScore, 4)}
-                  </p>
+                  <p className="text-sm text-muted-foreground">Latest Data Scope</p>
+                  <p className="text-2xl font-bold">Cleaned</p>
                 </div>
                 <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
                   <BrainCircuit className="h-6 w-6 text-primary" />
@@ -376,7 +370,7 @@ export function SegmentVisualization() {
                 </TooltipTrigger>
                 <TooltipContent>
                   <p>
-                    Business Segmentation K shows the production-facing K. K Evaluation is validation evidence only.
+                    Groups customers by their value to your business. This shows the final results used by the system.
                   </p>
                 </TooltipContent>
               </Tooltip>
@@ -401,7 +395,7 @@ export function SegmentVisualization() {
                   />
                   <span className="font-medium">{cluster.segmentName}</span>
                   <Badge variant="secondary" className="text-xs">
-                    {cluster.customerCount}
+                    {formatNumber(cluster.customerCount, 0)} customers
                   </Badge>
                 </button>
               ))}
@@ -417,21 +411,15 @@ export function SegmentVisualization() {
                   <CardTitle>
                     {viewMode === "distribution" && "Segment Distribution"}
                     {viewMode === "profile" && "Segment Profile Comparison"}
-                    {viewMode === "validation" && "K Evaluation"}
                   </CardTitle>
                   <CardDescription>
-                    {viewMode === "distribution" && "Customer count by final business-facing segment"}
-                    {viewMode === "profile" && "Average R/F/M score comparison across segments"}
-                    {viewMode === "validation" && "Validation evidence from inertia/WCSS and silhouette score"}
+                    {viewMode === "distribution" && "How customers are split across the main business segments"}
+                    {viewMode === "profile" && "Compare booking recency, frequency, and value across segments"}
                   </CardDescription>
                 </div>
 
                 <div className="flex overflow-hidden rounded-lg border border-border">
-                  {([
-                    "distribution",
-                    "profile",
-                    "validation",
-                  ] as const).map((mode) => (
+                  {(["distribution", "profile"] as const).map((mode) => (
                     <Button
                       key={mode}
                       variant={viewMode === mode ? "secondary" : "ghost"}
@@ -460,7 +448,7 @@ export function SegmentVisualization() {
                         ))}
                       </Bar>
                     </BarChart>
-                  ) : viewMode === "profile" ? (
+                  ) : (
                     <BarChart data={profileComparisonData}>
                       <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
                       <XAxis dataKey="segmentName" stroke="var(--muted-foreground)" fontSize={12} />
@@ -471,30 +459,6 @@ export function SegmentVisualization() {
                       <Bar dataKey="avgFScore" name="Avg F Score" fill="var(--chart-2)" radius={[6, 6, 0, 0]} />
                       <Bar dataKey="avgMScore" name="Avg M Score" fill="var(--chart-3)" radius={[6, 6, 0, 0]} />
                     </BarChart>
-                  ) : (
-                    <ComposedChart data={kEvaluationItems}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-                      <XAxis dataKey="k" stroke="var(--muted-foreground)" fontSize={12} />
-                      <YAxis yAxisId="left" stroke="var(--muted-foreground)" fontSize={12} />
-                      <YAxis
-                        yAxisId="right"
-                        orientation="right"
-                        stroke="var(--muted-foreground)"
-                        fontSize={12}
-                        domain={[-1, 1]}
-                      />
-                      <Legend />
-                      <RechartsTooltip />
-                      <Bar yAxisId="left" dataKey="inertia" name="Inertia / WCSS" fill="var(--chart-1)" radius={[6, 6, 0, 0]} />
-                      <Line
-                        yAxisId="right"
-                        type="monotone"
-                        dataKey="silhouetteScore"
-                        name="Silhouette Score"
-                        stroke="var(--chart-3)"
-                        strokeWidth={3}
-                      />
-                    </ComposedChart>
                   )}
                 </ResponsiveContainer>
               </div>
@@ -506,14 +470,14 @@ export function SegmentVisualization() {
               <CardTitle>Segment Details</CardTitle>
               <CardDescription>
                 {selectedCluster
-                  ? `${selectedCluster.segmentName} customer-value segment`
+                  ? `${selectedCluster.segmentName} business profile and next action`
                   : "Select a segment to view details"}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               {selectedCluster ? (
                 <>
-                  <div className="rounded-lg bg-secondary/40 p-4">
+                  <div className="rounded-2xl border border-border bg-gradient-to-br from-background to-secondary/20 p-4 shadow-sm">
                     <div className="mb-2 flex items-center gap-2">
                       <span
                         className="h-3 w-3 rounded-full"
@@ -525,7 +489,7 @@ export function SegmentVisualization() {
                       <p className="font-semibold">{selectedCluster.segmentName}</p>
                     </div>
                     <p className="text-sm text-muted-foreground">
-                      {selectedCluster.segmentDescription || "No description available."}
+                      {buildSegmentBusinessSummary(selectedCluster.segmentName, selectedCluster.segmentDescription)}
                     </p>
                   </div>
 
@@ -554,17 +518,17 @@ export function SegmentVisualization() {
                     </div>
                   </div>
 
-                  <div className="rounded-lg border border-border bg-secondary/30 p-4 text-sm">
-                    <p className="mb-2 font-medium">Label Reason</p>
+                  <div className="rounded-2xl border border-border bg-gradient-to-br from-emerald-50 to-background p-4 text-sm shadow-sm">
+                    <p className="mb-2 font-medium">Why This Segment Matters</p>
                     <p className="text-muted-foreground">
-                      {selectedCluster.labelReason || "No label reason available."}
+                      {buildSegmentActionContext(selectedCluster.segmentName, selectedCluster.labelReason)}
                     </p>
                   </div>
 
-                  <div className="rounded-lg border border-border bg-secondary/30 p-4 text-sm">
-                    <p className="mb-2 font-medium">Recommended Action</p>
+                  <div className="rounded-2xl border border-border bg-gradient-to-br from-sky-50 to-background p-4 text-sm shadow-sm">
+                    <p className="mb-2 font-medium">Best Business Use</p>
                     <p className="text-muted-foreground">
-                      {selectedCluster.recommendedAction || "No recommended action available."}
+                      {selectedCluster.recommendedAction || "Use this segment for targeted retention, upsell, or reactivation campaigns."}
                     </p>
                   </div>
                 </>
@@ -577,117 +541,32 @@ export function SegmentVisualization() {
           </Card>
         </div>
 
-        <div className="grid gap-6 lg:grid-cols-2">
-          <Card className="border-border bg-card shadow-sm">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                Business Segmentation K
-                <Tooltip>
-                  <TooltipTrigger>
-                    <Info className="h-4 w-4 text-muted-foreground" />
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>K evaluation is validation evidence, not the production segmentation decision.</p>
-                  </TooltipContent>
-                </Tooltip>
-              </CardTitle>
-              <CardDescription>{buildBusinessSegmentationMessage(latestData)}</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="rounded-lg border border-border bg-secondary/30 p-4">
-                  <p className="text-sm text-muted-foreground">Business Segmentation K</p>
-                  <p className="text-xl font-semibold">{latestData.selectedK ?? 4}</p>
-                </div>
-                <div className="rounded-lg border border-border bg-secondary/30 p-4">
-                  <p className="text-sm text-muted-foreground">Best Silhouette K</p>
-                  <p className="text-xl font-semibold">
-                    {latestData.bestSilhouetteK ?? latestData.optimalK ?? "-"}
-                  </p>
-                </div>
-                <div className="rounded-lg border border-border bg-secondary/30 p-4">
-                  <p className="text-sm text-muted-foreground">Elbow K</p>
-                  <p className="text-xl font-semibold">{latestData.elbowK ?? "-"}</p>
-                </div>
-                <div className="rounded-lg border border-border bg-secondary/30 p-4">
-                  <p className="text-sm text-muted-foreground">Silhouette Score</p>
-                  <p className="text-xl font-semibold">{formatNumber(latestData.silhouetteScore, 4)}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="border-border bg-card shadow-sm">
-            <CardHeader>
-              <CardTitle>Selected Segment Radar</CardTitle>
-              <CardDescription>
-                {selectedCluster
-                  ? `${selectedCluster.segmentName} average R/F/M score profile`
-                  : "No selected segment"}
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="h-[280px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <RadarChart data={radarData} cx="50%" cy="50%" outerRadius="80%">
-                    <PolarGrid stroke="var(--border)" />
-                    <PolarAngleAxis dataKey="metric" tick={{ fill: "var(--muted-foreground)", fontSize: 12 }} />
-                    <PolarRadiusAxis angle={30} domain={[0, 5]} tick={{ fill: "var(--muted-foreground)", fontSize: 10 }} />
-                    <Radar
-                      name={selectedCluster?.segmentName || "Segment"}
-                      dataKey="value"
-                      stroke={
-                        selectedCluster
-                          ? CUSTOMER_SEGMENT_COLORS[selectedCluster.segmentName] || "var(--chart-1)"
-                          : "var(--chart-1)"
-                      }
-                      fill={
-                        selectedCluster
-                          ? CUSTOMER_SEGMENT_COLORS[selectedCluster.segmentName] || "var(--chart-1)"
-                          : "var(--chart-1)"
-                      }
-                      fillOpacity={0.25}
-                      strokeWidth={2}
-                    />
-                  </RadarChart>
-                </ResponsiveContainer>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
         <Card className="border-border bg-card shadow-sm">
           <CardHeader>
-            <CardTitle>K Evaluation</CardTitle>
+            <CardTitle>Segment Playbook</CardTitle>
             <CardDescription>
-              Validation evidence only: inertia / WCSS and silhouette score across tested K values.
+              Simple guidance for how the business should use the selected segment in campaigns.
             </CardDescription>
           </CardHeader>
-          <CardContent>
-            {kEvaluationItems.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No K evaluation evidence available for this run.</p>
-            ) : (
-              <div className="overflow-hidden rounded-lg border border-border">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>K</TableHead>
-                      <TableHead>Inertia / WCSS</TableHead>
-                      <TableHead>Silhouette Score</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {kEvaluationItems.map((item) => (
-                      <TableRow key={item.k}>
-                        <TableCell>{item.k}</TableCell>
-                        <TableCell>{formatNumber(item.inertia, 4)}</TableCell>
-                        <TableCell>{formatNumber(item.silhouetteScore, 4)}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
+          <CardContent className="grid gap-4 md:grid-cols-3">
+            <div className="rounded-2xl border border-border bg-gradient-to-br from-background to-secondary/20 p-4 shadow-sm">
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Business Summary</p>
+              <p className="mt-2 text-sm leading-6">
+                {buildSegmentBusinessSummary(selectedSegment || selectedCluster?.segmentName || "", selectedCluster?.segmentDescription)}
+              </p>
+            </div>
+            <div className="rounded-2xl border border-border bg-gradient-to-br from-background to-secondary/20 p-4 shadow-sm">
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Recommended Use</p>
+              <p className="mt-2 text-sm leading-6">
+                {selectedCluster?.recommendedAction || "Use this group for targeted follow-up, retention, and conversion campaigns."}
+              </p>
+            </div>
+            <div className="rounded-2xl border border-border bg-gradient-to-br from-background to-secondary/20 p-4 shadow-sm">
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Best Campaign Angle</p>
+              <p className="mt-2 text-sm leading-6">
+                {selectedCluster?.labelReason || "This segment is separated because its booking pattern and value profile differ from the others."}
+              </p>
+            </div>
           </CardContent>
         </Card>
 
@@ -697,10 +576,27 @@ export function SegmentVisualization() {
             <CardDescription>
               {selectedSegment
                 ? `Customer rows for ${selectedSegment}`
-                : "Latest customer rows from the business-facing segmentation result"}
+                : "Latest customer rows from the cleaned segmentation result"}
             </CardDescription>
           </CardHeader>
           <CardContent>
+            <div className="mb-4 grid gap-3 sm:grid-cols-3">
+              <div className="rounded-2xl border border-border bg-gradient-to-br from-background to-secondary/20 p-4 shadow-sm">
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Selected Segment</p>
+                <p className="mt-2 text-sm font-medium text-foreground">{selectedSegment || "All segments"}</p>
+              </div>
+              <div className="rounded-2xl border border-border bg-gradient-to-br from-background to-secondary/20 p-4 shadow-sm">
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Visible Customers</p>
+                <p className="mt-2 text-sm font-medium text-foreground">{formatNumber(selectedCustomers.length, 0)}</p>
+              </div>
+              <div className="rounded-2xl border border-border bg-gradient-to-br from-background to-secondary/20 p-4 shadow-sm">
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Business Use</p>
+                <p className="mt-2 text-sm font-medium text-foreground">Target follow-up and retention planning</p>
+              </div>
+            </div>
+            <p className="mb-4 text-sm text-muted-foreground">
+              This table is built from completed payments and manual/walk-in bookings only, so the records shown here are already filtered for business use.
+            </p>
             {isLoadingCustomers ? (
               <div className="flex min-h-[160px] items-center justify-center gap-2 text-sm text-muted-foreground">
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -717,12 +613,9 @@ export function SegmentVisualization() {
                     <TableRow>
                       <TableHead>Customer</TableHead>
                       <TableHead>Booking Type</TableHead>
-                      <TableHead>Recency</TableHead>
-                      <TableHead>Frequency</TableHead>
-                      <TableHead>Monetary</TableHead>
-                      <TableHead>R Score</TableHead>
-                      <TableHead>F Score</TableHead>
-                      <TableHead>M Score</TableHead>
+                      <TableHead>Last Visit</TableHead>
+                      <TableHead>Visit Frequency</TableHead>
+                      <TableHead>Value</TableHead>
                       <TableHead>Segment</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -732,13 +625,10 @@ export function SegmentVisualization() {
                         <TableCell className="font-medium">
                           {customer.customerName || customer.customerKey}
                         </TableCell>
-                        <TableCell>{customer.bookingTypeDominant || "-"}</TableCell>
-                        <TableCell>{customer.recency}</TableCell>
-                        <TableCell>{customer.frequency}</TableCell>
+                        <TableCell>{customer.bookingTypeDominant || "Unknown"}</TableCell>
+                        <TableCell>{customer.recency} days ago</TableCell>
+                        <TableCell>{customer.frequency} visits</TableCell>
                         <TableCell>{formatCurrency(customer.monetary)}</TableCell>
-                        <TableCell>{customer.rScore}</TableCell>
-                        <TableCell>{customer.fScore}</TableCell>
-                        <TableCell>{customer.mScore}</TableCell>
                         <TableCell>
                           <Badge variant="secondary">{customer.segmentName}</Badge>
                         </TableCell>
@@ -754,4 +644,3 @@ export function SegmentVisualization() {
     </TooltipProvider>
   )
 }
-

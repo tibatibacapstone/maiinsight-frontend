@@ -1276,7 +1276,7 @@ if (!canAccessDataCenter) {
           <div>
             <h1 className="text-2xl font-bold">Data Management Center</h1>
             <p className="text-muted-foreground">
-              API synchronization and data import tools
+              Sync data and upload your transaction files
             </p>
           </div>
           <Dialog open={uploadModalOpen} onOpenChange={handleDialogOpenChange} >

@@ -271,6 +271,13 @@ export function LowOccupancyTargeting({ onNavigate }: LowOccupancyTargetingProps
     customer: RecommendedTargetCustomer,
     intent: LowOccupancyOutreachIntent
   ) => {
+    const selectedSessionCard = sessions.find(
+      (session) => session.courtType === courtType && session.sessionName === sessionName
+    )
+    const slotTimeLabel = selectedSessionCard
+      ? `${selectedSessionCard.sessionStartHour} - ${selectedSessionCard.sessionEndHour}`
+      : null
+
     saveLowOccupancyOutreachContext({
       source: "low_occupancy_targeting",
       intent,
@@ -282,6 +289,9 @@ export function LowOccupancyTargeting({ onNavigate }: LowOccupancyTargetingProps
       bookingTypeDominant: customer.bookingTypeDominant,
       courtType,
       sessionName,
+      sessionStartHour: selectedSessionCard?.sessionStartHour || null,
+      sessionEndHour: selectedSessionCard?.sessionEndHour || null,
+      slotTimeLabel,
       date,
       preferredSession: customer.preferredSession,
       selectedSessionBookingCount: customer.selectedSessionBookingCount,

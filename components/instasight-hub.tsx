@@ -15,6 +15,7 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
+  Legend,
   ResponsiveContainer,
   Tooltip as RechartsTooltip,
   XAxis,
@@ -63,16 +64,35 @@ interface MetaDashboardResponse {
     summary: {
       totalViews: number
       totalReach: number
+      totalProfileViews: number
       totalInteractions: number
+      totalLikes: number
+      totalComments: number
       totalShares: number
+      totalSaved: number
       engagementRate: number
       shareRate: number
+      saveRate: number
+      profileVisitRate: number
+      averageInteractionsPerContent: number
+      contentCount: number
+      topContentType: string
     }
     trend: Array<{
       date: string
       reach: number
       views: number
       interactions: number
+      profileViews: number
+      engagementRate?: number
+    }>
+    contentMix: Array<{
+      type: string
+      count: number
+      views: number
+      reach: number
+      interactions: number
+      engagementRate: number
     }>
     topContent: Array<{
       id: string
@@ -84,9 +104,14 @@ interface MetaDashboardResponse {
       postedAt: string | null
       views: number
       reach: number
+      likes: number
+      comments: number
       interactions: number
       shares: number
+      saved: number
       engagementRate: number
+      shareRate: number
+      saveRate: number
     }>
   }
 }
@@ -209,6 +234,7 @@ export function InstaSightHub({ onViewAudience }: InstaSightHubProps) {
   }
 
   const topContent = useMemo(() => dashboard?.topContent || [], [dashboard])
+  const contentMix = useMemo(() => dashboard?.contentMix || [], [dashboard])
   const hasRealData = Boolean(dashboard?.hasData && (dashboard?.trend.length || dashboard?.topContent.length))
 
   return (
@@ -261,10 +287,10 @@ export function InstaSightHub({ onViewAudience }: InstaSightHubProps) {
         <Card className="border-border bg-card shadow-sm">
           <CardHeader>
             <CardTitle>InstaSight Ready to Sync</CardTitle>
-            <CardDescription>Meta credentials are configured, but no synced Instagram insight data is available yet.</CardDescription>
+            <CardDescription>Meta is connected, but no Instagram data yet.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3 text-sm text-muted-foreground">
-            <p>Use <span className="font-medium text-foreground">Sync Meta Data</span> to pull the latest Instagram performance metrics from Meta Graph API.</p>
+            <p>Use <span className="font-medium text-foreground">Sync Meta Data</span> to get the latest Instagram performance data.</p>
             <p>Last sync status: <span className="font-medium text-foreground">{status?.latestSync?.status || "Not synced"}</span></p>
           </CardContent>
         </Card>
@@ -274,14 +300,14 @@ export function InstaSightHub({ onViewAudience }: InstaSightHubProps) {
             <Card className="border-border bg-card shadow-sm">
               <CardHeader>
                 <CardTitle className="text-sm font-medium text-muted-foreground">Total Views</CardTitle>
-                <CardDescription>Latest synced Meta insight total</CardDescription>
+                <CardDescription>Data from last sync</CardDescription>
               </CardHeader>
               <CardContent><p className="text-[1.75rem] font-semibold tracking-tight">{formatNumber(dashboard?.summary.totalViews || 0)}</p></CardContent>
             </Card>
             <Card className="border-border bg-card shadow-sm">
               <CardHeader>
                 <CardTitle className="text-sm font-medium text-muted-foreground">Total Reach</CardTitle>
-                <CardDescription>Latest synced Meta insight total</CardDescription>
+                <CardDescription>Data from last sync</CardDescription>
               </CardHeader>
               <CardContent><p className="text-[1.75rem] font-semibold tracking-tight">{formatNumber(dashboard?.summary.totalReach || 0)}</p></CardContent>
             </Card>
@@ -291,6 +317,34 @@ export function InstaSightHub({ onViewAudience }: InstaSightHubProps) {
                 <CardDescription>Interaction rate based on synced reach</CardDescription>
               </CardHeader>
               <CardContent><p className="text-[1.75rem] font-semibold tracking-tight">{formatPercent(dashboard?.summary.engagementRate || 0)}</p></CardContent>
+            </Card>
+            <Card className="border-border bg-card shadow-sm">
+              <CardHeader>
+                <CardTitle className="text-sm font-medium text-muted-foreground">Profile Views</CardTitle>
+                <CardDescription>Visits to Instagram profile</CardDescription>
+              </CardHeader>
+              <CardContent><p className="text-[1.75rem] font-semibold tracking-tight">{formatNumber(dashboard?.summary.totalProfileViews || 0)}</p></CardContent>
+            </Card>
+            <Card className="border-border bg-card shadow-sm">
+              <CardHeader>
+                <CardTitle className="text-sm font-medium text-muted-foreground">Profile Visit Rate</CardTitle>
+                <CardDescription>Profile views divided by reach</CardDescription>
+              </CardHeader>
+              <CardContent><p className="text-[1.75rem] font-semibold tracking-tight">{formatPercent(dashboard?.summary.profileVisitRate || 0)}</p></CardContent>
+            </Card>
+            <Card className="border-border bg-card shadow-sm">
+              <CardHeader>
+                <CardTitle className="text-sm font-medium text-muted-foreground">Save Rate</CardTitle>
+                <CardDescription>Saves divided by reach</CardDescription>
+              </CardHeader>
+              <CardContent><p className="text-[1.75rem] font-semibold tracking-tight">{formatPercent(dashboard?.summary.saveRate || 0)}</p></CardContent>
+            </Card>
+            <Card className="border-border bg-card shadow-sm">
+              <CardHeader>
+                <CardTitle className="text-sm font-medium text-muted-foreground">Avg Interactions</CardTitle>
+                <CardDescription>Average per synced content</CardDescription>
+              </CardHeader>
+              <CardContent><p className="text-[1.75rem] font-semibold tracking-tight">{formatNumber(dashboard?.summary.averageInteractionsPerContent || 0)}</p></CardContent>
             </Card>
             <Card className="border-border bg-card shadow-sm">
               <CardHeader>
@@ -319,10 +373,22 @@ export function InstaSightHub({ onViewAudience }: InstaSightHubProps) {
                       <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
                       <XAxis dataKey="date" stroke="var(--muted-foreground)" tickLine={false} axisLine={false} />
                       <YAxis stroke="var(--muted-foreground)" tickLine={false} axisLine={false} />
-                      <RechartsTooltip formatter={(value: number) => [formatNumber(value), "Value"]} />
-                      <Area type="monotone" dataKey="reach" stroke="var(--chart-1)" fill="var(--chart-1)" fillOpacity={0.14} />
-                      <Area type="monotone" dataKey="views" stroke="var(--chart-2)" fill="var(--chart-2)" fillOpacity={0.12} />
-                      <Area type="monotone" dataKey="interactions" stroke="var(--chart-3)" fill="var(--chart-3)" fillOpacity={0.1} />
+                      <Legend verticalAlign="top" height={28} />
+                      <RechartsTooltip
+                        formatter={(value: number | string, name: string) => {
+                          const labels: Record<string, string> = {
+                            reach: "Reach",
+                            views: "Views",
+                            interactions: "Interactions",
+                            profileViews: "Profile Views",
+                          }
+                          return [formatNumber(Number(value || 0)), labels[String(name)] || String(name)]
+                        }}
+                      />
+                      <Area type="monotone" dataKey="reach" name="Reach" stroke="var(--chart-1)" fill="var(--chart-1)" fillOpacity={0.14} />
+                      <Area type="monotone" dataKey="views" name="Views" stroke="var(--chart-2)" fill="var(--chart-2)" fillOpacity={0.12} />
+                      <Area type="monotone" dataKey="interactions" name="Interactions" stroke="var(--chart-3)" fill="var(--chart-3)" fillOpacity={0.1} />
+                      <Area type="monotone" dataKey="profileViews" name="Profile Views" stroke="var(--chart-4)" fill="var(--chart-4)" fillOpacity={0.08} />
                     </AreaChart>
                   </ResponsiveContainer>
                 </div>
@@ -342,9 +408,62 @@ export function InstaSightHub({ onViewAudience }: InstaSightHubProps) {
                       <XAxis type="number" stroke="var(--muted-foreground)" tickLine={false} axisLine={false} />
                       <YAxis type="category" dataKey="caption" width={156} tickFormatter={(value) => String(value || "Untitled post").slice(0, 24)} stroke="var(--muted-foreground)" tickLine={false} axisLine={false} />
                       <RechartsTooltip formatter={(value: number) => [formatNumber(value), "Views"]} />
-                      <Bar dataKey="views" fill="var(--chart-1)" radius={[0, 6, 6, 0]} />
+                      <Bar dataKey="views" name="Views" fill="var(--chart-1)" radius={[0, 6, 6, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          <div className="grid gap-6 xl:grid-cols-2">
+            <Card className="border-border bg-card shadow-sm">
+              <CardHeader>
+                <CardTitle>Content Mix by Format</CardTitle>
+                <CardDescription>Which Instagram format is carrying views and interactions.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="h-[300px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={contentMix.slice(0, 5)} layout="vertical" margin={{ left: 12, right: 8 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal={false} />
+                      <XAxis type="number" stroke="var(--muted-foreground)" tickLine={false} axisLine={false} />
+                      <YAxis type="category" dataKey="type" width={120} stroke="var(--muted-foreground)" tickLine={false} axisLine={false} />
+                      <Legend verticalAlign="top" height={28} />
+                      <RechartsTooltip formatter={(value: number, name: string) => [formatNumber(value), name]} />
+                      <Bar dataKey="views" name="Views" fill="var(--chart-1)" radius={[0, 6, 6, 0]} />
+                      <Bar dataKey="interactions" name="Interactions" fill="var(--chart-3)" radius={[0, 6, 6, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="border-border bg-card shadow-sm">
+              <CardHeader>
+                <CardTitle>Marketing Signals</CardTitle>
+                <CardDescription>Quick reads that normally require checking Meta graphs manually.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4 text-sm">
+                <div className="flex items-center justify-between border-b pb-3">
+                  <span className="text-muted-foreground">Best performing format</span>
+                  <span className="font-semibold text-foreground">{dashboard?.summary.topContentType || "-"}</span>
+                </div>
+                <div className="flex items-center justify-between border-b pb-3">
+                  <span className="text-muted-foreground">Profile visits from reach</span>
+                  <span className="font-semibold text-foreground">{formatPercent(dashboard?.summary.profileVisitRate || 0)}</span>
+                </div>
+                <div className="flex items-center justify-between border-b pb-3">
+                  <span className="text-muted-foreground">Save intent rate</span>
+                  <span className="font-semibold text-foreground">{formatPercent(dashboard?.summary.saveRate || 0)}</span>
+                </div>
+                <div className="flex items-center justify-between border-b pb-3">
+                  <span className="text-muted-foreground">Share amplification rate</span>
+                  <span className="font-semibold text-foreground">{formatPercent(dashboard?.summary.shareRate || 0)}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">Synced content analyzed</span>
+                  <span className="font-semibold text-foreground">{formatNumber(dashboard?.summary.contentCount || 0)}</span>
                 </div>
               </CardContent>
             </Card>
@@ -357,14 +476,16 @@ export function InstaSightHub({ onViewAudience }: InstaSightHubProps) {
             </CardHeader>
             <CardContent>
               <div className="overflow-x-auto rounded-lg border">
-                <table className="w-full min-w-[860px] text-sm">
+                <table className="w-full min-w-[1040px] text-sm">
                   <thead>
                     <tr className="border-b border-border/50 text-left text-muted-foreground">
                       <th className="px-4 py-3">Content</th>
                       <th className="px-4 py-3">Type</th>
                       <th className="px-4 py-3 text-right">Views</th>
                       <th className="px-4 py-3 text-right">Reach</th>
-                      <th className="px-4 py-3 text-right">Interactions</th>
+                      <th className="px-4 py-3 text-right">Likes</th>
+                      <th className="px-4 py-3 text-right">Comments</th>
+                      <th className="px-4 py-3 text-right">Saves</th>
                       <th className="px-4 py-3 text-right">Shares</th>
                       <th className="px-4 py-3 text-right">Engagement</th>
                     </tr>
@@ -395,7 +516,9 @@ export function InstaSightHub({ onViewAudience }: InstaSightHubProps) {
                         <td className="px-4 py-4">{item.mediaProductType || item.mediaType || "-"}</td>
                         <td className="px-4 py-4 text-right">{formatNumber(item.views)}</td>
                         <td className="px-4 py-4 text-right">{formatNumber(item.reach)}</td>
-                        <td className="px-4 py-4 text-right">{formatNumber(item.interactions)}</td>
+                        <td className="px-4 py-4 text-right">{formatNumber(item.likes)}</td>
+                        <td className="px-4 py-4 text-right">{formatNumber(item.comments)}</td>
+                        <td className="px-4 py-4 text-right">{formatNumber(item.saved)}</td>
                         <td className="px-4 py-4 text-right">{formatNumber(item.shares)}</td>
                         <td className="px-4 py-4 text-right">{formatPercent(item.engagementRate)}</td>
                       </tr>

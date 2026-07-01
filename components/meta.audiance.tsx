@@ -6,6 +6,7 @@ import {
   BarChart,
   CartesianGrid,
   Cell,
+  Legend,
   Pie,
   PieChart,
   ResponsiveContainer,
@@ -36,6 +37,8 @@ type AgeItem = {
   metricValue?: number | string
   male?: number | string
   female?: number | string
+  Male?: number | string
+  Female?: number | string
   lakiLaki?: number | string
   perempuan?: number | string
   "Laki-laki"?: number | string
@@ -44,6 +47,11 @@ type AgeItem = {
 
 type CityItem = {
   city: string
+  value: number
+}
+
+type CountryItem = {
+  country: string
   value: number
 }
 
@@ -57,8 +65,10 @@ type AudienceSummary = {
     topCityPct: number
   }
   genderDistribution: GenderItem[]
+  ageDistribution: Array<{ age: string; value: number }>
   ageGenderDistribution: AgeItem[]
   topCities: CityItem[]
+  topCountries?: CountryItem[]
   personaInsight: string
 }
 
@@ -78,8 +88,8 @@ const AUDIENCE_COLORS = {
 
 function getAudienceColor(name: string) {
   const label = name.toLowerCase()
-  if (label.includes("laki")) return AUDIENCE_COLORS.male
-  if (label.includes("perempuan")) return AUDIENCE_COLORS.female
+  if (label.includes("female") || label.includes("perempuan") || label.includes("cewe")) return AUDIENCE_COLORS.female
+  if (label.includes("male") || label.includes("laki")) return AUDIENCE_COLORS.male
   return AUDIENCE_COLORS.unknown
 }
 
@@ -106,8 +116,8 @@ function getGenderAgeLabel(item: AgeItem) {
 
 function getGenderFromBreakdown(item: AgeItem) {
   const raw = String(item.gender ?? item.breakdownValue ?? item.name ?? "").toLowerCase()
-  if (raw === "f" || raw.includes("female") || raw.includes("perempuan") || raw.startsWith("f.")) return "Perempuan"
-  if (raw === "m" || raw.includes("male") || raw.includes("laki") || raw.startsWith("m.")) return "Laki-laki"
+  if (raw === "f" || raw.includes("female") || raw.includes("perempuan") || raw.includes("cewe") || raw.startsWith("f.")) return "Female"
+  if (raw === "m" || raw.includes("male") || raw.includes("laki") || raw.startsWith("m.")) return "Male"
   return "-"
 }
 
@@ -167,13 +177,13 @@ function MetaAudienceCharts({ onBack }: MetaAudienceProps) {
 
   const ageGenderChartData = useMemo(() => {
     const order = ["13-17", "18-24", "25-34", "35-44", "45-54", "55-64", "65+"]
-    const grouped = new Map<string, { age: string; "Laki-laki": number; Perempuan: number }>()
+    const grouped = new Map<string, { age: string; Male: number; Female: number }>()
 
     order.forEach((age) => {
       grouped.set(age, {
         age,
-        "Laki-laki": 0,
-        Perempuan: 0,
+        Male: 0,
+        Female: 0,
       })
     })
 
@@ -181,13 +191,13 @@ function MetaAudienceCharts({ onBack }: MetaAudienceProps) {
       const age = getGenderAgeLabel(item)
       if (age === "-" || !grouped.has(age)) return
 
-      const existing = grouped.get(age) || { age, "Laki-laki": 0, Perempuan: 0 }
-      const directMale = toNumber(item["Laki-laki"] ?? item.lakiLaki ?? item.male)
-      const directFemale = toNumber(item.Perempuan ?? item.perempuan ?? item.female)
+      const existing = grouped.get(age) || { age, Male: 0, Female: 0 }
+      const directMale = toNumber(item.Male ?? item.male ?? item["Laki-laki"] ?? item.lakiLaki)
+      const directFemale = toNumber(item.Female ?? item.female ?? item.Perempuan ?? item.perempuan)
 
       if (directMale > 0 || directFemale > 0) {
-        existing["Laki-laki"] += directMale
-        existing.Perempuan += directFemale
+        existing.Male += directMale
+        existing.Female += directFemale
         grouped.set(age, existing)
         return
       }
@@ -200,7 +210,25 @@ function MetaAudienceCharts({ onBack }: MetaAudienceProps) {
       grouped.set(age, existing)
     })
 
-    return Array.from(grouped.values())
+    const stackedRows = Array.from(grouped.values())
+    if (stackedRows.some((item) => item.Male > 0 || item.Female > 0)) {
+      return stackedRows
+    }
+
+    const malePct = data?.genderDistribution.find((item) => item.name.toLowerCase() === "male")?.value || 0
+    const femalePct = data?.genderDistribution.find((item) => item.name.toLowerCase() === "female")?.value || 0
+    const genderTotal = malePct + femalePct
+    const maleShare = genderTotal > 0 ? malePct / genderTotal : 0
+    const femaleShare = genderTotal > 0 ? femalePct / genderTotal : 0
+
+    return order.map((age) => {
+      const ageValue = toNumber(data?.ageDistribution?.find((item) => item.age === age)?.value)
+      return {
+        age,
+        Male: Number((ageValue * maleShare).toFixed(1)),
+        Female: Number((ageValue * femaleShare).toFixed(1)),
+      }
+    })
   }, [data])
 
   if (loading) {
@@ -332,6 +360,7 @@ function MetaAudienceCharts({ onBack }: MetaAudienceProps) {
                       <Cell key={entry.name} fill={getAudienceColor(entry.name)} />
                     ))}
                   </Pie>
+                  <Legend verticalAlign="bottom" height={28} />
                   <Tooltip formatter={(value: number) => formatPercent(value)} />
                 </PieChart>
               </ResponsiveContainer>
@@ -347,13 +376,14 @@ function MetaAudienceCharts({ onBack }: MetaAudienceProps) {
           <CardContent>
             <div className="h-[300px]">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={ageGenderChartData.filter((item) => item["Laki-laki"] > 0 || item.Perempuan > 0)} barCategoryGap="22%">
+                <BarChart data={ageGenderChartData.filter((item) => item.Male > 0 || item.Female > 0)} barCategoryGap="22%">
                   <CartesianGrid strokeDasharray="3 3" vertical={false} />
                   <XAxis dataKey="age" />
                   <YAxis />
-                  <Tooltip formatter={(value: number) => Number(value).toFixed(1)} labelFormatter={(label) => `Age ${label}`} />
-                  <Bar dataKey="Laki-laki" name="Laki-laki" fill={AUDIENCE_COLORS.male} radius={[6, 6, 0, 0]} />
-                  <Bar dataKey="Perempuan" name="Perempuan" fill={AUDIENCE_COLORS.female} radius={[6, 6, 0, 0]} />
+                  <Legend verticalAlign="top" height={28} />
+                  <Tooltip formatter={(value: number) => formatPercent(Number(value))} labelFormatter={(label) => `Age ${label}`} />
+                  <Bar dataKey="Male" name="Male" fill={AUDIENCE_COLORS.male} radius={[6, 6, 0, 0]} />
+                  <Bar dataKey="Female" name="Female" fill={AUDIENCE_COLORS.female} radius={[6, 6, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -361,7 +391,7 @@ function MetaAudienceCharts({ onBack }: MetaAudienceProps) {
         </Card>
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-2">
+      <div className="grid gap-6 xl:grid-cols-3">
         <Card className="border-border bg-card shadow-sm">
           <CardHeader>
             <CardTitle>Top Cities</CardTitle>
@@ -376,6 +406,26 @@ function MetaAudienceCharts({ onBack }: MetaAudienceProps) {
                 </div>
                 <div className="h-3 w-full rounded-full bg-slate-100">
                   <div className="h-3 rounded-full bg-amber-400" style={{ width: `${Math.min(item.value, 100)}%` }} />
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+
+        <Card className="border-border bg-card shadow-sm">
+          <CardHeader>
+            <CardTitle>Top Countries</CardTitle>
+            <CardDescription>Country concentration from Meta follower demographics.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {(data.topCountries || []).map((item) => (
+              <div key={item.country}>
+                <div className="mb-1 flex items-center justify-between">
+                  <p className="text-sm font-medium text-foreground">{item.country}</p>
+                  <p className="text-sm text-muted-foreground">{formatPercent(item.value)}</p>
+                </div>
+                <div className="h-3 w-full rounded-full bg-slate-100">
+                  <div className="h-3 rounded-full bg-sky-400" style={{ width: `${Math.min(item.value, 100)}%` }} />
                 </div>
               </div>
             ))}

@@ -130,7 +130,7 @@
   }
 
   html {
-    font-size: 15px;
+    font-size: 16px;
   }
 
   body {
@@ -179,4 +179,52 @@
 
 ::-webkit-scrollbar-thumb:hover {
   background: oklch(0.58 0.14 150);
+}
+
+@media print {
+  @page {
+    size: A4 landscape;
+    margin: 10mm;
+  }
+
+  html,
+  body {
+    width: 297mm;
+    height: 210mm;
+    background: white !important;
+    color: black !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  body * {
+    visibility: hidden;
+  }
+
+  .print-report {
+    display: none;
+  }
+
+  .print-report,
+  .print-report * {
+    visibility: visible;
+  }
+
+  .print-report {
+    display: block !important;
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    min-height: 100%;
+    background: white !important;
+  }
+
+  .print-hide {
+    display: none !important;
+  }
+
+  .print-break-inside-avoid {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
 }

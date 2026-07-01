@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react"
 import {
   Bell,
+  Check,
   Copy,
   Loader2,
   MessageSquare,
@@ -69,6 +70,7 @@ interface NormalizedStrategyPayload {
   model: string
   generatedAt: string
   rawText?: string | null
+  technicalMessage?: string | null
   strategy: StrategyPayload
 }
 
@@ -84,6 +86,12 @@ interface StrategyResponse {
   rawText?: string | null
   strategy?: StrategyPayload
   data?: NormalizedStrategyPayload
+}
+
+interface StrategyFieldCardProps {
+  label: string
+  value: string
+  accent?: "blue" | "emerald" | "amber" | "rose" | "slate"
 }
 
 interface GenAIWorkspaceProps {
@@ -144,6 +152,23 @@ const mapCourtTypeToVenue = (courtType: string) => {
   return "All Venue"
 }
 
+const accentStyles: Record<NonNullable<StrategyFieldCardProps["accent"]>, string> = {
+  blue: "border-sky-200 bg-sky-50/80 text-sky-800",
+  emerald: "border-emerald-200 bg-emerald-50/80 text-emerald-800",
+  amber: "border-amber-200 bg-amber-50/80 text-amber-800",
+  rose: "border-rose-200 bg-rose-50/80 text-rose-800",
+  slate: "border-slate-200 bg-slate-50/80 text-slate-800",
+}
+
+function StrategyFieldCard({ label, value, accent = "slate" }: StrategyFieldCardProps) {
+  return (
+    <div className={`group rounded-2xl border p-4 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md ${accentStyles[accent]}`}>
+      <p className="text-xs font-semibold uppercase tracking-[0.14em] opacity-80">{label}</p>
+      <p className="mt-2 text-sm leading-6 text-slate-900">{value}</p>
+    </div>
+  )
+}
+
 export function GenAIWorkspace({ userRole: userRoleFromProps }: GenAIWorkspaceProps) {
   const [storedUserRole, setStoredUserRole] = useState<UserRole | null>(null)
   const [workspaceMode, setWorkspaceMode] = useState<"general" | "outreach">("general")
@@ -152,11 +177,12 @@ export function GenAIWorkspace({ userRole: userRoleFromProps }: GenAIWorkspacePr
   const [selectedSegment, setSelectedSegment] = useState("Re-Engagement Players")
   const [selectedObjective, setSelectedObjective] = useState("Maximize Off-Peak Occupancy")
   const [selectedIncentive, setSelectedIncentive] = useState("Value-Added Services")
-  const [selectedTone, setSelectedTone] = useState("Professional Tone")
+  const [selectedTone, setSelectedTone] = useState("Casual & Community Hook")
   const [aiStatus, setAiStatus] = useState<AiStatusResponse["data"] | null>(null)
   const [strategy, setStrategy] = useState<NormalizedStrategyPayload | null>(null)
   const [alerts, setAlerts] = useState<NotificationItem[]>([])
   const [alertsOpen, setAlertsOpen] = useState(false)
+  const [copiedField, setCopiedField] = useState<string | null>(null)
   const [isLoadingStatus, setIsLoadingStatus] = useState(true)
   const [isGenerating, setIsGenerating] = useState(false)
   const [error, setError] = useState<{ message: string; suggestion?: string | null; technical?: string | null } | null>(null)
@@ -174,6 +200,7 @@ export function GenAIWorkspace({ userRole: userRoleFromProps }: GenAIWorkspacePr
       if (context.rfmSegmentName) {
         setSelectedSegment(context.rfmSegmentName)
       }
+      setSelectedTone("Casual & Community Hook")
     }
 
     applyContext(readLowOccupancyOutreachContext())
@@ -186,6 +213,7 @@ export function GenAIWorkspace({ userRole: userRoleFromProps }: GenAIWorkspacePr
   const canViewPage = Boolean(activeRole && activeRole !== "management")
   const canGenerateAi = canAccessFeature(activeRole, "generateAiStrategy")
   const canViewTechnicalDetails = activeRole === "it_support"
+
 
   const loadWorkspaceStatus = async () => {
     try {
@@ -247,6 +275,7 @@ export function GenAIWorkspace({ userRole: userRoleFromProps }: GenAIWorkspacePr
           segmentName: outreachContext.rfmSegmentName || selectedSegment,
           campaignObjective: selectedObjective,
           copyTone: selectedTone,
+          slotTimeLabel: outreachContext.slotTimeLabel || null,
         },
         customer_segment_summary: {
           targetPriorityLabel: outreachContext.targetPriorityLabel,
@@ -257,6 +286,9 @@ export function GenAIWorkspace({ userRole: userRoleFromProps }: GenAIWorkspacePr
         business_context: {
           date: outreachContext.date,
           sessionName: outreachContext.sessionName,
+          sessionStartHour: outreachContext.sessionStartHour || null,
+          sessionEndHour: outreachContext.sessionEndHour || null,
+          slotTimeLabel: outreachContext.slotTimeLabel || null,
           courtType: outreachContext.courtType,
           suggestedAction: outreachContext.suggestedAction,
           lowOccupancyTargeting: true,
@@ -322,6 +354,7 @@ export function GenAIWorkspace({ userRole: userRoleFromProps }: GenAIWorkspacePr
             model: result.model || "",
             generatedAt: result.generatedAt,
             rawText: result.rawText || null,
+            technicalMessage: result.technicalMessage || null,
             strategy: result.strategy,
           }
         : null)
@@ -353,6 +386,8 @@ export function GenAIWorkspace({ userRole: userRoleFromProps }: GenAIWorkspacePr
   const handleCopy = async (text: string) => {
     try {
       await navigator.clipboard.writeText(text)
+      setCopiedField(text)
+      window.setTimeout(() => setCopiedField((current) => (current === text ? null : current)), 1400)
     } catch {
       setError({
         message: "The generated text could not be copied automatically.",
@@ -488,6 +523,7 @@ export function GenAIWorkspace({ userRole: userRoleFromProps }: GenAIWorkspacePr
                 <div className="rounded-xl border border-white/80 bg-white/90 p-4 text-sm">
                   <p className="font-semibold text-slate-900">Session</p>
                   <p>{outreachContext.sessionName}</p>
+                  <p className="text-muted-foreground">{outreachContext.slotTimeLabel || "Slot time not selected"}</p>
                   <p className="text-muted-foreground">{outreachContext.date}</p>
                 </div>
                 <div className="rounded-xl border border-white/80 bg-white/90 p-4 text-sm">
@@ -581,53 +617,77 @@ export function GenAIWorkspace({ userRole: userRoleFromProps }: GenAIWorkspacePr
                       {formatExactDateTime(strategy.generatedAt)} ({getRelativeTime(strategy.generatedAt)})
                     </CardDescription>
                   </div>
-                  <Badge variant="outline" className="w-fit border-primary/20 text-primary">
-                    {strategy.provider === "azure" ? "Generated with Azure OpenAI" : "Generated with Gemini"}
+                  <Badge
+                    variant="outline"
+                    className="w-fit border-primary/20 text-primary"
+                  >
+                    {strategy.provider === "azure"
+                      ? "Generated with Azure OpenAI"
+                      : "Generated with Gemini"}
                   </Badge>
                 </div>
               </CardHeader>
               <CardContent className="space-y-5">
-                <div className="grid gap-4 lg:grid-cols-2">
-                  <div className="rounded-xl border border-border bg-secondary/20 p-4">
-                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Campaign Objective</p>
-                    <p className="mt-2 text-sm leading-6">{strategy.strategy.campaignObjective}</p>
-                  </div>
-                  <div className="rounded-xl border border-border bg-secondary/20 p-4">
-                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Target Customer Group</p>
-                    <p className="mt-2 text-sm leading-6">{strategy.strategy.targetCustomerGroup}</p>
-                  </div>
-                  <div className="rounded-xl border border-border bg-secondary/20 p-4">
-                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Customer Behavior Reasoning</p>
-                    <p className="mt-2 text-sm leading-6">{strategy.strategy.customerReasoning}</p>
-                  </div>
-                  <div className="rounded-xl border border-border bg-secondary/20 p-4">
-                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Suggested Offer / Promo</p>
-                    <p className="mt-2 text-sm leading-6">{strategy.strategy.suggestedOffer}</p>
-                  </div>
-                  <div className="rounded-xl border border-border bg-secondary/20 p-4">
-                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Follow-Up Plan</p>
-                    <p className="mt-2 text-sm leading-6">{strategy.strategy.followUpPlan}</p>
-                  </div>
+                <div className="flex flex-wrap gap-2">
+                  <Badge variant="secondary" className="rounded-full px-3 py-1">
+                    Objective: {strategy.strategy.campaignObjective.slice(0, 42)}
+                    {strategy.strategy.campaignObjective.length > 42 ? "..." : ""}
+                  </Badge>
+                  <Badge variant="secondary" className="rounded-full px-3 py-1">
+                    Channel: WhatsApp
+                  </Badge>
+                  <Badge variant="secondary" className="rounded-full px-3 py-1">
+                    Tone: {selectedTone}
+                  </Badge>
+                  <Badge variant="secondary" className="rounded-full px-3 py-1">
+                    Offer: {selectedIncentive}
+                  </Badge>
                 </div>
 
-                <div className="rounded-xl border border-border bg-secondary/20 p-4">
-                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Expected Business Impact</p>
-                  <p className="mt-2 text-sm leading-6">{strategy.strategy.expectedBusinessImpact}</p>
+                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                  <StrategyFieldCard label="Campaign Objective" value={strategy.strategy.campaignObjective} accent="blue" />
+                  <StrategyFieldCard label="Target Customer Group" value={strategy.strategy.targetCustomerGroup} accent="emerald" />
+                  <StrategyFieldCard label="Customer Behavior Reasoning" value={strategy.strategy.customerReasoning} accent="amber" />
+                  <StrategyFieldCard label="Suggested Offer / Promo" value={strategy.strategy.suggestedOffer} accent="rose" />
+                  <StrategyFieldCard label="Follow-Up Plan" value={strategy.strategy.followUpPlan} accent="slate" />
+                  <StrategyFieldCard label="Expected Business Impact" value={strategy.strategy.expectedBusinessImpact} accent="blue" />
                 </div>
 
-                <div className="rounded-xl border border-border bg-secondary/20 p-4">
+                <div className="rounded-2xl border border-border bg-gradient-to-br from-background to-secondary/20 p-4 shadow-sm">
                   <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Data Limitation / Caveat</p>
                   <p className="mt-2 text-sm leading-6 text-muted-foreground">{strategy.strategy.dataLimitation}</p>
                 </div>
 
-                <div className="rounded-xl border border-border bg-secondary/20 p-4">
+                <div className="rounded-2xl border border-border bg-gradient-to-br from-slate-50 to-background p-4 shadow-sm">
                   <div className="mb-2 flex items-center justify-between gap-2">
                     <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">WhatsApp Message Draft</p>
-                    <Button variant="ghost" size="icon" onClick={() => void handleCopy(strategy.strategy.whatsappMessage || "")}>
-                      <Copy className="h-4 w-4" />
-                    </Button>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => void handleGenerateStrategy()}
+                        disabled={!canGenerateAi || isGenerating || !aiStatus?.configured}
+                        className="gap-2 rounded-full transition-all duration-200 hover:-translate-y-0.5 hover:bg-primary/10 hover:text-primary hover:shadow-sm"
+                      >
+                        {isGenerating ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                        Regenerate Draft
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => void handleCopy(strategy.strategy.whatsappMessage)}
+                        className="gap-2 rounded-full transition-all duration-200 hover:-translate-y-0.5 hover:bg-primary/10 hover:text-primary hover:shadow-sm"
+                      >
+                        {copiedField === strategy.strategy.whatsappMessage ? (
+                          <Check className="h-4 w-4" />
+                        ) : (
+                          <Copy className="h-4 w-4" />
+                        )}
+                        {copiedField === strategy.strategy.whatsappMessage ? "Copied" : "Copy"}
+                      </Button>
+                    </div>
                   </div>
-                  <p className="text-sm leading-6 text-muted-foreground">{strategy.strategy.whatsappMessage}</p>
+                  <p className="text-sm leading-6 text-slate-700">{strategy.strategy.whatsappMessage}</p>
                 </div>
               </CardContent>
             </Card>
