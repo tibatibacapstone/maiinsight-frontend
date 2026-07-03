@@ -657,7 +657,7 @@ export function AnalyticsDashboard() {
         fetch(getApiUrl(`/dashboard/overview-kpis?${overviewParams.toString()}`), { headers: getAuthHeaders(), cache: "no-store" }),
         fetch(getApiUrl(`/dashboard/occupancy-trend?${overviewParams.toString()}`), { headers: getAuthHeaders(), cache: "no-store" }),
         fetch(getApiUrl(`/operations/management-report?${reportParams.toString()}`), { headers: getAuthHeaders(), cache: "no-store" }),
-        fetch(getApiUrl("/ml/playtime/latest"), { headers: getAuthHeaders(), cache: "no-store" }),
+        fetch(getApiUrl(`/dashboard/playtime-mix?${overviewParams.toString()}`), { headers: getAuthHeaders(), cache: "no-store" }),
         fetchSegmentationSummary().then((data) => ({ success: true, data })).catch(() => ({ success: false, data: null })),
         fetch(getApiUrl(`/meta/dashboard?${metaParams.toString()}`), { headers: getAuthHeaders(), cache: "no-store" })
           .then(async (response) => {
@@ -1305,7 +1305,7 @@ export function AnalyticsDashboard() {
             </Card>
           </div>
 
-          <div className="grid gap-6 sm:grid-cols-1 lg:grid-cols-2 xl:grid-cols-3">
+          <div className="grid gap-6 sm:grid-cols-1 lg:grid-cols-2 xl:grid-cols-2">
             <Card className="border-border bg-card shadow-sm">
               <CardHeader>
                 <CardTitle><TitleWithTooltip title="Occupancy Trend" tooltip="Shows how many court hours were booked during the selected period." /></CardTitle>
@@ -1376,7 +1376,6 @@ export function AnalyticsDashboard() {
           </div>
 
           <div className="mt-6">
-            <HeatmapGrid heatmapSummary={(playtimeMlData as any)?.heatmapSummary ?? null} />
           </div>
 
           <div className="grid gap-6 xl:grid-cols-2">

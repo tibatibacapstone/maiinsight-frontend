@@ -880,8 +880,6 @@ export function SegmentVisualization() {
 
         {/* Segment Playbook removed per request */}
 
-        <HeatmapGrid heatmapSummary={heatmapSummary} />
-
         <Card className="border-border bg-card shadow-sm">
           <CardHeader>
             <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">

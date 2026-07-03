@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -12,6 +12,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { BusinessErrorAlert } from "@/components/business-error-alert"
+import { HeatmapGrid } from "@/components/segment-visualization" // ⬅️ NEW: reused for Empty Slot Heatmap
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -19,18 +20,28 @@ import { Input } from "@/components/ui/input"
 import { getApiUrl } from "@/lib/api"
 import { getAuthHeaders } from "@/lib/roles"
 import {
+  CUSTOMER_SEGMENT_COLORS, // ⬅️ NEW
+  fetchSegmentationSummary, // ⬅️ NEW
+  sortClusterProfiles, // ⬅️ NEW
+  type ClusterProfile, // ⬅️ NEW
+} from "@/lib/segmentation"
+import {
   AlertTriangle,
   ArrowRight,
+  BarChart3, // ⬅️ NEW
   Calendar,
   CheckCircle2,
+  Clock, // ⬅️ NEW
   Download,
   FileText,
   Loader2,
   Sparkles,
   Target,
+  TrendingDown, // ⬅️ NEW
   TrendingUp,
   Users,
   Wallet,
+  Zap, // ⬅️ NEW
   ChevronDown,
 } from "lucide-react"
 import {
@@ -38,7 +49,9 @@ import {
   AreaChart,
   Bar,
   BarChart,
+   LabelList,
   CartesianGrid,
+  Cell, // ⬅️ NEW
   Legend,
   ResponsiveContainer,
   Tooltip as RechartsTooltip,
@@ -101,6 +114,57 @@ interface MetaAudienceSummary {
     topCityPct: number
   }
   personaInsight: string
+}
+
+// ⬅️ NEW: mirrors OverviewKpiData used in analytics-dashboard.tsx
+interface OverviewKpiData {
+  occupancyRate: number
+  occupancyChange: number
+  totalRevenue: number
+  revenueChange: number
+  lowSessionLabel: string
+  peakSessionLabel: string
+  peakSessionRevenue: number
+}
+
+// ⬅️ NEW: mirrors OccupancyTrendPoint used in analytics-dashboard.tsx
+interface OccupancyTrendPoint {
+  label: string
+  bookedSessions: number
+  availableSessions: number
+  rate: number
+}
+
+// ⬅️ NEW: heatmap + playtime mix payload shape (same as analytics-dashboard.tsx / low-occupancy-targeting.tsx)
+interface PlaytimeSessionPoint {
+  play_time_group?: string
+  playTimeGroup?: string
+  session_count?: number
+  sessionCount?: number
+}
+
+interface HeatmapSummary {
+  slots: Array<{
+    day_short: string
+    startHour: string
+    session_count: number
+    session_label?: string
+  }>
+  mostEmptySlot: {
+    dayLabel: string
+    hourLabel: string
+    sessionLabel: string
+    sessionCount: number
+  } | null
+}
+
+interface PlaytimeMlData {
+  totalCustomers: number
+  totalSessions: number
+  clusterCount?: number
+  createdAt?: string
+  sessionByTime?: unknown
+  heatmapSummary?: HeatmapSummary | null
 }
 
 interface ReportResponse {
@@ -170,6 +234,66 @@ interface ReportResponse {
 
 // startDate/endDate will be set by `applyDefaultRange` (from API or fallback)
 
+// ⬅️ NEW: shared helper constants for the playtime + segment charts
+const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+const chartColors = ["var(--chart-1)", "var(--chart-2)", "var(--chart-3)", "var(--chart-4)"]
+const playtimeOrder: Record<string, number> = {
+  Morning: 0,
+  Afternoon: 1,
+  Evening: 2,
+  Night: 3,
+  Pagi: 0,
+  Siang: 1,
+  Malam: 3,
+}
+const playtimeLabelMap: Record<string, string> = {
+  Pagi: "Morning",
+  Siang: "Afternoon",
+  Malam: "Night",
+}
+
+const parseJsonArray = <T,>(value: unknown): T[] => {
+  if (Array.isArray(value)) return value as T[]
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value)
+      return Array.isArray(parsed) ? (parsed as T[]) : []
+    } catch {
+      return []
+    }
+  }
+  return []
+}
+
+const buildPlaytimeChart = (playtimeMlData: PlaytimeMlData | null) => {
+  const directRows = parseJsonArray<PlaytimeSessionPoint>(playtimeMlData?.sessionByTime)
+
+  return directRows
+    .map((row, index) => {
+      const rawName = row.play_time_group || row.playTimeGroup || ""
+      if (!rawName) return null
+      return {
+        name: playtimeLabelMap[rawName] || rawName,
+        rawName,
+        value: Number(row.session_count ?? row.sessionCount ?? 0),
+        color: chartColors[index % chartColors.length],
+      }
+    })
+    .filter((item): item is { name: string; rawName: string; value: number; color: string } => Boolean(item))
+    .sort((left, right) => (playtimeOrder[left.rawName] ?? 99) - (playtimeOrder[right.rawName] ?? 99))
+}
+
+// ⬅️ NEW: derives the overview-kpis / occupancy-trend query params from the report's date range + court filter
+const deriveOverviewParams = (endDate: string, courtType: string) => {
+  const parsed = endDate ? new Date(endDate) : new Date()
+  const safeDate = Number.isNaN(parsed.getTime()) ? new Date() : parsed
+  const month = months[safeDate.getMonth()] || months[0]
+  const year = String(safeDate.getFullYear())
+  const venue = courtType === "mini_soccer" ? "Mini Soccer" : courtType === "basketball" ? "Basketball" : "All Venue"
+
+  return { month, year, venue }
+}
+
 const formatCurrency = (value: number) => `IDR ${Math.round(value).toLocaleString("id-ID")}`
 
 const formatPercent = (value: number | null | undefined) => (value === null || value === undefined ? "-" : `${value >= 0 ? "+" : ""}${value.toFixed(1)}%`)
@@ -200,6 +324,12 @@ export function ManagementReport() {
   const [lastRefreshedAt, setLastRefreshedAt] = useState<string | null>(null)
   const [metaDashboard, setMetaDashboard] = useState<MetaDashboardData | null>(null)
   const [metaAudienceSummary, setMetaAudienceSummary] = useState<MetaAudienceSummary | null>(null)
+
+  // ⬅️ NEW: state for the visuals pulled in from Overview / Fill Empty Sessions / Segments
+  const [overviewKpi, setOverviewKpi] = useState<OverviewKpiData | null>(null)
+  const [occupancyTrend, setOccupancyTrend] = useState<OccupancyTrendPoint[]>([])
+  const [playtimeMlData, setPlaytimeMlData] = useState<PlaytimeMlData | null>(null)
+  const [segmentation, setSegmentation] = useState<ClusterProfile[]>([])
 
   useEffect(() => {
     const applyDefaultRange = async () => {
@@ -254,7 +384,26 @@ export function ManagementReport() {
         bookingType,
       })
 
-      const [reportResponse, metaDashboardResponse, metaAudienceResponse] = await Promise.all([
+      // ⬅️ NEW: params for overview-kpis / occupancy-trend, derived from the current report filters
+      const { month, year, venue } = deriveOverviewParams(endDate, courtType)
+      const overviewParams = new URLSearchParams({
+        month,
+        year,
+        periodType: "YTD",
+        venue,
+        customerType: "All Type",
+        bookingType,
+      })
+
+      const [
+        reportResponse,
+        metaDashboardResponse,
+        metaAudienceResponse,
+        overviewKpiResponse, // ⬅️ NEW
+        occupancyTrendResponse, // ⬅️ NEW
+        playtimeResponse, // ⬅️ NEW
+        segmentationResult, // ⬅️ NEW
+      ] = await Promise.all([
         fetch(getApiUrl(`/operations/management-report?${params.toString()}`), {
           method: "GET",
           cache: "no-store",
@@ -270,6 +419,24 @@ export function ManagementReport() {
           cache: "no-store",
           headers: getAuthHeaders(),
         }).catch(() => null),
+        fetch(getApiUrl(`/dashboard/overview-kpis?${overviewParams.toString()}`), {
+          method: "GET",
+          cache: "no-store",
+          headers: getAuthHeaders(),
+        }).catch(() => null),
+        fetch(getApiUrl(`/dashboard/occupancy-trend?${overviewParams.toString()}`), {
+          method: "GET",
+          cache: "no-store",
+          headers: getAuthHeaders(),
+        }).catch(() => null),
+        fetch(getApiUrl("/ml/playtime/latest"), {
+          method: "GET",
+          cache: "no-store",
+          headers: getAuthHeaders(),
+        }).catch(() => null),
+        fetchSegmentationSummary()
+          .then((data) => ({ success: true, data }))
+          .catch(() => ({ success: false, data: null })),
       ])
 
       const result: ReportResponse | null = await reportResponse.json().catch(() => null)
@@ -280,14 +447,34 @@ export function ManagementReport() {
       const metaDashboardResult = metaDashboardResponse ? await metaDashboardResponse.json().catch(() => null) : null
       const metaAudienceResult = metaAudienceResponse ? await metaAudienceResponse.json().catch(() => null) : null
 
+      // ⬅️ NEW: parse the extra visuals' responses
+      const overviewKpiResult = overviewKpiResponse ? await overviewKpiResponse.json().catch(() => null) : null
+      const occupancyTrendResult = occupancyTrendResponse ? await occupancyTrendResponse.json().catch(() => null) : null
+      const playtimeResult = playtimeResponse ? await playtimeResponse.json().catch(() => null) : null
+
       setReport(result.data)
       setMetaDashboard(metaDashboardResult?.success ? metaDashboardResult.data : null)
       setMetaAudienceSummary(metaAudienceResult?.success ? metaAudienceResult.data : null)
+
+      // ⬅️ NEW: commit the extra visuals' state
+      setOverviewKpi(overviewKpiResult?.success ? overviewKpiResult.data : null)
+      setOccupancyTrend(occupancyTrendResult?.success && Array.isArray(occupancyTrendResult.data) ? occupancyTrendResult.data : [])
+      setPlaytimeMlData(playtimeResult?.success ? playtimeResult.data : null)
+      setSegmentation(
+        segmentationResult.success && segmentationResult.data
+          ? sortClusterProfiles(segmentationResult.data.clusters || [])
+          : []
+      )
+
       setLastRefreshedAt(new Date().toISOString())
     } catch (loadError) {
       setReport(null)
       setMetaDashboard(null)
       setMetaAudienceSummary(null)
+      setOverviewKpi(null) // ⬅️ NEW
+      setOccupancyTrend([]) // ⬅️ NEW
+      setPlaytimeMlData(null) // ⬅️ NEW
+      setSegmentation([]) // ⬅️ NEW
       setError(loadError instanceof Error ? loadError.message : "Management report could not be loaded.")
     } finally {
       setIsLoading(false)
@@ -396,6 +583,60 @@ export function ManagementReport() {
     return lines
   })()
 
+  // ⬅️ NEW: derived chart data for Play-Time Preference Mix
+  const playtimeChart = useMemo(() => buildPlaytimeChart(playtimeMlData), [playtimeMlData])
+  const playtimeChartTotal = useMemo(() => playtimeChart.reduce((sum, item) => sum + item.value, 0), [playtimeChart])
+  const playtimeLegend = useMemo(
+    () =>
+      playtimeChart.map((item) => ({
+        ...item,
+        percentage: playtimeChartTotal > 0 ? (item.value / playtimeChartTotal) * 100 : 0,
+      })),
+    [playtimeChart, playtimeChartTotal]
+  )
+  const dominantPlaytime = useMemo(
+    () =>
+      playtimeLegend.reduce<typeof playtimeLegend[number] | null>(
+        (selected, item) => (!selected || item.value > selected.value ? item : selected),
+        null
+      ),
+    [playtimeLegend]
+  )
+  const playtimeBehaviorInsight = useMemo(() => {
+    if (!dominantPlaytime || !playtimeMlData) {
+      return "No historical play-time preference insight is available yet."
+    }
+    return `Most bookings are in the ${dominantPlaytime.name} slot with ${formatPercent(dominantPlaytime.percentage).replace("+", "")} of all bookings.`
+  }, [dominantPlaytime, playtimeMlData])
+
+  // ⬅️ NEW: derived chart data for Customer Value Segments
+  const segmentChart = useMemo(
+    () =>
+      segmentation.map((item, index) => ({
+        name: item.segmentName,
+        value: item.customerCount,
+        color: CUSTOMER_SEGMENT_COLORS[item.segmentName] || chartColors[index % chartColors.length],
+      })),
+    [segmentation]
+  )
+  const segmentChartTotal = useMemo(() => segmentChart.reduce((sum, item) => sum + Number(item.value || 0), 0), [segmentChart])
+  const segmentLegend = useMemo(
+    () =>
+      segmentChart.map((item) => ({
+        ...item,
+        percentage: segmentChartTotal > 0 ? (item.value / segmentChartTotal) * 100 : 0,
+      })),
+    [segmentChart, segmentChartTotal]
+  )
+
+  // ⬅️ NEW: average occupancy line for the Occupancy Trend chart
+  const occupancyAverageRate = useMemo(() => {
+    if (occupancyTrend.length === 0) return 0
+    const totalBooked = occupancyTrend.reduce((sum, point) => sum + point.bookedSessions, 0)
+    const totalAvailable = occupancyTrend.reduce((sum, point) => sum + point.availableSessions, 0)
+    return totalAvailable > 0 ? (totalBooked / totalAvailable) * 100 : 0
+  }, [occupancyTrend])
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -414,7 +655,7 @@ export function ManagementReport() {
         </div>
       </div>
 
-      <div className="rounded-2xl border border-border/70 bg-card/80 p-3 shadow-sm backdrop-blur">
+      <div className="rounded-2xl border border-border/70 bg-card/80 p-3 shadow-sm backdrop-blur no-print">
         <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
           <p className="shrink-0 text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">Report filters</p>
           <div className="flex flex-wrap items-center justify-end gap-2">
@@ -496,6 +737,7 @@ export function ManagementReport() {
         </AlertDialogContent>
       </AlertDialog>
 
+      {/* ⬇️ PRINT-ONLY LAYOUT — everything the PDF should contain lives in here */}
       <div className="print-report hidden">
         {report?.hasData ? (
           <div className="space-y-6 p-8 text-slate-900">
@@ -511,10 +753,31 @@ export function ManagementReport() {
               </div>
             </div>
 
-            {/* Printable KPI summary removed per request */}
+            {/* ⬅️ NEW: KPI summary cards (from Overview) */}
+            <div className="grid grid-cols-4 gap-4">
+              <div className="rounded-xl border border-border p-4">
+                <p className="text-xs text-muted-foreground">Occupancy Rate</p>
+                <p className="text-xl font-bold">{overviewKpi ? `${overviewKpi.occupancyRate}%` : `${report.summary.occupancyRate}%`}</p>
+              </div>
+              <div className="rounded-xl border border-border p-4">
+                <p className="text-xs text-muted-foreground">Revenue by Play Date</p>
+                <p className="text-xl font-bold">{formatCurrency(overviewKpi?.totalRevenue ?? report.summary.totalRevenue)}</p>
+              </div>
+              <div className="rounded-xl border border-border p-4">
+                <p className="text-xs text-muted-foreground">Lowest-Demand Session</p>
+                <p className="text-xl font-bold">{overviewKpi?.lowSessionLabel || "-"}</p>
+              </div>
+              <div className="rounded-xl border border-border p-4">
+                <p className="text-xs text-muted-foreground">Peak Session Revenue</p>
+                <p className="text-xl font-bold">{overviewKpi?.peakSessionLabel || "-"}</p>
+                <p className="text-xs text-muted-foreground">
+                  {(overviewKpi?.peakSessionRevenue || 0) > 0 ? formatCurrency(overviewKpi?.peakSessionRevenue || 0) : ""}
+                </p>
+              </div>
+            </div>
 
             <div className="grid gap-4 lg:grid-cols-2">
-              <div className="rounded-2xl border border-border p-5">
+              <div className="print-section rounded-2xl border border-border p-5">
                 <h2 className="text-sm font-semibold uppercase tracking-[0.14em] text-emerald-700">Executive Summary</h2>
                 <div className="mt-3 space-y-2 text-sm leading-6 text-slate-700">
                   <p>{report.insights.executiveSummary}</p>
@@ -523,7 +786,8 @@ export function ManagementReport() {
                   <p>{report.insights.segmentationInsight}</p>
                 </div>
               </div>
-              <div className="rounded-2xl border border-border p-5">
+              <div className="print-section rounded-2xl border border-border p-5">
+              
                 <h2 className="text-sm font-semibold uppercase tracking-[0.14em] text-emerald-700">Recommendations</h2>
                 <div className="mt-3 space-y-2 text-sm leading-6 text-slate-700">
                   {report.insights.recommendations.map((recommendation) => (
@@ -534,31 +798,182 @@ export function ManagementReport() {
                 </div>
               </div>
             </div>
+            <div className="grid gap-6 lg:grid-cols-2">
+            <Card className="border-border bg-card shadow-sm">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Sparkles className="h-4 w-4 text-primary" />
+                  Executive Summary
+                </CardTitle>
+                <CardDescription>Presentation-ready summary for management review</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3 text-sm text-muted-foreground">
+                <div className="rounded-2xl border border-border bg-gradient-to-br from-background to-secondary/20 p-4 text-foreground shadow-sm">
+                  <p className="leading-6">{report.insights.executiveSummary}</p>
+                </div>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <div className="rounded-2xl border border-amber-200 bg-amber-50/70 p-4 text-amber-900 shadow-sm">
+                    <p className="mb-1 text-xs font-semibold uppercase tracking-[0.14em]">Occupancy</p>
+                    <p className="leading-6">{report.insights.occupancyInsight}</p>
+                  </div>
+                  <div className="rounded-2xl border border-sky-200 bg-sky-50/70 p-4 text-sky-900 shadow-sm">
+                    <p className="mb-1 text-xs font-semibold uppercase tracking-[0.14em]">Revenue</p>
+                    <p className="leading-6">{report.insights.revenueInsight}</p>
+                  </div>
+                </div>
+                <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-4 text-emerald-900 shadow-sm">
+                  <p className="mb-1 text-xs font-semibold uppercase tracking-[0.14em]">Segmentation</p>
+                  <p className="leading-6">{report.insights.segmentationInsight}</p>
+                </div>
+              </CardContent>
+            </Card>
 
-            <div className="rounded-2xl border border-border p-5">
-              <h2 className="text-sm font-semibold uppercase tracking-[0.14em] text-emerald-700">Revenue Trend</h2>
-              <table className="mt-3 w-full border-collapse text-left text-sm">
-                <thead>
-                  <tr className="border-b border-border text-emerald-700">
-                    <th className="py-2 font-medium">Label</th>
-                    <th className="py-2 font-medium">Revenue</th>
-                    <th className="py-2 font-medium">Bookings</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {report.revenueTrend.map((row) => (
-                    <tr key={row.key} className="border-b border-border/70">
-                      <td className="py-2">{row.label}</td>
-                      <td className="py-2">{formatCurrency(row.revenue)}</td>
-                      <td className="py-2">{row.bookings}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <Card className="border-border bg-card shadow-sm">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <CheckCircle2 className="h-4 w-4 text-primary" />
+                  Recommendations / Notes
+                </CardTitle>
+                <CardDescription>Business-friendly follow-up suggestions based on the selected period</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3 text-sm text-muted-foreground">
+                {report.insights.recommendations.map((recommendation) => (
+                  <div key={recommendation} className="flex items-start gap-3 rounded-2xl border border-border bg-gradient-to-br from-background to-secondary/20 p-4 shadow-sm">
+                    <ArrowRight className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                    <span className="leading-6 text-foreground">{recommendation}</span>
+                  </div>
+                ))}
+                <div className="rounded-2xl border border-border bg-secondary/20 p-3 text-xs">
+                  Generated at {new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short" }).format(new Date(report.generatedAt))}
+                </div>
+              </CardContent>
+            </Card>
           </div>
+            {/* ⬅️ NEW: Occupancy Trend, fixed-size Recharts (no ResponsiveContainer) so it renders even hidden→visible */}
+            <div className="print-section rounded-2xl border border-border p-5">
+              <h2 className="text-sm font-semibold uppercase tracking-[0.14em] text-emerald-700">Occupancy Trend</h2>
+              {occupancyTrend.length > 0 ? (
+                <div className="mt-3 flex justify-center">
+                  <AreaChart width={700} height={260} data={occupancyTrend}>
+                    <defs>
+                      <linearGradient id="printOccupancyGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="var(--chart-1)" stopOpacity={0.35} />
+                        <stop offset="95%" stopColor="var(--chart-1)" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                    <XAxis dataKey="label" stroke="var(--muted-foreground)" tickLine={false} axisLine={false} />
+                    <YAxis stroke="var(--muted-foreground)" tickLine={false} axisLine={false} unit="%" />
+                    <RechartsTooltip formatter={(value: number) => [`${value}%`, "Occupancy"]} />
+                  <Area type="monotone" dataKey="rate" stroke="var(--chart-1)" fill="url(#printOccupancyGradient)" strokeWidth={2}>
+  <LabelList dataKey="rate" position="top" formatter={(value: number) => `${value}%`} style={{ fontSize: 10, fill: "var(--foreground)" }} />
+</Area>
+                  </AreaChart>
+                </div>
+              ) : (
+                <p className="mt-2 text-sm text-muted-foreground">No occupancy trend data available for this period.</p>
+              )}
+            </div>
+
+            <div className="print-section rounded-2xl border border-border p-5">
+  <h2 className="text-sm font-semibold uppercase tracking-[0.14em] text-emerald-700">Revenue by Play Date Trend</h2>
+  {report.revenueTrend.length > 0 ? (
+    <div className="mt-3 flex justify-center">
+      <AreaChart width={700} height={280} data={report.revenueTrend} margin={{ top: 24, right: 16, left: 0, bottom: 0 }}>
+        <defs>
+          <linearGradient id="printRevenueGradient" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="5%" stopColor="var(--chart-1)" stopOpacity={0.35} />
+            <stop offset="95%" stopColor="var(--chart-1)" stopOpacity={0} />
+          </linearGradient>
+        </defs>
+        <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+        <XAxis dataKey="label" stroke="var(--muted-foreground)" tickLine={false} axisLine={false} />
+        <YAxis stroke="var(--muted-foreground)" tickLine={false} axisLine={false} tickFormatter={(value) => `${Math.round(Number(value) / 1000000)}M`} />
+        <Area type="monotone" dataKey="revenue" stroke="var(--chart-1)" fill="url(#printRevenueGradient)" strokeWidth={2}>
+          <LabelList
+            dataKey="revenue"
+            position="top"
+            formatter={(value: number) => `${Math.round(value / 1000000)}M`}
+            style={{ fontSize: 10, fill: "var(--foreground)" }}
+          />
+        </Area>
+      </AreaChart>
+    </div>
+  ) : (
+    <p className="mt-2 text-sm text-muted-foreground">No revenue trend data available for this period.</p>
+  )}
+</div>
+<div className="print-section rounded-2xl border border-border p-5">
+  <h2 className="text-sm font-semibold uppercase tracking-[0.14em] text-emerald-700">Booking Mix</h2>
+  {breakdownRows.length > 0 ? (
+    <div className="mt-3 flex justify-center">
+      <BarChart width={700} height={260} data={breakdownRows}>
+        <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+        <XAxis dataKey="label" stroke="var(--muted-foreground)" tickLine={false} axisLine={false} />
+        <YAxis stroke="var(--muted-foreground)" tickLine={false} axisLine={false} allowDecimals={false} />
+        <RechartsTooltip formatter={(value: number) => [`${value} bookings`, "Bookings"]} />
+        <Bar dataKey="value" name="Bookings" fill="var(--chart-2)" radius={[6, 6, 0, 0]} barSize={64}>
+  <LabelList dataKey="value" position="top" style={{ fontSize: 11, fill: "var(--foreground)", fontWeight: 600 }} />
+</Bar>
+      </BarChart>
+    </div>
+  ) : (
+    <p className="mt-2 text-sm text-muted-foreground">No booking type breakdown available for this period.</p>
+  )}
+</div>
+
+            {/* ⬅️ NEW: Play-Time Preference Mix, fixed-size Recharts */}
+            <div className="print-section rounded-2xl border border-border p-5">
+              <h2 className="text-sm font-semibold uppercase tracking-[0.14em] text-emerald-700">Play-Time Preference Mix</h2>
+              <p className="mt-1 text-xs text-muted-foreground">{playtimeBehaviorInsight}</p>
+              {playtimeChart.length > 0 ? (
+                <div className="mt-3 flex justify-center">
+                  <BarChart width={700} height={260} data={playtimeChart}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                    <XAxis dataKey="name" stroke="var(--muted-foreground)" tickLine={false} axisLine={false} />
+                    <YAxis stroke="var(--muted-foreground)" tickLine={false} axisLine={false} allowDecimals={false} />
+                    <RechartsTooltip formatter={(value: number) => [`${value} sessions`, "Historical demand"]} />
+                    <Bar dataKey="value" radius={[6, 6, 0, 0]} barSize={64}>
+  {playtimeChart.map((entry) => (
+    <Cell key={entry.name} fill={entry.color} />
+  ))}
+  <LabelList dataKey="value" position="top" style={{ fontSize: 11, fill: "var(--foreground)", fontWeight: 600 }} />
+</Bar>
+                  </BarChart>
+                </div>
+              ) : (
+                <p className="mt-2 text-sm text-muted-foreground">No play-time preference data available yet.</p>
+              )}
+            </div>
+
+            {/* ⬅️ NEW: Empty Slot Heatmap — plain CSS grid component, safe inside a hidden section */}
+            <HeatmapGrid heatmapSummary={playtimeMlData?.heatmapSummary ?? null} />
+
+            {/* ⬅️ NEW: Customer Value Segments, fixed-size Recharts + table */}
+            <div className="print-section rounded-2xl border border-border p-5">
+  <h2 className="text-sm font-semibold uppercase tracking-[0.14em] text-emerald-700">Customer Value Segments</h2>
+  {segmentChart.length > 0 ? (
+    <div className="mt-3 flex justify-center">
+      <BarChart width={700} height={300} data={segmentChart} margin={{ top: 24, right: 16, left: 0, bottom: 0 }}>
+        <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+        <XAxis dataKey="name" stroke="var(--muted-foreground)" fontSize={12} />
+        <YAxis stroke="var(--muted-foreground)" fontSize={12} allowDecimals={false} />
+        <Bar dataKey="value" radius={[8, 8, 0, 0]} barSize={64}>
+          {segmentChart.map((entry) => (
+            <Cell key={entry.name} fill={entry.color} />
+          ))}
+          <LabelList dataKey="value" position="top" style={{ fontSize: 11, fill: "var(--foreground)", fontWeight: 600 }} />
+        </Bar>
+      </BarChart>
+    </div>
+  ) : (
+    <p className="mt-2 text-sm text-muted-foreground">No segmentation data available yet.</p>
+  )}
+</div>
+</div>
         ) : null}
       </div>
+
 
       {error ? (
         <BusinessErrorAlert
@@ -590,7 +1005,81 @@ export function ManagementReport() {
         </Card>
       ) : (
         <>
-          {/* KPI cards removed per request */}
+          {/* ⬅️ NEW: on-screen KPI cards (mirrors Overview) */}
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <Card className="border-border bg-card shadow-sm">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm font-medium text-muted-foreground">Occupancy Rate</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-end justify-between">
+                  <div>
+                    <p className="text-3xl font-bold">{overviewKpi ? `${overviewKpi.occupancyRate}%` : `${report.summary.occupancyRate}%`}</p>
+                    {overviewKpi ? (
+                      <p className={`mt-2 flex items-center gap-1 text-xs ${overviewKpi.occupancyChange < 0 ? "text-destructive" : "text-primary"}`}>
+                        {overviewKpi.occupancyChange < 0 ? <TrendingDown className="h-3 w-3" /> : <TrendingUp className="h-3 w-3" />}
+                        {`${overviewKpi.occupancyChange >= 0 ? "+" : ""}${overviewKpi.occupancyChange}% vs previous period`}
+                      </p>
+                    ) : (
+                      <p className="mt-2 text-xs text-muted-foreground">No comparison available</p>
+                    )}
+                  </div>
+                  <Users className="h-6 w-6 text-primary" />
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="border-border bg-card shadow-sm">
+              <CardHeader>
+                <CardTitle className="text-sm font-medium text-muted-foreground">Revenue by Play Date</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-end justify-between">
+                  <div>
+                    <p className="text-3xl font-bold">{formatCurrency(overviewKpi?.totalRevenue ?? report.summary.totalRevenue)}</p>
+                    {overviewKpi ? (
+                      <p className={`mt-2 flex items-center gap-1 text-xs ${overviewKpi.revenueChange < 0 ? "text-destructive" : "text-primary"}`}>
+                        {overviewKpi.revenueChange < 0 ? <TrendingDown className="h-3 w-3" /> : <TrendingUp className="h-3 w-3" />}
+                        {`${overviewKpi.revenueChange >= 0 ? "+" : ""}${overviewKpi.revenueChange}% vs previous period`}
+                      </p>
+                    ) : (
+                      <p className="mt-2 text-xs text-muted-foreground">No comparison available</p>
+                    )}
+                  </div>
+                  <BarChart3 className="h-6 w-6 text-primary" />
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="border-border bg-card shadow-sm">
+              <CardHeader>
+                <CardTitle className="text-sm font-medium text-muted-foreground">Lowest-Demand Session</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-end justify-between">
+                  <div>
+                    <p className="text-xl font-bold">{overviewKpi?.lowSessionLabel || "No data"}</p>
+                    <p className="mt-2 text-xs text-muted-foreground">Lowest booking volume among all sessions</p>
+                  </div>
+                  <Clock className="h-5 w-5 text-muted-foreground" />
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="border-border bg-card shadow-sm">
+              <CardHeader>
+                <CardTitle className="text-sm font-medium text-muted-foreground">Peak Session Revenue</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-end justify-between">
+                  <div>
+                    <p className="text-xl font-bold">{overviewKpi?.peakSessionLabel || "-"}</p>
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      {(overviewKpi?.peakSessionRevenue || 0) > 0 ? formatCurrency(overviewKpi?.peakSessionRevenue || 0) : "No revenue data available"}
+                    </p>
+                  </div>
+                  <Zap className="h-5 w-5 text-primary" />
+                </div>
+              </CardContent>
+            </Card>
+          </div>
 
           <Card className="border-border bg-gradient-to-br from-emerald-50 via-background to-sky-50 shadow-sm">
             <CardHeader>
@@ -643,6 +1132,41 @@ export function ManagementReport() {
               </CardContent>
             </Card>
 
+            {/* ⬅️ NEW: Occupancy Trend (on-screen, ResponsiveContainer since it's always visible) */}
+            <Card className="border-border bg-card shadow-sm">
+              <CardHeader>
+                <CardTitle>Occupancy Trend</CardTitle>
+                <CardDescription>Court hours booked across the selected reporting period</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="h-[320px]">
+                  {occupancyTrend.length > 0 ? (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={occupancyTrend}>
+                        <defs>
+                          <linearGradient id="occupancyGradient" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="var(--chart-1)" stopOpacity={0.35} />
+                            <stop offset="95%" stopColor="var(--chart-1)" stopOpacity={0} />
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                        <XAxis dataKey="label" stroke="var(--muted-foreground)" tickLine={false} axisLine={false} />
+                        <YAxis stroke="var(--muted-foreground)" tickLine={false} axisLine={false} unit="%" />
+                        <RechartsTooltip formatter={(value: number) => [`${value}%`, "Occupancy"]} />
+                        <Area type="monotone" dataKey="rate" stroke="var(--chart-1)" fill="url(#occupancyGradient)" strokeWidth={2} />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <div className="flex h-full items-center justify-center rounded-2xl border border-dashed border-border bg-muted/20 px-6 text-center text-sm text-muted-foreground">
+                      No occupancy trend data is available for the selected period.
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          <div className="grid gap-6 lg:grid-cols-2">
             <Card className="border-border bg-card shadow-sm">
               <CardHeader>
                 <CardTitle>Booking Mix</CardTitle>
@@ -663,80 +1187,95 @@ export function ManagementReport() {
                 </div>
               </CardContent>
             </Card>
-          </div>
 
-
-          <div className="grid gap-6 lg:grid-cols-2">
+            {/* ⬅️ NEW: Play-Time Preference Mix (on-screen) */}
             <Card className="border-border bg-card shadow-sm">
               <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Sparkles className="h-4 w-4 text-primary" />
-                  Executive Summary
-                </CardTitle>
-                <CardDescription>Presentation-ready summary for management review</CardDescription>
+                <CardTitle>Play-Time Preference Mix</CardTitle>
+                <CardDescription>{playtimeBehaviorInsight}</CardDescription>
               </CardHeader>
-              <CardContent className="space-y-3 text-sm text-muted-foreground">
-                <div className="rounded-2xl border border-border bg-gradient-to-br from-background to-secondary/20 p-4 text-foreground shadow-sm">
-                  <p className="leading-6">{report.insights.executiveSummary}</p>
-                </div>
-                <div className="grid gap-3 md:grid-cols-2">
-                  <div className="rounded-2xl border border-amber-200 bg-amber-50/70 p-4 text-amber-900 shadow-sm">
-                    <p className="mb-1 text-xs font-semibold uppercase tracking-[0.14em]">Occupancy</p>
-                    <p className="leading-6">{report.insights.occupancyInsight}</p>
-                  </div>
-                  <div className="rounded-2xl border border-sky-200 bg-sky-50/70 p-4 text-sky-900 shadow-sm">
-                    <p className="mb-1 text-xs font-semibold uppercase tracking-[0.14em]">Revenue</p>
-                    <p className="leading-6">{report.insights.revenueInsight}</p>
-                  </div>
-                </div>
-                <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-4 text-emerald-900 shadow-sm">
-                  <p className="mb-1 text-xs font-semibold uppercase tracking-[0.14em]">Segmentation</p>
-                  <p className="leading-6">{report.insights.segmentationInsight}</p>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="border-border bg-card shadow-sm">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <CheckCircle2 className="h-4 w-4 text-primary" />
-                  Recommendations / Notes
-                </CardTitle>
-                <CardDescription>Business-friendly follow-up suggestions based on the selected period</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-3 text-sm text-muted-foreground">
-                {report.insights.recommendations.map((recommendation) => (
-                  <div key={recommendation} className="flex items-start gap-3 rounded-2xl border border-border bg-gradient-to-br from-background to-secondary/20 p-4 shadow-sm">
-                    <ArrowRight className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-                    <span className="leading-6 text-foreground">{recommendation}</span>
-                  </div>
-                ))}
-                <div className="rounded-2xl border border-border bg-secondary/20 p-3 text-xs">
-                  Generated at {new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short" }).format(new Date(report.generatedAt))}
+              <CardContent>
+                <div className="h-[320px]">
+                  {playtimeChart.length > 0 ? (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={playtimeChart}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                        <XAxis dataKey="name" stroke="var(--muted-foreground)" tickLine={false} axisLine={false} />
+                        <YAxis stroke="var(--muted-foreground)" tickLine={false} axisLine={false} allowDecimals={false} />
+                        <RechartsTooltip formatter={(value: number) => [`${value} sessions`, "Historical demand"]} />
+                        <Bar dataKey="value" radius={[6, 6, 0, 0]}>
+                          {playtimeChart.map((entry) => (
+                            <Cell key={entry.name} fill={entry.color} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <div className="flex h-full items-center justify-center rounded-2xl border border-dashed border-border bg-muted/20 px-6 text-center text-sm text-muted-foreground">
+                      No play-time preference data available yet.
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>
           </div>
+
+          {/* ⬅️ NEW: Empty Slot Heatmap (on-screen) */}
+          <HeatmapGrid heatmapSummary={playtimeMlData?.heatmapSummary ?? null} />
+
+          {/* ⬅️ NEW: Customer Value Segments (on-screen) */}
+          <Card className="border-border bg-card shadow-sm">
+            <CardHeader>
+              <CardTitle>Customer Value Segments</CardTitle>
+              <CardDescription>
+                {segmentChartTotal > 0
+                  ? `${segmentChartTotal.toLocaleString("en-US")} customers across ${segmentChart.length} segments`
+                  : "No segmentation result yet. Run Machine Learning from Data Center to generate customer segments."}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="h-[280px]">
+                {segmentChart.length > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={segmentChart} margin={{ top: 10, right: 16, left: 0, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                      <XAxis dataKey="name" stroke="var(--muted-foreground)" fontSize={12} />
+                      <YAxis stroke="var(--muted-foreground)" fontSize={12} allowDecimals={false} />
+                      <RechartsTooltip formatter={(value: number) => [`${value} customers`, "Customer Count"]} />
+                      <Bar dataKey="value" radius={[8, 8, 0, 0]} barSize={56}>
+                        {segmentChart.map((entry) => (
+                          <Cell key={entry.name} fill={entry.color} />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="flex h-full items-center justify-center text-center text-sm text-muted-foreground">
+                    No customer segmentation result yet.
+                  </div>
+                )}
+              </div>
+              {segmentLegend.length > 0 ? (
+                <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  {segmentLegend.map((segment) => (
+                    <div key={segment.name} className="rounded-xl border border-border bg-secondary/20 p-3">
+                      <div className="flex items-center gap-2">
+                        <span className="h-3 w-3 rounded-full" style={{ backgroundColor: segment.color }} />
+                        <p className="text-sm font-medium text-slate-900">{segment.name}</p>
+                      </div>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {segment.value.toLocaleString("en-US")} customers ({formatPercent(segment.percentage).replace("+", "")})
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </CardContent>
+          </Card>
+
         </>
       )}
     </div>
   )
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
