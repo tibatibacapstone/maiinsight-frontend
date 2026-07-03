@@ -10,6 +10,7 @@ import {
   Sparkles,
   Target,
 } from "lucide-react"
+import { HeatmapGrid } from "@/components/segment-visualization"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -35,11 +36,141 @@ import {
   saveLowOccupancyOutreachContext,
   type LowOccupancyOutreachIntent,
 } from "@/lib/low-occupancy-outreach"
-
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  ResponsiveContainer,
+  Tooltip as RechartsTooltip,
+  XAxis,
+  YAxis,
+} from "recharts"
+import { getApiUrl } from "@/lib/api"
+import { getAuthHeaders } from "@/lib/roles"
 import type { PageId } from "./dashboard-sidebar"
 
 interface LowOccupancyTargetingProps {
   onNavigate: (page: PageId) => void
+}
+interface PlaytimeSessionPoint {
+  play_time_group?: string
+  playTimeGroup?: string
+  session_count?: number
+  sessionCount?: number
+}
+
+interface HeatmapSummary {
+  slots: Array<{
+    day_short: string
+    startHour: string
+    session_count: number
+    session_label?: string
+  }>
+  mostEmptySlot: {
+    dayLabel: string
+    hourLabel: string
+    sessionLabel: string
+    sessionCount: number
+  } | null
+}
+
+interface PlaytimeMlData {
+  totalCustomers: number
+  totalSessions: number
+  clusterCount?: number
+  createdAt?: string
+  sessionByTime?: unknown
+  heatmapSummary?: HeatmapSummary | null   // ⬅️ tambah baris ini
+}
+
+interface PlaytimeSessionCustomer {
+  customerName: string
+  sessionCount: number
+  totalSesi: number
+  playtimeSegment: string
+  activityLevel: string | null
+}
+
+const PLAYTIME_CHART_COLORS = ["var(--chart-1)", "var(--chart-2)", "var(--chart-3)", "var(--chart-4)"]
+const PLAYTIME_ORDER: Record<string, number> = {
+  Morning: 0, Afternoon: 1, Evening: 2, Night: 3,
+  Pagi: 0, Siang: 1, Malam: 3,
+}
+
+const SESSION_HOUR_LABELS: Record<string, string> = {
+  Morning: "06:00 - 10:59",
+  Afternoon: "11:00 - 14:59",
+  Evening: "15:00 - 18:59",
+  Night: "19:00 - 23:59",
+}
+
+const PlaytimeAxisTick = ({ x, y, payload }: { x?: number; y?: number; payload?: { value?: string } }) => {
+  const sessionName = payload?.value || ""
+  const hourLabel = SESSION_HOUR_LABELS[sessionName] || ""
+
+  return (
+    <g transform={`translate(${x},${y})`}>
+      <text x={0} y={0} dy={12} textAnchor="middle" fill="var(--foreground)" fontSize={12} fontWeight={500}>
+        {sessionName}
+      </text>
+      <text x={0} y={0} dy={28} textAnchor="middle" fill="var(--muted-foreground)" fontSize={10}>
+        {hourLabel}
+      </text>
+    </g>
+  )
+}
+const PLAYTIME_LABEL_MAP: Record<string, string> = {
+  Pagi: "Morning", Siang: "Afternoon", Malam: "Night",
+}
+const CHART_NAME_TO_SESSION_KEY: Record<string, string> = {
+  Morning: "Pagi", Afternoon: "Siang", Evening: "Evening", Night: "Malam",
+}
+
+const formatPlaytimePercent = (value: number) => `${Number(value.toFixed(1))}%`
+
+const getPlaytimeRelativeTime = (value?: string | null) => {
+  if (!value) return "Not updated yet"
+  const timestamp = new Date(value)
+  if (Number.isNaN(timestamp.getTime())) return "Not updated yet"
+  const diffMinutes = Math.floor((Date.now() - timestamp.getTime()) / 60000)
+  if (diffMinutes < 1) return "just now"
+  if (diffMinutes < 60) return `${diffMinutes} min ago`
+  const diffHours = Math.floor(diffMinutes / 60)
+  if (diffHours < 24) return `${diffHours} hour${diffHours === 1 ? "" : "s"} ago`
+  const diffDays = Math.floor(diffHours / 24)
+  return diffDays === 1 ? "yesterday" : `${diffDays} days ago`
+}
+
+const parsePlaytimeJsonArray = <T,>(value: unknown): T[] => {
+  if (Array.isArray(value)) return value as T[]
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value)
+      return Array.isArray(parsed) ? (parsed as T[]) : []
+    } catch {
+      return []
+    }
+  }
+  return []
+}
+
+const buildPlaytimeChart = (playtimeMlData: PlaytimeMlData | null) => {
+  const directRows = parsePlaytimeJsonArray<PlaytimeSessionPoint>(playtimeMlData?.sessionByTime)
+
+  return directRows
+    .map((row, index) => {
+      const rawName = row.play_time_group || row.playTimeGroup || ""
+      if (!rawName) return null
+      return {
+        name: PLAYTIME_LABEL_MAP[rawName] || rawName,
+        rawName,
+        value: Number(row.session_count ?? row.sessionCount ?? 0),
+        color: PLAYTIME_CHART_COLORS[index % PLAYTIME_CHART_COLORS.length],
+      }
+    })
+    .filter((item): item is { name: string; rawName: string; value: number; color: string } => Boolean(item))
+    .sort((left, right) => (PLAYTIME_ORDER[left.rawName] ?? 99) - (PLAYTIME_ORDER[right.rawName] ?? 99))
 }
 
 const SESSION_OPTIONS = ["Morning", "Afternoon", "Evening", "Night"] as const
@@ -113,6 +244,13 @@ function FilterLabel({ label, tooltip }: { label: string; tooltip: string }) {
 }
 
 export function LowOccupancyTargeting({ onNavigate }: LowOccupancyTargetingProps) {
+
+  const [playtimeMlData, setPlaytimeMlData] = useState<PlaytimeMlData | null>(null)
+const [isLoadingPlaytime, setIsLoadingPlaytime] = useState(true)
+const [selectedPlaytimeSession, setSelectedPlaytimeSession] = useState<string | null>(null)
+const [playtimeSessionCustomers, setPlaytimeSessionCustomers] = useState<PlaytimeSessionCustomer[]>([])
+const [isLoadingPlaytimeCustomers, setIsLoadingPlaytimeCustomers] = useState(false)
+
   const [date, setDate] = useState(INITIAL_DATE)
   const [courtType, setCourtType] = useState(INITIAL_COURT_TYPE)
   const [sessionName, setSessionName] = useState<(typeof SESSION_OPTIONS)[number]>(INITIAL_SESSION_NAME)
@@ -193,6 +331,47 @@ export function LowOccupancyTargeting({ onNavigate }: LowOccupancyTargetingProps
       setIsLoadingCustomers(false)
     }
   }
+  useEffect(() => {
+  const loadPlaytime = async () => {
+    setIsLoadingPlaytime(true)
+    try {
+      const response = await fetch(getApiUrl("/ml/playtime/latest"), { headers: getAuthHeaders(), cache: "no-store" })
+      const result = await response.json().catch(() => null)
+      setPlaytimeMlData(result?.success ? result.data : null)
+    } catch {
+      setPlaytimeMlData(null)
+    } finally {
+      setIsLoadingPlaytime(false)
+    }
+  }
+  void loadPlaytime()
+}, [])
+
+const handlePlaytimeBarClick = async (data: { name?: string }) => {
+  const chartName = data?.name
+  if (!chartName) return
+  const sessionKey = CHART_NAME_TO_SESSION_KEY[chartName]
+  if (!sessionKey) return
+
+  if (selectedPlaytimeSession === chartName) {
+    setSelectedPlaytimeSession(null)
+    setPlaytimeSessionCustomers([])
+    return
+  }
+
+  setSelectedPlaytimeSession(chartName)
+  setIsLoadingPlaytimeCustomers(true)
+
+  try {
+    const response = await fetch(getApiUrl(`/ml/playtime/customers?session=${sessionKey}`), { headers: getAuthHeaders(), cache: "no-store" })
+    const result = await response.json().catch(() => null)
+    setPlaytimeSessionCustomers(result?.success && Array.isArray(result?.data?.customers) ? result.data.customers : [])
+  } catch {
+    setPlaytimeSessionCustomers([])
+  } finally {
+    setIsLoadingPlaytimeCustomers(false)
+  }
+}
 
   useEffect(() => {
     const initialize = async () => {
@@ -317,6 +496,19 @@ export function LowOccupancyTargeting({ onNavigate }: LowOccupancyTargetingProps
   }
 
   const lowSessions = sessions.filter((session) => session.status === "Low")
+  const playtimeChart = buildPlaytimeChart(playtimeMlData)
+const playtimeChartTotal = playtimeChart.reduce((sum, item) => sum + item.value, 0)
+const playtimeLegend = playtimeChart.map((item) => ({
+  ...item,
+  percentage: playtimeChartTotal > 0 ? (item.value / playtimeChartTotal) * 100 : 0,
+}))
+const dominantPlaytime = playtimeLegend.reduce<typeof playtimeLegend[number] | null>(
+  (selected, item) => (!selected || item.value > selected.value ? item : selected),
+  null
+)
+const playtimeBehaviorInsight = !dominantPlaytime || !playtimeMlData
+  ? "No historical play-time preference insight is available yet."
+  : `Most bookings are in the ${dominantPlaytime.name} slot with ${formatPlaytimePercent(dominantPlaytime.percentage)} of all bookings.`
 
   return (
     <div className="space-y-6">
@@ -340,13 +532,147 @@ export function LowOccupancyTargeting({ onNavigate }: LowOccupancyTargetingProps
           </CardContent>
         </Card>
       )}
+      
+     <HeatmapGrid heatmapSummary={playtimeMlData?.heatmapSummary ?? null} />
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-xl">
-            <Target className="h-5 w-5 text-primary" />
-            Campaign Targeting
-          </CardTitle>
+<Card className="border-border bg-card shadow-sm">
+  <CardHeader>
+    <CardTitle className="flex items-center gap-2">
+      <span>Play-Time Preference Mix</span>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button type="button" className="inline-flex h-5 w-5 items-center justify-center rounded-full text-muted-foreground transition hover:bg-accent hover:text-foreground" aria-label="More information">
+            <Info className="h-3.5 w-3.5" />
+          </button>
+        </TooltipTrigger>
+        <TooltipContent side="top" sideOffset={8} className="max-w-xs text-left leading-relaxed">
+          Shows which time of day is most popular for bookings. Click a bar to see the customer list for that session.
+        </TooltipContent>
+      </Tooltip>
+    </CardTitle>
+    <CardDescription>{playtimeBehaviorInsight}</CardDescription>
+  </CardHeader>
+  <CardContent>
+    {isLoadingPlaytime ? (
+      <div className="flex h-[320px] items-center justify-center text-sm text-muted-foreground">
+        <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading play-time data...
+      </div>
+    ) : (
+      <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
+        <div className="h-[320px]">
+          {playtimeChart.every((item) => item.value === 0) || playtimeChart.length === 0 ? (
+            <div className="flex h-full items-center justify-center text-center text-sm text-muted-foreground">
+              No time preference data yet. Run Machine Learning from Data Center to see which times are most popular.
+            </div>
+          ) : (
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={playtimeChart}>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                <XAxis dataKey="name" stroke="var(--muted-foreground)" tickLine={false} axisLine={false} tick={<PlaytimeAxisTick />} height={50} />
+                <YAxis stroke="var(--muted-foreground)" tickLine={false} axisLine={false} allowDecimals={false} />
+                <RechartsTooltip
+                  formatter={(value: number, _name: string, props: { payload?: { value?: number; name?: string } }) => {
+                    const sessionCount = Number(value || props.payload?.value || 0)
+                    const percentage = playtimeChartTotal > 0 ? (sessionCount / playtimeChartTotal) * 100 : 0
+                    return [`${sessionCount.toLocaleString("en-US")} sessions (${formatPlaytimePercent(percentage)})`, props.payload?.name || "Historical demand"]
+                  }}
+                />
+                <Bar dataKey="value" radius={[6, 6, 0, 0]} onClick={handlePlaytimeBarClick} cursor="pointer">
+                  {playtimeChart.map((entry) => <Cell key={entry.name} fill={entry.color} />)}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          )}
+        </div>
+        <div className="space-y-3">
+          <div className="rounded-2xl border border-border bg-primary/5 p-4">
+            <p className="text-xs font-medium uppercase tracking-[0.2em] text-muted-foreground">Dominant Historical Preference</p>
+            <p className="mt-2 text-lg font-semibold text-slate-900">{dominantPlaytime?.name || "-"}</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {dominantPlaytime
+                ? `${formatPlaytimePercent(dominantPlaytime.percentage)} of booked sessions in the latest ML run came from this play-time window.`
+                : "Run Machine Learning to identify which play-time window dominates the imported dataset."}
+            </p>
+          </div>
+          <div className="rounded-xl border border-border bg-secondary/20 p-4 text-sm text-muted-foreground">
+            Click a bar in the chart to see the list of customers for that session.
+          </div>
+          {playtimeLegend.map((item) => (
+            <div key={item.name} className="rounded-xl border border-border bg-secondary/20 p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <span className="mt-1 inline-flex h-3 w-3 rounded-full" style={{ backgroundColor: item.color }} />
+                  <div>
+                    <p className="font-medium text-slate-900">{item.name}</p>
+                    <p className="text-xs text-muted-foreground">{formatPlaytimePercent(item.percentage)} of historical booked sessions</p>
+                  </div>
+                </div>
+                <p className="text-sm font-semibold text-slate-900">{item.value.toLocaleString("en-US")}</p>
+              </div>
+            </div>
+          ))}
+          {playtimeMlData ? (
+            <div className="rounded-xl border border-border bg-secondary/20 p-4 text-sm text-muted-foreground">
+              {playtimeMlData.totalSessions.toLocaleString("en-US")} sessions across {playtimeMlData.totalCustomers.toLocaleString("en-US")} customers{playtimeMlData.clusterCount ? ` across ${playtimeMlData.clusterCount} clusters` : ""} in the latest ML run{playtimeMlData.createdAt ? `, updated ${getPlaytimeRelativeTime(playtimeMlData.createdAt)}` : ""}.
+            </div>
+          ) : null}
+        </div>
+      </div>
+    )}
+
+    {selectedPlaytimeSession ? (
+      <div className="mt-6 rounded-xl border border-border">
+        <div className="flex items-center justify-between border-b border-border px-4 py-3">
+          <p className="text-sm font-semibold text-slate-900">
+            Customers in {selectedPlaytimeSession} session ({playtimeSessionCustomers.length})
+          </p>
+          <Button variant="ghost" size="sm" onClick={() => { setSelectedPlaytimeSession(null); setPlaytimeSessionCustomers([]) }}>
+            Close
+          </Button>
+        </div>
+        {isLoadingPlaytimeCustomers ? (
+          <div className="flex items-center justify-center gap-2 p-6 text-sm text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" /> Loading customers...
+          </div>
+        ) : playtimeSessionCustomers.length === 0 ? (
+          <div className="p-6 text-center text-sm text-muted-foreground">No customers found for this session.</div>
+        ) : (
+          <div className="max-h-[360px] overflow-auto">
+            <table className="w-full text-sm">
+              <thead className="sticky top-0 bg-secondary/40 text-xs uppercase tracking-wide text-muted-foreground">
+                <tr>
+                  <th className="px-4 py-2 text-left">Customer</th>
+                  <th className="px-4 py-2 text-right">Sessions in {selectedPlaytimeSession}</th>
+                  <th className="px-4 py-2 text-right">Total Sessions</th>
+                  <th className="px-4 py-2 text-left">Segment</th>
+                  <th className="px-4 py-2 text-left">Activity Level</th>
+                </tr>
+              </thead>
+              <tbody>
+                {playtimeSessionCustomers.map((customer) => (
+                  <tr key={customer.customerName} className="border-t border-border">
+                    <td className="px-4 py-2">{customer.customerName}</td>
+                    <td className="px-4 py-2 text-right">{customer.sessionCount}</td>
+                    <td className="px-4 py-2 text-right">{customer.totalSesi}</td>
+                    <td className="px-4 py-2">{customer.playtimeSegment}</td>
+                    <td className="px-4 py-2">{customer.activityLevel || "-"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    ) : null}
+  </CardContent>
+</Card>
+
+<Card>
+  <CardHeader>
+    <CardTitle className="flex items-center gap-2 text-xl">
+      <Target className="h-5 w-5 text-primary" />
+      Campaign Targeting
+    </CardTitle>
           <CardDescription>
             Choose the historical demand lens, then narrow the audience most worth targeting.
           </CardDescription>

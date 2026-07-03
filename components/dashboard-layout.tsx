@@ -84,7 +84,7 @@ export function DashboardLayout({
         userRole={userRole}
       />
       <main className="flex-1 overflow-auto">
-        <div className="mx-auto w-full max-w-7xl p-3 sm:p-4 md:p-5 lg:p-6">{renderPage()}</div>
+        <div className="mx-auto w-full max-w-[1400px] px-0.5 py-3 sm:py-4 md:py-5 lg:py-6">{renderPage()}</div>
       </main>
     </div>
   )
