@@ -34,6 +34,7 @@ import {
 
 import { BusinessErrorAlert } from "@/components/business-error-alert"
 import { HeatmapGrid } from "@/components/segment-visualization"
+import { PageSkeleton } from "@/components/page-skeleton"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -581,25 +582,35 @@ export function AnalyticsDashboard() {
   const canGenerateBusinessInsight = currentRole === "operational" || currentRole === "it_support"
   const availableMonthValues = useMemo(() => status?.transactionAvailableMonths || [], [status?.transactionAvailableMonths])
   const businessInsightCacheRef = useRef<Map<string, BusinessInsightState>>(new Map())
+  const dashboardCacheRef = useRef<Map<string, { timestamp: number; payload: { statusData: DashboardStatus; overviewKpi: OverviewKpiData | null; occupancyTrend: OccupancyTrendPoint[]; reportData: RevenueReportData | null; playtimeMlData: PlaytimeMlData | null; segmentation: ClusterProfile[]; metaDashboard: MetaDashboardData | null } }>>(new Map())
+  const lastRefreshAtRef = useRef(0)
 
   const yearOptions = useMemo(() => {
-    const options = buildYearOptions(status?.transactionMonthRange.min, status?.transactionMonthRange.max, selectedYear)
-    return options.map((year) => ({
-      value: year,
-      disabled: getAvailableMonthValuesForYear(year, availableMonthValues).length === 0,
-    }))
-  }, [availableMonthValues, selectedYear, status?.transactionMonthRange.max, status?.transactionMonthRange.min])
+    const startYear = 2023
+    const endYear = new Date().getFullYear()
+    return Array.from({ length: Math.max(endYear - startYear + 1, 1) }, (_, index) => {
+      const year = String(startYear + index)
+      return {
+        value: year,
+        disabled: false,
+      }
+    })
+  }, [])
 
   const monthOptions = useMemo(() => {
+    const monthsForYear = availableMonthValues.filter((value) => value.startsWith(`${selectedYear}-`))
     return months.map((month) => ({
       value: month,
-      disabled: !availableMonthValues.includes(formatMonthValue(month, selectedYear) || ""),
+      disabled: !monthsForYear.includes(formatMonthValue(month, selectedYear) || ""),
     }))
   }, [availableMonthValues, selectedYear])
 
-  const loadDashboard = useCallback(async () => {
+  const loadDashboard = useCallback(async (options?: { background?: boolean }) => {
     try {
-      setIsLoading(true)
+      const isBackgroundLoad = Boolean(options?.background)
+      if (!isBackgroundLoad) {
+        setIsLoading(true)
+      }
       setError(null)
       const token = getStoredToken()
       if (!token) {
@@ -607,13 +618,13 @@ export function AnalyticsDashboard() {
       }
 
       const statusResponse = await fetch(getApiUrl("/operations/status"), { headers: getAuthHeaders(), cache: "no-store" })
-      const statusResult = await statusResponse.json().catch(() => null)
+      const statusInfoResult = await statusResponse.json().catch(() => null)
 
-      if (!statusResponse.ok || !statusResult?.success || !statusResult.data) {
-        throw new Error(statusResult?.message || "Overview status could not be loaded.")
+      if (!statusResponse.ok || !statusInfoResult?.success || !statusInfoResult.data) {
+        throw new Error(statusInfoResult?.message || "Overview status could not be loaded.")
       }
 
-      const statusData = statusResult.data as DashboardStatus
+      const statusData = statusInfoResult.data as DashboardStatus
       const effectiveSelection = {
         month: selectedMonth,
         year: selectedYear,
@@ -645,40 +656,99 @@ export function AnalyticsDashboard() {
         since: startDateIso,
         until: endDateIso,
       })
+      const cacheKey = JSON.stringify({
+        month: effectiveSelection.month,
+        year: effectiveSelection.year,
+        periodType: periodType || "MTD",
+        venue: selectedVenue,
+        customerType: selectedCustomerType,
+        reportParams: reportParams.toString(),
+        metaParams: metaParams.toString(),
+      })
 
-      const [
-        kpiResponse,
-        occupancyResponse,
-        reportResponse,
-        playtimeResponse,
-        segmentationResponse,
-        metaResult,
-      ] = await Promise.all([
+      const cached = dashboardCacheRef.current.get(cacheKey)
+      if (cached && Date.now() - cached.timestamp < 2 * 60 * 1000) {
+        const payload = cached.payload
+        setStatus(payload.statusData)
+        setOverviewKpi(payload.overviewKpi)
+        setOccupancyTrend(payload.occupancyTrend)
+        setReportData(payload.reportData)
+        setPlaytimeMlData(payload.playtimeMlData)
+        setSegmentation(payload.segmentation)
+        setMetaDashboard(payload.metaDashboard)
+        if (!isBackgroundLoad) {
+          setIsLoading(false)
+        }
+        return
+      }
+
+      const statusTask = fetch(getApiUrl("/operations/status"), { headers: getAuthHeaders(), cache: "no-store" })
+      const [kpiResponse, occupancyResponse, reportResponse] = await Promise.all([
         fetch(getApiUrl(`/dashboard/overview-kpis?${overviewParams.toString()}`), { headers: getAuthHeaders(), cache: "no-store" }),
         fetch(getApiUrl(`/dashboard/occupancy-trend?${overviewParams.toString()}`), { headers: getAuthHeaders(), cache: "no-store" }),
         fetch(getApiUrl(`/operations/management-report?${reportParams.toString()}`), { headers: getAuthHeaders(), cache: "no-store" }),
-        fetch(getApiUrl(`/dashboard/playtime-mix?${overviewParams.toString()}`), { headers: getAuthHeaders(), cache: "no-store" }),
-        fetchSegmentationSummary().then((data) => ({ success: true, data })).catch(() => ({ success: false, data: null })),
-        fetch(getApiUrl(`/meta/dashboard?${metaParams.toString()}`), { headers: getAuthHeaders(), cache: "no-store" })
-          .then(async (response) => {
-            const result = await response.json().catch(() => null)
-            return response.ok && result?.success ? result.data as MetaDashboardData : null
-          })
-          .catch(() => null),
       ])
 
-      const kpiResult = await kpiResponse.json().catch(() => null)
-      const occupancyResult = await occupancyResponse.json().catch(() => null)
-      const reportResult = await reportResponse.json().catch(() => null)
-      const playtimeResult = await playtimeResponse.json().catch(() => null)
+      const [statusKpiResponse, kpiResult, occupancyResult, reportResult] = await Promise.all([
+        statusTask,
+        kpiResponse.json().catch(() => null),
+        occupancyResponse.json().catch(() => null),
+        reportResponse.json().catch(() => null),
+      ])
 
-      setStatus(statusData)
-      setOverviewKpi(kpiResult?.success ? kpiResult.data : null)
-      setOccupancyTrend(occupancyResult?.success && Array.isArray(occupancyResult.data) ? occupancyResult.data : [])
-      setReportData(reportResult?.success ? reportResult.data : null)
-      setPlaytimeMlData(playtimeResult?.success ? playtimeResult.data : null)
-      setSegmentation(segmentationResponse.success && segmentationResponse.data ? sortClusterProfiles(segmentationResponse.data.clusters || []) : [])
+      if (!statusKpiResponse.ok) {
+        throw new Error("Overview status could not be loaded.")
+      }
+
+      const statusResult = await statusKpiResponse.json().catch(() => null)
+      if (!statusResult?.success || !statusResult.data) {
+        throw new Error(statusResult?.message || "Overview status could not be loaded.")
+      }
+
+      const nextStatusData = statusResult.data as DashboardStatus
+      const nextOverviewKpi = kpiResult?.success ? kpiResult.data : null
+      const nextOccupancyTrend = occupancyResult?.success && Array.isArray(occupancyResult.data) ? occupancyResult.data : []
+      const nextReportData = reportResult?.success ? reportResult.data : null
+
+      setStatus(nextStatusData)
+      setOverviewKpi(nextOverviewKpi)
+      setOccupancyTrend(nextOccupancyTrend)
+      setReportData(nextReportData)
+
+      const nonCriticalTasks = await Promise.allSettled([
+        fetch(getApiUrl(`/dashboard/playtime-mix?${overviewParams.toString()}`), { headers: getAuthHeaders(), cache: "no-store" }),
+        fetchSegmentationSummary(),
+        fetch(getApiUrl(`/meta/dashboard?${metaParams.toString()}`), { headers: getAuthHeaders(), cache: "no-store" }),
+      ])
+
+      const playtimeResponse = nonCriticalTasks[0].status === "fulfilled" ? nonCriticalTasks[0].value : null
+      const segmentationData = nonCriticalTasks[1].status === "fulfilled" ? nonCriticalTasks[1].value : null
+      const metaResponse = nonCriticalTasks[2].status === "fulfilled" ? nonCriticalTasks[2].value : null
+
+      const playtimeResult = playtimeResponse ? await playtimeResponse.json().catch(() => null) : null
+      const metaResult = metaResponse?.ok
+        ? await metaResponse.json().catch(() => null).then((result) => (result?.success ? result.data as MetaDashboardData : null))
+        : null
+
+      const nextPlaytimeMlData = playtimeResult?.success ? playtimeResult.data : null
+      const nextSegmentation = segmentationData ? sortClusterProfiles(segmentationData.clusters || []) : []
+
+      setPlaytimeMlData(nextPlaytimeMlData)
+      setSegmentation(nextSegmentation)
       setMetaDashboard(metaResult)
+
+      dashboardCacheRef.current.set(cacheKey, {
+        timestamp: Date.now(),
+        payload: {
+          statusData: nextStatusData,
+          overviewKpi: nextOverviewKpi,
+          occupancyTrend: nextOccupancyTrend,
+          reportData: nextReportData,
+          playtimeMlData: nextPlaytimeMlData,
+          segmentation: nextSegmentation,
+          metaDashboard: metaResult,
+        },
+      })
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Overview data could not be loaded.")
       setStatus(null)
@@ -689,7 +759,10 @@ export function AnalyticsDashboard() {
       setSegmentation([])
       setMetaDashboard(null)
     } finally {
-      setIsLoading(false)
+      lastRefreshAtRef.current = Date.now()
+      if (!options?.background) {
+        setIsLoading(false)
+      }
     }
   }, [periodType, selectedCustomerType, selectedMonth, selectedVenue, selectedYear])
 
@@ -698,7 +771,10 @@ export function AnalyticsDashboard() {
   }, [loadDashboard])
 
   useEffect(() => {
-    const refresh = () => void loadDashboard()
+    const refresh = () => {
+      if (Date.now() - lastRefreshAtRef.current < 15000) return
+      void loadDashboard({ background: true })
+    }
     window.addEventListener(SEGMENTATION_UPDATED_EVENT, refresh)
     window.addEventListener("maiin-data-sync-updated", refresh)
     window.addEventListener("focus", refresh)
@@ -865,7 +941,7 @@ export function AnalyticsDashboard() {
     }))
 
     return {
-      languagePreference: "Bahasa Indonesia",
+      languagePreference: "English",
       selected_filters: {
         mode: "overview_summary",
         month: selectedMonth,
@@ -1110,7 +1186,9 @@ export function AnalyticsDashboard() {
         </div>
       </div>
 
-      {error ? (
+      {isLoading ? (
+        <PageSkeleton cards={4} lines={2} />
+      ) : error ? (
         <BusinessErrorAlert
           title="Overview Unavailable"
           message="The dashboard could not be loaded."
@@ -1505,7 +1583,7 @@ export function AnalyticsDashboard() {
 
           <Card className="border-border bg-card shadow-sm">
             <CardHeader>
-              <CardTitle><TitleWithTooltip title="Play-Time Preference Mix" tooltip="Shows which time of day (morning, afternoon, or night) is most popular for bookings." /></CardTitle>
+            <CardTitle><TitleWithTooltip title="Play-Time Preference Mix" tooltip="Shows how bookings are distributed across morning, afternoon, evening, and night." /></CardTitle>
               <CardDescription>{playtimeBehaviorInsight}</CardDescription>
             </CardHeader>
             <CardContent>
@@ -1513,7 +1591,7 @@ export function AnalyticsDashboard() {
                 <div className="h-[320px]">
                   {playtimeChart.every((item) => item.value === 0) || playtimeChart.length === 0 ? (
                     <div className="flex h-full items-center justify-center text-center text-sm text-muted-foreground">
-                      No time preference data yet. Run Machine Learning from Data Center to see which times are most popular.
+                      No time preference data yet. Load data for the selected period to see which times are most popular.
                     </div>
                   ) : (
                     <ResponsiveContainer width="100%" height="100%">
@@ -1541,8 +1619,8 @@ export function AnalyticsDashboard() {
                     <p className="mt-2 text-lg font-semibold text-slate-900">{dominantPlaytime?.name || "-"}</p>
                     <p className="mt-1 text-sm text-muted-foreground">
                       {dominantPlaytime
-                        ? `${formatPercent(dominantPlaytime.percentage)} of booked sessions in the latest ML run came from this play-time window.`
-                        : "Run Machine Learning to identify which play-time window dominates the imported dataset."}
+                        ? `${formatPercent(dominantPlaytime.percentage)} of booked sessions in the selected period came from this time window.`
+                        : "Load historical data for the selected period to identify the dominant time window."}
                     </p>
                   </div>
                   <div className="rounded-xl border border-border bg-secondary/20 p-4 text-sm text-muted-foreground">
@@ -1564,7 +1642,7 @@ export function AnalyticsDashboard() {
                   ))}
                   {playtimeMlData ? (
                     <div className="rounded-xl border border-border bg-secondary/20 p-4 text-sm text-muted-foreground">
-                      {playtimeMlData.totalSessions.toLocaleString("en-US")} sessions across {playtimeMlData.totalCustomers.toLocaleString("en-US")} customers{playtimeMlData.clusterCount ? ` across ${playtimeMlData.clusterCount} clusters` : ""} in the latest ML run{playtimeMlData.createdAt ? `, updated ${formatExactDateTime(playtimeMlData.createdAt)} (${getRelativeTime(playtimeMlData.createdAt)})` : ""}.
+                      {playtimeMlData.totalSessions.toLocaleString("en-US")} sessions across {playtimeMlData.totalCustomers.toLocaleString("en-US")} customers{playtimeMlData.clusterCount ? ` across ${playtimeMlData.clusterCount} groups` : ""} in the selected period{playtimeMlData.createdAt ? `, updated ${formatExactDateTime(playtimeMlData.createdAt)} (${getRelativeTime(playtimeMlData.createdAt)})` : ""}.
                     </div>
                   ) : null}
                 </div>

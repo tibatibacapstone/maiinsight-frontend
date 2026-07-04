@@ -191,35 +191,6 @@ interface AiStrategyResponse {
   success?: boolean
   message?: string
 }
-interface PlaytimeMlLatestResponse {
-  success: boolean
-  message?: string
-  data?: {
-    id: number
-    totalSessions: number
-    totalCustomers: number
-    clusterCount: number
-    createdAt: string
-  }
-}
-
-interface PlaytimeMlRunResponse {
-  success: boolean
-  message?: string
-  data?: {
-    runId?: number
-    totalSessions?: number
-    totalCustomers?: number
-  }
-}
-
-interface CombinedMlSummary {
-  playtimeSessions: number
-  playtimeCustomers: number
-  segmentationCustomers: number
-  selectedK: number | null
-}
-
 interface MlSummary {
   lastRun: string
   records: number
@@ -840,7 +811,7 @@ if (!response.ok) {
       return
     }
 
-    const response = await fetch(getApiUrl("/ml/playtime/latest"), {
+    const response = await fetch(getApiUrl("/system/summary"), {
       method: "GET",
       cache: "no-store",
       headers: {
@@ -848,7 +819,7 @@ if (!response.ok) {
       },
     })
 
-    const result: PlaytimeMlLatestResponse = await response
+    const result = await response
       .json()
       .catch(() => null)
 
@@ -861,13 +832,15 @@ if (!response.ok) {
       return
     }
 
+    const latestSegmentationRun = result.data.latestSegmentationRun
+
     setMlSummary({
-      lastRun: formatDisplaySyncTime(result.data.createdAt),
-      records: result.data.totalSessions || 0,
-      totalCustomers: result.data.totalCustomers || 0,
+      lastRun: latestSegmentationRun?.runDate ? formatDisplaySyncTime(latestSegmentationRun.runDate) : "Not run yet",
+      records: latestSegmentationRun?.totalCustomers || 0,
+      totalCustomers: latestSegmentationRun?.totalCustomers || 0,
     })
   } catch (error) {
-    console.warn("Failed to fetch ML summary:", error)
+    console.warn("Failed to fetch segmentation summary:", error)
 
     setMlSummary({
       lastRun: "Not run yet",
@@ -1162,7 +1135,7 @@ if (!response.ok) {
     if (!canRunMachineLearning) {
       const businessError = createBusinessErrorState({
         title: "Access Denied",
-        message: "Machine learning is available to Marketing Operational and IT Support only.",
+        message: "Customer segmentation is available to Marketing Operational and IT Support only.",
         suggestion: "Please sign in with a Marketing Operational or IT Support account.",
         errorCode: "ACCESS_DENIED",
       })
@@ -1179,30 +1152,7 @@ if (!response.ok) {
       setMlMessage("")
       setMlError(null)
 
-      const playtimeResponse = await fetch(getApiUrl("/ml/playtime/run"), {
-        method: "POST",
-        cache: "no-store",
-        headers: {
-          ...getAuthHeaders(),
-        },
-      })
-
-      const playtimeResult: PlaytimeMlRunResponse | null = await playtimeResponse
-        .json()
-        .catch(() => null)
-
-      if (!playtimeResponse.ok || !playtimeResult?.success) {
-        throw new Error(playtimeResult?.message || "Failed to run play-time behavior ML.")
-      }
-
       const segmentationResult = await runCustomerSegmentation()
-
-      const summary: CombinedMlSummary = {
-        playtimeSessions: playtimeResult.data?.totalSessions || 0,
-        playtimeCustomers: playtimeResult.data?.totalCustomers || 0,
-        segmentationCustomers: segmentationResult.run?.totalCustomers || 0,
-        selectedK: segmentationResult.selectedK,
-      }
 
       await fetchMlSummary()
       await fetchDataCenter()
@@ -1212,20 +1162,19 @@ if (!response.ok) {
       notifySegmentationUpdated()
 
       setMlMessage(
-        `Machine learning completed. Play-Time Behavior processed ${summary.playtimeSessions.toLocaleString()} sessions, and Customer Value Segmentation processed ${summary.segmentationCustomers.toLocaleString()} customers with Business Segmentation K: ${summary.selectedK ?? 4}.`
+        `Customer segmentation completed. Customer Value Segmentation processed ${segmentationResult.run?.totalCustomers.toLocaleString() || 0} customers with Business Segmentation K: ${segmentationResult.selectedK ?? 4}.`
       )
 
-      toast.success("Machine learning completed", {
-        description: `Customer Value Segmentation is ready with Business Segmentation K: ${summary.selectedK ?? 4}.`,
+      toast.success("Customer segmentation completed", {
+        description: `Customer Value Segmentation is ready with Business Segmentation K: ${segmentationResult.selectedK ?? 4}.`,
       })
     } catch (error) {
       const businessError = createBusinessErrorState({
-        title: "Machine Learning Failed",
-        message: "We couldn't complete the machine learning run.",
+        title: "Customer Segmentation Failed",
+        message: "We couldn't complete the segmentation run.",
         suggestion: "Please try again after the latest data import is complete. Contact IT Support if the issue continues.",
-        errorCode: "ML_RUN_FAILED",
-        technicalDetails:
-          error instanceof Error ? error.message : "Failed to run machine learning.",
+        errorCode: "SEGMENTATION_RUN_FAILED",
+        technicalDetails: error instanceof Error ? error.message : "Failed to run segmentation.",
       })
 
       setMlError(businessError)
@@ -1662,10 +1611,10 @@ if (!canAccessDataCenter) {
         </Badge>
       </div>
 
-      <h3 className="mb-1 font-semibold">Machine Learning Engine</h3>
+      <h3 className="mb-1 font-semibold">Customer Segmentation Engine</h3>
 
       <p className="mb-1 text-sm text-muted-foreground">
-        {mlSummary.records.toLocaleString()} sessions - Last run:{" "}
+        {mlSummary.records.toLocaleString()} customers - Last run:{" "}
         {mlSummary.lastRun}
       </p>
 
@@ -1688,7 +1637,7 @@ if (!canAccessDataCenter) {
         ) : (
           <>
             <RefreshCw className="h-4 w-4" />
-            Run Machine Learning
+            Run Segmentation
           </>
         )}
       </Button>

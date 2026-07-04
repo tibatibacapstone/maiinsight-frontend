@@ -26,6 +26,7 @@ import { BusinessErrorAlert } from "@/components/business-error-alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { PageSkeleton } from "@/components/page-skeleton"
 import { getApiUrl } from "@/lib/api"
 import { getAuthHeaders, getStoredRole, USER_ROLES } from "@/lib/roles"
 
@@ -267,12 +268,7 @@ export function InstaSightHub({ onViewAudience }: InstaSightHubProps) {
       ) : null}
 
       {isLoading ? (
-        <Card className="border-border bg-card shadow-sm">
-          <CardContent className="flex min-h-[240px] items-center justify-center gap-2 text-sm text-muted-foreground">
-            <Loader2 className="h-4 w-4 animate-spin" />
-            Loading InstaSight data...
-          </CardContent>
-        </Card>
+        <PageSkeleton cards={3} lines={2} />
       ) : !status?.configured ? (
         <Card className="border-amber-200 bg-amber-50/70 shadow-sm">
           <CardContent className="flex min-h-[220px] flex-col items-center justify-center gap-3 text-center">

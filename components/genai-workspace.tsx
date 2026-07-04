@@ -13,6 +13,7 @@ import {
 } from "lucide-react"
 
 import { BusinessErrorAlert } from "@/components/business-error-alert"
+import { PageSkeleton } from "@/components/page-skeleton"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -462,12 +463,7 @@ export function GenAIWorkspace({ userRole: userRoleFromProps }: GenAIWorkspacePr
       ) : null}
 
       {isLoadingStatus ? (
-        <Card className="border-border bg-card shadow-sm">
-          <CardContent className="flex min-h-[180px] items-center justify-center gap-2 text-sm text-muted-foreground">
-            <Loader2 className="h-4 w-4 animate-spin" />
-            Loading AI assistant status...
-          </CardContent>
-        </Card>
+        <PageSkeleton cards={2} lines={2} />
       ) : !aiStatus?.configured ? (
         <Card className="border-amber-200 bg-amber-50/70 shadow-sm">
           <CardHeader>

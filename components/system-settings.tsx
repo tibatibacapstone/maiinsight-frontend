@@ -6,6 +6,7 @@ import { Copy, Eye, EyeOff, Key, Link as LinkIcon, Loader2, Save, Shield, Users,
 
 import { AccessDenied } from "@/components/access-denied"
 import { BusinessErrorAlert } from "@/components/business-error-alert"
+import { PageSkeleton } from "@/components/page-skeleton"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -218,12 +219,7 @@ export function SystemSettings() {
       {error ? <BusinessErrorAlert title="Action Failed" message={error} suggestion="Please try again." /> : null}
 
       {isLoading ? (
-        <Card>
-          <CardContent className="flex min-h-[200px] items-center justify-center gap-2">
-            <Loader2 className="h-4 w-4 animate-spin" />
-            Loading system settings...
-          </CardContent>
-        </Card>
+        <PageSkeleton cards={4} lines={2} />
       ) : (
         <>
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
