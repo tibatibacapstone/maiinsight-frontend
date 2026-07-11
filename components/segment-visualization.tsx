@@ -602,50 +602,58 @@ export function SegmentVisualization() {
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <Card className="border-border bg-card shadow-sm">
             <CardContent className="pt-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground">Total Customers</p>
-                  <p className="text-2xl font-bold">{formatNumber(latestData.totalCustomers, 0)}</p>
-                  <p className={`mt-1 text-xs ${totalCustomersChange < 0 ? "text-destructive" : "text-emerald-600"}`}>
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0 text-center">
+                  <p className="text-sm font-medium uppercase tracking-[0.12em] text-muted-foreground">
+                    Total Customers
+                  </p>
+                  <p className="mt-4 text-3xl font-semibold text-foreground">
+                    {formatNumber(latestData.totalCustomers, 0)}
+                  </p>
+                  <p className={`mt-2 text-sm font-medium ${totalCustomersChange < 0 ? "text-destructive" : "text-emerald-600"}`}>
                     {previousTotalCustomers
                       ? `${formatChange((totalCustomersChange / previousTotalCustomers) * 100)} vs last month`
                       : "No comparison available"}
                   </p>
                 </div>
-                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
-                  <Users className="h-6 w-6 text-primary" />
-                </div>
+                <Badge variant="outline" className="rounded-full border-primary/20 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-primary">
+                  Customers
+                </Badge>
               </div>
             </CardContent>
           </Card>
 
           <Card className="border-border bg-card shadow-sm">
             <CardContent className="pt-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground">Top Segment</p>
-                  <p className="text-2xl font-bold">
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0 text-center">
+                  <p className="text-sm font-medium uppercase tracking-[0.12em] text-muted-foreground">
+                    Top Segment
+                  </p>
+                  <p className="mt-4 text-3xl font-semibold text-foreground">
                     {clusters.length > 0 && clusters.reduce((a, b) => (a.customerCount && b.customerCount ? (b.customerCount > a.customerCount ? b : a) : a)).segmentName}
                   </p>
-                  <p className="mt-1 text-xs text-muted-foreground">
+                  <p className="mt-2 text-sm text-muted-foreground">
                     {clusters.length > 0 && latestData?.totalCustomers
                       ? `${Math.round((clusters.reduce((a, b) => (a.customerCount && b.customerCount ? (b.customerCount > a.customerCount ? b : a) : a)).customerCount || 0) / latestData.totalCustomers * 100)}% of customers`
                       : "No data available"}
                   </p>
                 </div>
-                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
-                  <Users className="h-6 w-6 text-primary" />
-                </div>
+                <Badge variant="outline" className="rounded-full border-primary/20 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-primary">
+                  Segment
+                </Badge>
               </div>
             </CardContent>
           </Card>
 
           <Card className="border-border bg-card shadow-sm">
             <CardContent className="pt-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground">Top 3 Segment Share</p>
-                  <p className="text-2xl font-bold">
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0 text-center">
+                  <p className="text-sm font-medium uppercase tracking-[0.12em] text-muted-foreground">
+                    Top 3 Segment Share
+                  </p>
+                  <p className="mt-4 text-3xl font-semibold text-foreground">
                     {clusters.length > 0 && latestData?.totalCustomers
                       ? `${Math.round((clusters
                         .slice(0)
@@ -654,26 +662,30 @@ export function SegmentVisualization() {
                         .reduce((sum, c) => sum + (c.customerCount || 0), 0) / latestData.totalCustomers) * 100)}%`
                       : "-"}
                   </p>
-                  <p className="mt-1 text-xs text-muted-foreground">Share of customers in top 3 segments</p>
+                  <p className="mt-2 text-sm text-muted-foreground">Share of customers in top 3 segments</p>
                 </div>
-                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
-                  <BrainCircuit className="h-6 w-6 text-primary" />
-                </div>
+                <Badge variant="outline" className="rounded-full border-primary/20 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-primary">
+                  Share
+                </Badge>
               </div>
             </CardContent>
           </Card>
 
           <Card className="border-border bg-card shadow-sm">
             <CardContent className="pt-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground">Active Segments</p>
-                  <p className="text-2xl font-bold">{clusters.length}</p>
-                  <p className="mt-1 text-xs text-muted-foreground">{selectedCluster?.segmentName || "No segment selected"}</p>
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0 text-center">
+                  <p className="text-sm font-medium uppercase tracking-[0.12em] text-muted-foreground">
+                    Active Segments
+                  </p>
+                  <p className="mt-4 text-3xl font-semibold text-foreground">
+                    {clusters.length}
+                  </p>
+                  <p className="mt-2 text-sm text-muted-foreground">{selectedCluster?.segmentName || "No segment selected"}</p>
                 </div>
-                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
-                  <BrainCircuit className="h-6 w-6 text-primary" />
-                </div>
+                <Badge variant="outline" className="rounded-full border-primary/20 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-primary">
+                  Active
+                </Badge>
               </div>
             </CardContent>
           </Card>
@@ -724,11 +736,25 @@ export function SegmentVisualization() {
             <CardHeader className="pb-4">
               <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                 <div>
-                  <CardTitle>
-                    {viewMode === "distribution" && "Segment Distribution"}
-                    {viewMode === "profile" && "Segment Profile Comparison"}
-                    {viewMode === "radar" && "Segment Radar Analysis"}
-                  </CardTitle>
+                  <div className="flex items-center gap-2">
+                    <CardTitle>
+                      {viewMode === "distribution" && "Segment Distribution"}
+                      {viewMode === "profile" && "Segment Profile Comparison"}
+                      {viewMode === "radar" && "Segment Radar Analysis"}
+                    </CardTitle>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button className="rounded-full p-1 text-muted-foreground transition hover:bg-slate-100">
+                          <Info className="h-4 w-4" />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>
+                          Switch between distribution, profile comparison and radar views to explore segment behavior.
+                        </p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </div>
                   <CardDescription>
                     {viewMode === "distribution" && "How customers are split across the main business segments"}
                     {viewMode === "profile" && "Compare booking recency, frequency, and value across segments"}
@@ -805,7 +831,19 @@ export function SegmentVisualization() {
 
           <Card className="border-border bg-card shadow-sm">
             <CardHeader>
-              <CardTitle>Segment Details</CardTitle>
+              <div className="flex items-center gap-2">
+                <CardTitle>Segment Details</CardTitle>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button className="rounded-full p-1 text-muted-foreground transition hover:bg-slate-100">
+                      <Info className="h-4 w-4" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>Details and recommended actions for the currently selected customer segment.</p>
+                  </TooltipContent>
+                </Tooltip>
+              </div>
               <CardDescription>
                 {selectedCluster
                   ? `${selectedCluster.segmentName} business profile and next action`
@@ -927,7 +965,19 @@ export function SegmentVisualization() {
           <CardHeader>
             <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
               <div>
-                <CardTitle>Customer Table</CardTitle>
+                <div className="flex items-center gap-2">
+                  <CardTitle>Customer Table</CardTitle>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button className="rounded-full p-1 text-muted-foreground transition hover:bg-slate-100">
+                        <Info className="h-4 w-4" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Customer rows for the selected segment, filtered for completed bookings and business-ready records.</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
                 <CardDescription>
                   {selectedSegment
                     ? `Customer rows for ${selectedSegment}`
@@ -993,12 +1043,54 @@ export function SegmentVisualization() {
               <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
                 <div className="flex flex-col gap-4 border-b border-border bg-gradient-to-r from-background to-secondary/20 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
                   <div className="grid grid-cols-[1.6fr_1fr_1fr_1fr_1fr_0.8fr] gap-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                    <div>Customer</div>
-                    <div>Booking Type</div>
-                    <div>Last Visit</div>
-                    <div>Frequency</div>
-                    <div>Value</div>
-                    <div>Segment</div>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <div>Customer</div>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>Customer name and key for each profile.</p>
+                      </TooltipContent>
+                    </Tooltip>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <div>Booking Type</div>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>Dominant booking type for the customer in this run.</p>
+                      </TooltipContent>
+                    </Tooltip>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <div>Last Visit</div>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>Days since the customer's most recent completed booking.</p>
+                      </TooltipContent>
+                    </Tooltip>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <div>Frequency</div>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>Number of visits or bookings for the customer.</p>
+                      </TooltipContent>
+                    </Tooltip>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <div>Value</div>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>Monetary value of bookings associated with the customer.</p>
+                      </TooltipContent>
+                    </Tooltip>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <div>Segment</div>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>Assigned customer segment from the latest model run.</p>
+                      </TooltipContent>
+                    </Tooltip>
                   </div>
                   <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
                     <span>
