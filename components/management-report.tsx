@@ -2,6 +2,13 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react"
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -237,6 +244,19 @@ interface ReportResponse {
 // ⬅️ NEW: shared helper constants for the playtime + segment charts
 const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 const chartColors = ["var(--chart-1)", "var(--chart-2)", "var(--chart-3)", "var(--chart-4)"]
+const venues = [
+  { value: "All Venue", label: "All Venue" },
+  { value: "Mini Soccer", label: "Mini Soccer" },
+  { value: "Basketball", label: "Basketball" },
+]
+
+const customerTypes = ["All Type", "Membership", "Non Membership", "Internal"]
+
+const mapVenueToCourtType = (venue: string) => {
+  if (venue === "Mini Soccer") return "mini_soccer"
+  if (venue === "Basketball") return "basketball"
+  return "all"
+}
 const playtimeOrder: Record<string, number> = {
   Morning: 0,
   Afternoon: 1,
@@ -314,8 +334,9 @@ const getLastMonthRange = () => {
 export function ManagementReport() {
   const [startDate, setStartDate] = useState<string>("")
   const [endDate, setEndDate] = useState<string>("")
-  const [courtType, setCourtType] = useState("all")
-  const [bookingType, setBookingType] = useState("all")
+  const [selectedVenue, setSelectedVenue] = useState("All Venue")
+const [selectedCustomerType, setSelectedCustomerType] = useState("All Type")
+const [periodType, setPeriodType] = useState<"MTD" | "YTD" | null>("MTD")
   const [report, setReport] = useState<ReportResponse["data"] | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isApplyingDefaultRange, setIsApplyingDefaultRange] = useState(true)
@@ -377,23 +398,27 @@ export function ManagementReport() {
       setIsLoading(true)
       setError(null)
 
-      const params = new URLSearchParams({
-        startDate,
-        endDate,
-        courtType,
-        bookingType,
-      })
+      const mappedCourtType = mapVenueToCourtType(selectedVenue)
+
+const params = new URLSearchParams({
+  startDate,
+  endDate,
+  courtType: mappedCourtType,
+  customerType: selectedCustomerType,
+  bookingType: "all",
+})
 
       // ⬅️ NEW: params for overview-kpis / occupancy-trend, derived from the current report filters
-      const { month, year, venue } = deriveOverviewParams(endDate, courtType)
-      const overviewParams = new URLSearchParams({
-        month,
-        year,
-        periodType: "YTD",
-        venue,
-        customerType: "All Type",
-        bookingType,
-      })
+      const { month, year } = deriveOverviewParams(endDate, mappedCourtType)
+
+const overviewParams = new URLSearchParams({
+  month,
+  year,
+  periodType: periodType || "MTD",
+  venue: selectedVenue,
+  customerType: selectedCustomerType,
+  bookingType: "all",
+})
 
       const [
         reportResponse,
@@ -429,11 +454,11 @@ export function ManagementReport() {
           cache: "no-store",
           headers: getAuthHeaders(),
         }).catch(() => null),
-        fetch(getApiUrl("/ml/playtime/latest"), {
-          method: "GET",
-          cache: "no-store",
-          headers: getAuthHeaders(),
-        }).catch(() => null),
+        fetch(getApiUrl(`/dashboard/playtime-mix?${overviewParams.toString()}`), {
+  method: "GET",
+  cache: "no-store",
+  headers: getAuthHeaders(),
+}).catch(() => null),
         fetchSegmentationSummary()
           .then((data) => ({ success: true, data }))
           .catch(() => ({ success: false, data: null })),
@@ -479,7 +504,7 @@ export function ManagementReport() {
     } finally {
       setIsLoading(false)
     }
-  }, [bookingType, courtType, endDate, startDate])
+  }, [endDate, periodType, selectedCustomerType, selectedVenue, startDate])
 
   useEffect(() => {
     if (isApplyingDefaultRange) return
@@ -656,71 +681,131 @@ export function ManagementReport() {
       </div>
 
       <div className="rounded-2xl border border-border/70 bg-card/80 p-3 shadow-sm backdrop-blur no-print">
-        <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
-          <p className="shrink-0 text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">Report filters</p>
-          <div className="flex flex-wrap items-center justify-end gap-2">
-            <div className="group relative min-w-[132px]">
-              <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[9px] font-semibold uppercase tracking-[0.12em] text-muted-foreground transition-colors group-focus-within:text-foreground">
-                Start
-              </span>
-              <Input
-                type="date"
-                value={startDate}
-                onChange={(event) => setStartDate(event.target.value)}
-                className="h-10 w-full rounded-lg border border-border/70 bg-background/90 pl-[3.6rem] pr-2.5 text-xs shadow-sm outline-none transition hover:border-primary/35 hover:bg-background focus:border-primary focus:ring-2 focus:ring-primary/15"
-              />
-            </div>
-            <div className="group relative min-w-[132px]">
-              <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[9px] font-semibold uppercase tracking-[0.12em] text-muted-foreground transition-colors group-focus-within:text-foreground">
-                End
-              </span>
-              <Input
-                type="date"
-                value={endDate}
-                onChange={(event) => setEndDate(event.target.value)}
-                className="h-10 w-full rounded-lg border border-border/70 bg-background/90 pl-[3.2rem] pr-2.5 text-xs shadow-sm outline-none transition hover:border-primary/35 hover:bg-background focus:border-primary focus:ring-2 focus:ring-primary/15"
-              />
-            </div>
-            <div className="group relative min-w-[128px]">
-              <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[9px] font-semibold uppercase tracking-[0.12em] text-muted-foreground transition-colors group-focus-within:text-foreground">
-                Court
-              </span>
-              <select
-                value={courtType}
-                onChange={(event) => setCourtType(event.target.value)}
-                className="h-10 w-full appearance-none rounded-lg border border-border/70 bg-background/90 pl-[3.2rem] pr-8 text-xs font-medium text-foreground shadow-sm outline-none transition hover:border-primary/35 hover:bg-background focus:border-primary focus:ring-2 focus:ring-primary/15"
-              >
-                <option value="all">All courts</option>
-                <option value="mini_soccer">Mini Soccer</option>
-                <option value="basketball">Basketball</option>
-              </select>
-                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground transition-transform group-hover:translate-y-[-45%] group-focus-within:text-foreground" />
-            </div>
-            <div className="group relative min-w-[150px]">
-              <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[9px] font-semibold uppercase tracking-[0.12em] text-muted-foreground transition-colors group-focus-within:text-foreground">
-                Booking
-              </span>
-              <select
-                value={bookingType}
-                onChange={(event) => setBookingType(event.target.value)}
-                className="h-10 w-full appearance-none rounded-lg border border-border/70 bg-background/90 pl-[4.2rem] pr-8 text-xs font-medium text-foreground shadow-sm outline-none transition hover:border-primary/35 hover:bg-background focus:border-primary focus:ring-2 focus:ring-primary/15"
-              >
-                <option value="all">All booking types</option>
-                <option value="regular_booking">Regular booking</option>
-                <option value="member_internal_booking">Member / internal</option>
-                <option value="other">Other</option>
-              </select>
-                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground transition-transform group-hover:translate-y-[-45%] group-focus-within:text-foreground" />
-            </div>
-            <div className="inline-flex h-10 items-center rounded-xl border border-border/70 bg-background/80 p-1 shadow-sm">
-              <Button variant="outline" size="sm" className="h-8 gap-1 px-2.5 text-[11px]" onClick={() => setDownloadConfirmOpen(true)} disabled={!report?.hasData}>
-                <Download className="h-3 w-3" />
-                Export PDF
-              </Button>
-            </div>
-          </div>
-        </div>
+  <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+    <p className="shrink-0 text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
+      Report filters
+    </p>
+
+    <div className="flex flex-wrap items-center justify-end gap-2">
+      {/* Start Date */}
+      <div className="group relative w-[200px]">
+        <span className="pointer-events-none absolute left-3 top-1/2 z-10 -translate-y-1/2 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground transition-colors group-focus-within:text-foreground">
+          Start
+        </span>
+
+        <Input
+          type="date"
+          value={startDate}
+          onChange={(event) => setStartDate(event.target.value)}
+          className="h-11 w-full rounded-xl border border-border/70 bg-background/90 pl-[4.1rem] pr-3 text-sm font-medium text-foreground shadow-sm outline-none transition hover:border-primary/35 hover:bg-background focus:border-primary focus:ring-2 focus:ring-primary/15"
+        />
       </div>
+
+      {/* End Date */}
+      <div className="group relative w-[200px]">
+        <span className="pointer-events-none absolute left-3 top-1/2 z-10 -translate-y-1/2 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground transition-colors group-focus-within:text-foreground">
+          End
+        </span>
+
+        <Input
+          type="date"
+          value={endDate}
+          onChange={(event) => setEndDate(event.target.value)}
+          className="h-11 w-full rounded-xl border border-border/70 bg-background/90 pl-[3.6rem] pr-3 text-sm font-medium text-foreground shadow-sm outline-none transition hover:border-primary/35 hover:bg-background focus:border-primary focus:ring-2 focus:ring-primary/15"
+        />
+      </div>
+
+      {/* Venue */}
+      <div className="w-[184px]">
+        <Select value={selectedVenue} onValueChange={setSelectedVenue}>
+          <SelectTrigger className="h-11 w-full rounded-xl border border-border/70 bg-background/90 px-3 shadow-sm outline-none transition hover:border-primary/35 hover:bg-background focus:ring-2 focus:ring-primary/15">
+            <div className="flex min-w-0 items-center gap-3">
+              <span className="shrink-0 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                Venue
+              </span>
+              <SelectValue placeholder="Venue" />
+            </div>
+          </SelectTrigger>
+
+          <SelectContent
+            position="popper"
+            className="w-[var(--radix-select-trigger-width)] rounded-xl border bg-background shadow-lg"
+          >
+            {venues.map((venue) => (
+              <SelectItem key={venue.value} value={venue.value}>
+                {venue.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      {/* Customer */}
+      <div className="w-[220px]">
+        <Select
+          value={selectedCustomerType}
+          onValueChange={setSelectedCustomerType}
+        >
+          <SelectTrigger className="h-11 w-full rounded-xl border border-border/70 bg-background/90 px-3 shadow-sm outline-none transition hover:border-primary/35 hover:bg-background focus:ring-2 focus:ring-primary/15">
+            <div className="flex min-w-0 items-center gap-3">
+              <span className="shrink-0 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                Customer
+              </span>
+              <SelectValue placeholder="Customer" />
+            </div>
+          </SelectTrigger>
+
+          <SelectContent
+            position="popper"
+            className="w-[var(--radix-select-trigger-width)] rounded-xl border bg-background shadow-lg"
+          >
+            {customerTypes.map((customerType) => (
+              <SelectItem key={customerType} value={customerType}>
+                {customerType}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      {/* MTD / YTD */}
+      <div className="inline-flex h-11 items-center rounded-xl border border-border/70 bg-background/80 p-1 shadow-sm">
+        {(["MTD", "YTD"] as const).map((type) => (
+          <Button
+            key={type}
+            variant={periodType === type ? "secondary" : "ghost"}
+            className={`h-8 rounded-lg border px-3 text-[11px] transition ${
+              periodType === type
+                ? type === "MTD"
+                  ? "border-amber-300 bg-amber-100 text-amber-700 hover:bg-amber-200"
+                  : "border-emerald-300 bg-emerald-100 text-emerald-700 hover:bg-emerald-200"
+                : "border-transparent text-muted-foreground hover:bg-accent/80 hover:text-foreground"
+            }`}
+            onClick={() =>
+              setPeriodType((current) => (current === type ? null : type))
+            }
+          >
+            {type}
+          </Button>
+        ))}
+      </div>
+
+      {/* Export PDF */}
+      <div className="inline-flex h-11 items-center rounded-xl border border-border/70 bg-background/80 p-1 shadow-sm">
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-8 gap-1 px-2.5 text-[11px]"
+          onClick={() => setDownloadConfirmOpen(true)}
+          disabled={!report?.hasData}
+        >
+          <Download className="h-3 w-3" />
+          Export PDF
+        </Button>
+      </div>
+    </div>
+  </div>
+</div>
 
       <AlertDialog open={downloadConfirmOpen} onOpenChange={setDownloadConfirmOpen}>
         <AlertDialogContent>

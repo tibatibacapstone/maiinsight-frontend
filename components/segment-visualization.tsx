@@ -49,6 +49,15 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import {
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+  PaginationLink,
+  PaginationPrevious,
+  PaginationNext,
+  PaginationEllipsis,
+} from "@/components/ui/pagination"
+import {
   CUSTOMER_SEGMENT_COLORS,
   SEGMENTATION_UPDATED_EVENT,
   fetchSegmentationCustomers,
@@ -57,6 +66,7 @@ import {
   sortClusterProfiles,
   type ClusterProfile,
   type CustomerRfmScore,
+  type SegmentationCustomersData,
   type SegmentationLatestData,
   type SegmentationSummaryData,
 } from "@/lib/segmentation"
@@ -319,6 +329,9 @@ export function SegmentVisualization() {
   const [showBestBusinessUse, setShowBestBusinessUse] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
   const [isLoadingCustomers, setIsLoadingCustomers] = useState(false)
+  const [customerPagination, setCustomerPagination] = useState<SegmentationCustomersData["pagination"] | null>(null)
+  const [currentPage, setCurrentPage] = useState(1)
+  const [pageSize, setPageSize] = useState(10)
   const [error, setError] = useState("")
 
   const loadSegmentation = async () => {
@@ -410,8 +423,13 @@ export function SegmentVisualization() {
   }, [])
 
   useEffect(() => {
+    setCurrentPage(1)
+  }, [selectedSegment, pageSize])
+
+  useEffect(() => {
     if (!latestData?.run?.id) {
       setCustomers([])
+      setCustomerPagination(null)
       return
     }
 
@@ -420,10 +438,11 @@ export function SegmentVisualization() {
         setIsLoadingCustomers(true)
         const customerResult = await fetchSegmentationCustomers({
           segmentName: selectedSegment || undefined,
-          limit: 100,
-          offset: 0,
+          limit: pageSize,
+          offset: (currentPage - 1) * pageSize,
         })
         setCustomers(customerResult.customers)
+        setCustomerPagination(customerResult.pagination)
       } catch (customerError) {
         setError(
           customerError instanceof Error
@@ -431,13 +450,14 @@ export function SegmentVisualization() {
             : "Failed to load segmentation customers."
         )
         setCustomers([])
+        setCustomerPagination(null)
       } finally {
         setIsLoadingCustomers(false)
       }
     }
 
     void loadCustomers()
-  }, [latestData?.run?.id, selectedSegment])
+  }, [latestData?.run?.id, selectedSegment, currentPage, pageSize])
 
   const clusters = useMemo(() => summaryData?.clusters || [], [summaryData])
   const selectedCluster =
@@ -445,6 +465,29 @@ export function SegmentVisualization() {
   const selectedCustomers = selectedSegment
     ? customers.filter((customer) => customer.segmentName === selectedSegment)
     : customers
+  const totalCustomerRows = customerPagination?.totalCustomers ?? selectedCustomers.length
+  const totalPages = Math.max(1, Math.ceil(totalCustomerRows / pageSize))
+  const displayedRowStart = totalCustomerRows === 0 ? 0 : (customerPagination?.offset || 0) + 1
+  const displayedRowEnd = customerPagination
+    ? (customerPagination.offset || 0) + customerPagination.returned
+    : selectedCustomers.length
+  const pageButtons = useMemo(() => {
+    const buttons: Array<number | "ellipsis"> = []
+
+    for (let page = 1; page <= totalPages; page += 1) {
+      if (
+        page === 1 ||
+        page === totalPages ||
+        Math.abs(page - currentPage) <= 1
+      ) {
+        buttons.push(page)
+      } else if (buttons[buttons.length - 1] !== "ellipsis") {
+        buttons.push("ellipsis")
+      }
+    }
+
+    return buttons
+  }, [currentPage, totalPages])
   const distributionData = clusters.map((cluster) => ({
     ...cluster,
     color: CUSTOMER_SEGMENT_COLORS[cluster.segmentName] || "var(--chart-5)",
@@ -490,7 +533,7 @@ export function SegmentVisualization() {
   }, [clusters, selectedCluster])
   const chartHeightClass =
     viewMode === "radar" ? "h-[clamp(320px,52vw,520px)]" : "h-[clamp(300px,48vw,440px)]"
-  const selectedCustomerCount = selectedCustomers.length
+  const selectedCustomerCount = totalCustomerRows
   const topCustomer = selectedCustomers[0] || null
   const uniqueBookingTypes = new Set(
     selectedCustomers.map((customer) => customer.bookingTypeDominant || "Unknown")
@@ -948,7 +991,7 @@ export function SegmentVisualization() {
               </div>
             ) : (
               <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
-                <div className="border-b border-border bg-gradient-to-r from-background to-secondary/20 px-4 py-3">
+                <div className="flex flex-col gap-4 border-b border-border bg-gradient-to-r from-background to-secondary/20 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
                   <div className="grid grid-cols-[1.6fr_1fr_1fr_1fr_1fr_0.8fr] gap-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
                     <div>Customer</div>
                     <div>Booking Type</div>
@@ -957,65 +1000,137 @@ export function SegmentVisualization() {
                     <div>Value</div>
                     <div>Segment</div>
                   </div>
-                </div>
-                <div className="divide-y divide-border/60">
-                  {customers.map((customer, index) => {
-                    const scoreTone =
-                      customer.monetary >= (selectedCluster?.avgMonetary || 0)
-                        ? "from-emerald-50 to-background"
-                        : index % 2 === 0
-                          ? "from-background to-secondary/10"
-                          : "from-background to-muted/10"
-
-                    return (
-                      <div
-                        key={`${customer.customerKey}-${customer.segmentName}`}
-                        className={`grid grid-cols-[1.6fr_1fr_1fr_1fr_1fr_0.8fr] items-center gap-3 px-4 py-4 transition-all hover:-translate-y-[1px] hover:bg-gradient-to-r ${scoreTone}`}
+                  <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+                    <span>
+                      Showing {displayedRowStart}-{displayedRowEnd} of {totalCustomerRows}
+                    </span>
+                    <label className="flex items-center gap-2 rounded-full border border-border bg-muted/30 px-3 py-1">
+                      <span>Rows:</span>
+                      <select
+                        value={pageSize}
+                        onChange={(event) => setPageSize(Number(event.target.value))}
+                        className="rounded-full border border-border bg-background px-2 py-1 text-xs"
                       >
-                        <div className="flex items-center gap-3">
-                          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary">
-                            {(customer.customerName || customer.customerKey || "?").charAt(0).toUpperCase()}
-                          </div>
-                          <div className="min-w-0">
-                            <p className="truncate font-medium text-foreground">
-                              {customer.customerName || customer.customerKey}
-                            </p>
-                            <p className="truncate text-xs text-muted-foreground">
-                              {customer.customerKey}
-                            </p>
-                          </div>
-                        </div>
-
-                        <div>
-                          <Badge variant="secondary" className="rounded-full">
-                            {customer.bookingTypeDominant || "Unknown"}
-                          </Badge>
-                        </div>
-
-                        <div className="text-sm text-muted-foreground">
-                          <span className="font-medium text-foreground">{customer.recency}</span> days ago
-                        </div>
-
-                        <div className="text-sm text-muted-foreground">
-                          <span className="font-medium text-foreground">{customer.frequency}</span> visits
-                        </div>
-
-                        <div className="text-sm font-medium text-foreground">
-                          {formatCurrency(customer.monetary)}
-                        </div>
-
-                        <div>
-                          <Badge
-                            className="rounded-full bg-orange-500/10 text-orange-700 hover:bg-orange-500/10"
-                            variant="outline"
-                          >
-                            {customer.segmentName}
-                          </Badge>
-                        </div>
-                      </div>
-                    )
-                  })}
+                        {[10, 20, 50].map((size) => (
+                          <option key={size} value={size}>{size}</option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
                 </div>
+                <div className="max-h-[560px] overflow-y-auto">
+                  <div className="divide-y divide-border/60">
+                    {customers.map((customer, index) => {
+                      const scoreTone =
+                        customer.monetary >= (selectedCluster?.avgMonetary || 0)
+                          ? "from-emerald-50 to-background"
+                          : index % 2 === 0
+                            ? "from-background to-secondary/10"
+                            : "from-background to-muted/10"
+
+                      return (
+                        <div
+                          key={`${customer.customerKey}-${customer.segmentName}`}
+                          className={`grid grid-cols-[1.6fr_1fr_1fr_1fr_1fr_0.8fr] items-center gap-3 px-4 py-4 transition-all hover:-translate-y-[1px] hover:bg-gradient-to-r ${scoreTone}`}
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary">
+                              {(customer.customerName || customer.customerKey || "?").charAt(0).toUpperCase()}
+                            </div>
+                            <div className="min-w-0">
+                              <p className="truncate font-medium text-foreground">
+                                {customer.customerName || customer.customerKey}
+                              </p>
+                              <p className="truncate text-xs text-muted-foreground">
+                                {customer.customerKey}
+                              </p>
+                            </div>
+                          </div>
+
+                          <div>
+                            <Badge variant="secondary" className="rounded-full">
+                              {customer.bookingTypeDominant || "Unknown"}
+                            </Badge>
+                          </div>
+
+                          <div className="text-sm text-muted-foreground">
+                            <span className="font-medium text-foreground">{customer.recency}</span> days ago
+                          </div>
+
+                          <div className="text-sm text-muted-foreground">
+                            <span className="font-medium text-foreground">{customer.frequency}</span> visits
+                          </div>
+
+                          <div className="text-sm font-medium text-foreground">
+                            {formatCurrency(customer.monetary)}
+                          </div>
+
+                          <div>
+                            <Badge
+                              className="rounded-full bg-orange-500/10 text-orange-700 hover:bg-orange-500/10"
+                              variant="outline"
+                            >
+                              {customer.segmentName}
+                            </Badge>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+                {totalPages > 1 ? (
+                  <div className="border-t border-border bg-background/80 px-4 py-3">
+                    <Pagination className="justify-between gap-4">
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                        Page {currentPage} of {totalPages}
+                      </div>
+                      <PaginationContent>
+                        <PaginationItem>
+                          <PaginationPrevious
+                            href="#"
+                            aria-disabled={currentPage === 1}
+                            onClick={(event) => {
+                              event.preventDefault()
+                              if (currentPage === 1) return
+                              setCurrentPage((page) => Math.max(page - 1, 1))
+                            }}
+                          />
+                        </PaginationItem>
+                        {pageButtons.map((page, index) =>
+                          page === "ellipsis" ? (
+                            <PaginationItem key={`ellipsis-${index}`}>
+                              <PaginationEllipsis />
+                            </PaginationItem>
+                          ) : (
+                            <PaginationItem key={page}>
+                              <PaginationLink
+                                href="#"
+                                isActive={page === currentPage}
+                                onClick={(event) => {
+                                  event.preventDefault()
+                                  setCurrentPage(page)
+                                }}
+                              >
+                                {page}
+                              </PaginationLink>
+                            </PaginationItem>
+                          ),
+                        )}
+                        <PaginationItem>
+                          <PaginationNext
+                            href="#"
+                            aria-disabled={currentPage === totalPages}
+                            onClick={(event) => {
+                              event.preventDefault()
+                              if (currentPage === totalPages) return
+                              setCurrentPage((page) => Math.min(page + 1, totalPages))
+                            }}
+                          />
+                        </PaginationItem>
+                      </PaginationContent>
+                    </Pagination>
+                  </div>
+                ) : null}
               </div>
             )}
           </CardContent>

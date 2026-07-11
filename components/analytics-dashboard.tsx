@@ -15,6 +15,13 @@ import {
   Zap,
 } from "lucide-react"
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import {
   Area,
   AreaChart,
   Bar,
@@ -143,7 +150,7 @@ interface PlaytimeCustomerSegment {
   sesiMalam?: number
 }
 
-interface PlaytimeMlData {
+interface PlaytimeData {
   totalCustomers: number
   totalSessions: number
   clusterCount?: number
@@ -201,7 +208,7 @@ const venues = [
   { value: "Mini Soccer", label: "Mini Soccer" },
   { value: "Basketball", label: "Basketball" },
 ]
-const customerTypes = ["All Type", "Membership", "Non Membership"]
+const customerTypes = ["All Type", "Membership", "Non Membership", "Internal"]
 const chartColors = ["var(--chart-1)", "var(--chart-2)", "var(--chart-3)", "var(--chart-4)"]
 const playtimeOrder: Record<string, number> = {
   Morning: 0,
@@ -220,6 +227,7 @@ const playtimeLabelMap: Record<string, string> = {
 const bookingTypeLabelMap: Record<string, string> = {
   regular_booking: "Membership",
   member_internal_booking: "Non Membership",
+  internal: "Internal",
   other: "Other",
 }
 
@@ -423,8 +431,8 @@ const buildFallbackBusinessInsight = ({
   }
 }
 
-const buildPlaytimeChart = (playtimeMlData: PlaytimeMlData | null) => {
-  const directRows = parseJsonArray<PlaytimeSessionPoint>(playtimeMlData?.sessionByTime)
+const buildPlaytimeChart = (playtimeData: PlaytimeData | null) => {
+  const directRows = parseJsonArray<PlaytimeSessionPoint>(playtimeData?.sessionByTime)
 
   if (directRows.length > 0) {
     return directRows
@@ -443,11 +451,11 @@ const buildPlaytimeChart = (playtimeMlData: PlaytimeMlData | null) => {
       .sort((left, right) => (playtimeOrder[left.rawName] ?? 99) - (playtimeOrder[right.rawName] ?? 99))
   }
 
-  if (!Array.isArray(playtimeMlData?.customerSegments) || playtimeMlData.customerSegments.length === 0) {
+  if (!Array.isArray(playtimeData?.customerSegments) || playtimeData.customerSegments.length === 0) {
     return []
   }
 
-  const derived = playtimeMlData.customerSegments.reduce(
+  const derived = playtimeData.customerSegments.reduce(
     (accumulator, row) => {
       accumulator.Morning += Number(row.sesiPagi || 0)
       accumulator.Afternoon += Number(row.sesiSiang || 0)
@@ -569,7 +577,7 @@ export function AnalyticsDashboard() {
   const [occupancyTrend, setOccupancyTrend] = useState<OccupancyTrendPoint[]>([])
   const [reportData, setReportData] = useState<RevenueReportData | null>(null)
   const [segmentation, setSegmentation] = useState<ClusterProfile[]>([])
-  const [playtimeMlData, setPlaytimeMlData] = useState<PlaytimeMlData | null>(null)
+  const [playtimeData, setPlaytimeData] = useState<PlaytimeData | null>(null)
   const [metaDashboard, setMetaDashboard] = useState<MetaDashboardData | null>(null)
   const [businessInsight, setBusinessInsight] = useState<BusinessInsightState | null>(null)
   const [isLoadingBusinessInsight, setIsLoadingBusinessInsight] = useState(false)
@@ -676,7 +684,7 @@ export function AnalyticsDashboard() {
       setOverviewKpi(kpiResult?.success ? kpiResult.data : null)
       setOccupancyTrend(occupancyResult?.success && Array.isArray(occupancyResult.data) ? occupancyResult.data : [])
       setReportData(reportResult?.success ? reportResult.data : null)
-      setPlaytimeMlData(playtimeResult?.success ? playtimeResult.data : null)
+      setPlaytimeData(playtimeResult?.success ? playtimeResult.data : null)
       setSegmentation(segmentationResponse.success && segmentationResponse.data ? sortClusterProfiles(segmentationResponse.data.clusters || []) : [])
       setMetaDashboard(metaResult)
     } catch (loadError) {
@@ -685,7 +693,7 @@ export function AnalyticsDashboard() {
       setOverviewKpi(null)
       setOccupancyTrend([])
       setReportData(null)
-      setPlaytimeMlData(null)
+      setPlaytimeData(null)
       setSegmentation([])
       setMetaDashboard(null)
     } finally {
@@ -709,7 +717,7 @@ export function AnalyticsDashboard() {
     }
   }, [loadDashboard])
 
-  const playtimeChart = useMemo(() => buildPlaytimeChart(playtimeMlData), [playtimeMlData])
+  const playtimeChart = useMemo(() => buildPlaytimeChart(playtimeData), [playtimeData])
 
   const playtimeChartTotal = useMemo(
     () => playtimeChart.reduce((sum, item) => sum + item.value, 0),
@@ -734,12 +742,12 @@ export function AnalyticsDashboard() {
   )
 
   const playtimeBehaviorInsight = useMemo(() => {
-    if (!dominantPlaytime || !playtimeMlData) {
+    if (!dominantPlaytime || !playtimeData) {
       return "No historical play-time preference insight is available yet."
     }
 
     return `Most bookings are in the ${dominantPlaytime.name} slot with ${formatPercent(dominantPlaytime.percentage)} of all bookings.`
-  }, [dominantPlaytime, playtimeMlData])
+  }, [dominantPlaytime, playtimeData])
 
   const segmentChart = useMemo(
     () =>
@@ -1040,74 +1048,163 @@ export function AnalyticsDashboard() {
           </div>
         </div>
         <div className="rounded-2xl border border-border/70 bg-card/80 p-3 shadow-sm backdrop-blur">
-          <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
-            <p className="shrink-0 text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">Dashboard filters</p>
-            <div className="flex flex-wrap items-center justify-end gap-2">
-              <div className="group relative min-w-[148px]">
-                <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground transition-colors group-focus-within:text-foreground">Month</span>
-                <select
-                  value={selectedMonth}
-                  onChange={(event) => setSelectedMonth(event.target.value)}
-                  disabled={!status?.hasTransactionData && !isLoading}
-                  className="h-11 w-full appearance-none rounded-xl border border-border/70 bg-background/90 pl-[4.4rem] pr-10 text-sm font-medium text-foreground shadow-sm outline-none transition hover:border-primary/35 hover:bg-background focus:border-primary focus:ring-2 focus:ring-primary/15 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  <option value={DEFAULT_MONTH_OPTION}>{DEFAULT_MONTH_OPTION}</option>
-                  {months.map((month) => {
-                    const option = monthOptions.find((item) => item.value === month)
-                    return <option key={month} value={month} disabled={option?.disabled}>{month}</option>
-                  })}
-                </select>
-                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground transition-transform group-hover:translate-y-[-45%] group-focus-within:text-foreground" />
-              </div>
-              <div className="group relative min-w-[124px]">
-                <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground transition-colors group-focus-within:text-foreground">Year</span>
-                <select
-                  value={selectedYear}
-                  onChange={(event) => {
-                    setSelectedYear(event.target.value)
-                  }}
-                  disabled={!status?.hasTransactionData && !isLoading}
-                  className="h-11 w-full appearance-none rounded-xl border border-border/70 bg-background/90 pl-[3.6rem] pr-10 text-sm font-medium text-foreground shadow-sm outline-none transition hover:border-primary/35 hover:bg-background focus:border-primary focus:ring-2 focus:ring-primary/15 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {yearOptions.map((year) => (
-                    <option key={year.value} value={year.value} disabled={year.disabled}>{year.value}</option>
-                  ))}
-                </select>
-                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground transition-transform group-hover:translate-y-[-45%] group-focus-within:text-foreground" />
-              </div>
-              <div className="group relative min-w-[150px]">
-                <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground transition-colors group-focus-within:text-foreground">Venue</span>
-                <select value={selectedVenue} onChange={(event) => setSelectedVenue(event.target.value)} className="h-11 w-full appearance-none rounded-xl border border-border/70 bg-background/90 pl-[4rem] pr-10 text-sm font-medium text-foreground shadow-sm outline-none transition hover:border-primary/35 hover:bg-background focus:border-primary focus:ring-2 focus:ring-primary/15">
-                  {venues.map((venue) => <option key={venue.value} value={venue.value}>{venue.label}</option>)}
-                </select>
-                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground transition-transform group-hover:translate-y-[-45%] group-focus-within:text-foreground" />
-              </div>
-              <div className="group relative min-w-[172px]">
-                <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground transition-colors group-focus-within:text-foreground">Customer</span>
-                <select value={selectedCustomerType} onChange={(event) => setSelectedCustomerType(event.target.value)} className="h-11 w-full appearance-none rounded-xl border border-border/70 bg-background/90 pl-[5.6rem] pr-10 text-sm font-medium text-foreground shadow-sm outline-none transition hover:border-primary/35 hover:bg-background focus:border-primary focus:ring-2 focus:ring-primary/15">
-                  {customerTypes.map((customerType) => <option key={customerType} value={customerType}>{customerType}</option>)}
-                </select>
-                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground transition-transform group-hover:translate-y-[-45%] group-focus-within:text-foreground" />
-              </div>
-              <div className="inline-flex h-11 items-center rounded-xl border border-border/70 bg-background/80 p-1 shadow-sm">
-                {(["MTD", "YTD"] as const).map((type) => (
-                  <Button
-                    key={type}
-                    variant={periodType === type ? "secondary" : "ghost"}
-                    className={`h-8 rounded-lg border px-3 text-[11px] transition ${periodType === type
-                      ? type === "MTD"
-                        ? "border-amber-300 bg-amber-100 text-amber-700 hover:bg-amber-200"
-                        : "border-emerald-300 bg-emerald-100 text-emerald-700 hover:bg-emerald-200"
-                      : "border-transparent text-muted-foreground hover:bg-accent/80 hover:text-foreground"}`}
-                    onClick={() => setPeriodType((current) => (current === type ? null : type))}
-                  >
-                    {type}
-                  </Button>
-                ))}
-              </div>
+  <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+    <p className="shrink-0 text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
+      Dashboard filters
+    </p>
+
+    <div className="flex flex-wrap items-center justify-end gap-2">
+      {/* Month Filter */}
+      <div className="w-[176px]">
+        <Select
+          value={selectedMonth}
+          onValueChange={setSelectedMonth}
+          disabled={!status?.hasTransactionData && !isLoading}
+        >
+          <SelectTrigger className="h-11 w-full rounded-xl border border-border/70 bg-background/90 px-3 shadow-sm outline-none transition hover:border-primary/35 hover:bg-background focus:ring-2 focus:ring-primary/15">
+            <div className="flex min-w-0 items-center gap-3">
+              <span className="shrink-0 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                Month
+              </span>
+              <SelectValue placeholder="Month" />
             </div>
-          </div>
-        </div>
+          </SelectTrigger>
+
+          <SelectContent
+            position="popper"
+            className="w-[var(--radix-select-trigger-width)] rounded-xl border bg-background shadow-lg"
+          >
+            <SelectItem value={DEFAULT_MONTH_OPTION}>
+              {DEFAULT_MONTH_OPTION}
+            </SelectItem>
+
+            {months.map((month) => {
+              const option = monthOptions.find((item) => item.value === month)
+
+              return (
+                <SelectItem
+                  key={month}
+                  value={month}
+                  disabled={option?.disabled}
+                >
+                  {month}
+                </SelectItem>
+              )
+            })}
+          </SelectContent>
+        </Select>
+      </div>
+
+      {/* Year Filter */}
+      <div className="w-[140px]">
+        <Select
+          value={selectedYear}
+          onValueChange={setSelectedYear}
+          disabled={!status?.hasTransactionData && !isLoading}
+        >
+          <SelectTrigger className="h-11 w-full rounded-xl border border-border/70 bg-background/90 px-3 shadow-sm outline-none transition hover:border-primary/35 hover:bg-background focus:ring-2 focus:ring-primary/15">
+            <div className="flex min-w-0 items-center gap-3">
+              <span className="shrink-0 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                Year
+              </span>
+              <SelectValue placeholder="Year" />
+            </div>
+          </SelectTrigger>
+
+          <SelectContent
+            position="popper"
+            className="w-[var(--radix-select-trigger-width)] rounded-xl border bg-background shadow-lg"
+          >
+            {yearOptions.map((year) => (
+              <SelectItem
+                key={year.value}
+                value={year.value}
+                disabled={year.disabled}
+              >
+                {year.value}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      {/* Venue Filter */}
+      <div className="w-[184px]">
+        <Select value={selectedVenue} onValueChange={setSelectedVenue}>
+          <SelectTrigger className="h-11 w-full rounded-xl border border-border/70 bg-background/90 px-3 shadow-sm outline-none transition hover:border-primary/35 hover:bg-background focus:ring-2 focus:ring-primary/15">
+            <div className="flex min-w-0 items-center gap-3">
+              <span className="shrink-0 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                Venue
+              </span>
+              <SelectValue placeholder="Venue" />
+            </div>
+          </SelectTrigger>
+
+          <SelectContent
+            position="popper"
+            className="w-[var(--radix-select-trigger-width)] rounded-xl border bg-background shadow-lg"
+          >
+            {venues.map((venue) => (
+              <SelectItem key={venue.value} value={venue.value}>
+                {venue.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      {/* Customer Filter */}
+      <div className="w-[220px]">
+        <Select
+          value={selectedCustomerType}
+          onValueChange={setSelectedCustomerType}
+        >
+          <SelectTrigger className="h-11 w-full rounded-xl border border-border/70 bg-background/90 px-3 shadow-sm outline-none transition hover:border-primary/35 hover:bg-background focus:ring-2 focus:ring-primary/15">
+            <div className="flex min-w-0 items-center gap-3">
+              <span className="shrink-0 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                Customer
+              </span>
+              <SelectValue placeholder="Customer" />
+            </div>
+          </SelectTrigger>
+
+          <SelectContent
+            position="popper"
+            className="w-[var(--radix-select-trigger-width)] rounded-xl border bg-background shadow-lg"
+          >
+            {customerTypes.map((customerType) => (
+              <SelectItem key={customerType} value={customerType}>
+                {customerType}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      {/* MTD / YTD Filter */}
+      <div className="inline-flex h-11 items-center rounded-xl border border-border/70 bg-background/80 p-1 shadow-sm">
+        {(["MTD", "YTD"] as const).map((type) => (
+          <Button
+            key={type}
+            variant={periodType === type ? "secondary" : "ghost"}
+            className={`h-8 rounded-lg border px-3 text-[11px] transition ${
+              periodType === type
+                ? type === "MTD"
+                  ? "border-amber-300 bg-amber-100 text-amber-700 hover:bg-amber-200"
+                  : "border-emerald-300 bg-emerald-100 text-emerald-700 hover:bg-emerald-200"
+                : "border-transparent text-muted-foreground hover:bg-accent/80 hover:text-foreground"
+            }`}
+            onClick={() =>
+              setPeriodType((current) => (current === type ? null : type))
+            }
+          >
+            {type}
+          </Button>
+        ))}
+      </div>
+    </div>
+  </div>
+</div>
       </div>
 
       {error ? (
@@ -1250,7 +1347,9 @@ export function AnalyticsDashboard() {
             </Card>
             <Card className="border-border bg-card shadow-sm">
               <CardHeader>
-                <CardTitle className="text-sm font-medium text-muted-foreground">Revenue by Play Date</CardTitle>
+                <CardTitle className="text-sm font-medium text-muted-foreground">Revenue
+        
+                </CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="flex items-end justify-between">
@@ -1350,7 +1449,7 @@ export function AnalyticsDashboard() {
 
             <Card className="border-border bg-card shadow-sm">
               <CardHeader>
-                <CardTitle><TitleWithTooltip title="Revenue by Play Date Trend" tooltip="Shows booking revenue grouped by play date, using the same filters as the overview card." /></CardTitle>
+                <CardTitle><TitleWithTooltip title="Revenue Trend" tooltip="Shows booking revenue grouped by play date, using the same filters as the overview card." /></CardTitle>
                 <CardDescription>{revenueTrendSubtitle}</CardDescription>
               </CardHeader>
               <CardContent>
@@ -1361,7 +1460,7 @@ export function AnalyticsDashboard() {
                         <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
                         <XAxis dataKey="label" stroke="var(--muted-foreground)" tickLine={false} axisLine={false} />
                         <YAxis stroke="var(--muted-foreground)" tickLine={false} axisLine={false} tickFormatter={(value) => `${Math.round(Number(value) / 1000000)}M`} />
-                        <RechartsTooltip formatter={(value: number) => [formatCurrency(value), "Booking revenue by play date"]} />
+                        <RechartsTooltip formatter={(value: number) => [formatCurrency(value), "Revenue"]} />
                         <Bar dataKey="revenue" fill="var(--chart-2)" radius={[6, 6, 0, 0]} />
                       </BarChart>
                     </ResponsiveContainer>
@@ -1393,18 +1492,15 @@ export function AnalyticsDashboard() {
                         <XAxis dataKey="label" stroke="var(--muted-foreground)" tickLine={false} axisLine={false} />
                         <YAxis yAxisId="left" stroke="var(--muted-foreground)" tickLine={false} axisLine={false} tickFormatter={(value) => `${Math.round(Number(value) / 1000000)}M`} />
                         <YAxis yAxisId="right" orientation="right" stroke="var(--muted-foreground)" tickLine={false} axisLine={false} tickFormatter={(value) => formatCompactNumber(Number(value))} />
-                        <YAxis yAxisId="engagement" orientation="right" hide domain={[0, "auto"]} tickFormatter={(value) => `${Number(value).toFixed(0)}%`} />
                         <RechartsTooltip
                           formatter={(value: number, name: string) => {
-                            if (name === "revenue") return [formatCurrency(value), "Booking revenue by play date"]
+                            if (name === "revenue") return [formatCurrency(value), "Revenue"]
                             if (name === "reach") return [formatCompactNumber(value), "Meta Reach"]
-                            if (name === "engagementRate") return [formatPercent(value), "Meta Engagement Rate"]
                             return [formatCompactNumber(value), "Meta Views"]
                           }}
                         />
                         <Bar yAxisId="left" dataKey="revenue" fill="var(--chart-2)" radius={[6, 6, 0, 0]} />
-                        <Line yAxisId="right" type="monotone" dataKey="reach" stroke="var(--chart-1)" strokeWidth={2.5} dot={false} />
-                        <Line yAxisId="engagement" type="monotone" dataKey="engagementRate" stroke="var(--chart-3)" strokeWidth={2} strokeDasharray="6 4" dot={false} />
+                        <Line yAxisId="right" type="monotone" dataKey="reach" stroke="var(--chart-1)" strokeWidth={2.5} dot={false} /> 
                       </ComposedChart>
                     </ResponsiveContainer>
                   </div>
@@ -1418,7 +1514,7 @@ export function AnalyticsDashboard() {
 
                 <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                   <div className="rounded-xl border border-border bg-secondary/20 p-3">
-                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Booking revenue by play date</p>
+                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Revenue</p>
                     <p className="mt-2 text-lg font-semibold text-slate-900">{formatCurrency(reportData?.summary.totalRevenue || 0)}</p>
                   </div>
                   <div className="rounded-xl border border-border bg-secondary/20 p-3">
@@ -1452,7 +1548,7 @@ export function AnalyticsDashboard() {
 
             <Card className="border-border bg-card shadow-sm">
               <CardHeader>
-                <CardTitle><TitleWithTooltip title="Booking Type Mix" tooltip="Shows how bookings are split between members and guests." /></CardTitle>
+                <CardTitle><TitleWithTooltip title="Booking Type" tooltip="Shows how bookings are split between members and guests." /></CardTitle>
                 <CardDescription>Mix of member vs guest bookings.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -1505,7 +1601,7 @@ export function AnalyticsDashboard() {
 
           <Card className="border-border bg-card shadow-sm">
             <CardHeader>
-              <CardTitle><TitleWithTooltip title="Play-Time Preference Mix" tooltip="Shows which time of day (morning, afternoon, or night) is most popular for bookings." /></CardTitle>
+              <CardTitle><TitleWithTooltip title="Play-Time Distribution" tooltip="Shows which time of day (morning, afternoon, or night) is most popular for bookings." /></CardTitle>
               <CardDescription>{playtimeBehaviorInsight}</CardDescription>
             </CardHeader>
             <CardContent>
@@ -1562,9 +1658,9 @@ export function AnalyticsDashboard() {
                       </div>
                     </div>
                   ))}
-                  {playtimeMlData ? (
+                  {playtimeData ? (
                     <div className="rounded-xl border border-border bg-secondary/20 p-4 text-sm text-muted-foreground">
-                      {playtimeMlData.totalSessions.toLocaleString("en-US")} sessions across {playtimeMlData.totalCustomers.toLocaleString("en-US")} customers{playtimeMlData.clusterCount ? ` across ${playtimeMlData.clusterCount} clusters` : ""} in the latest ML run{playtimeMlData.createdAt ? `, updated ${formatExactDateTime(playtimeMlData.createdAt)} (${getRelativeTime(playtimeMlData.createdAt)})` : ""}.
+                      {playtimeData.totalSessions.toLocaleString("en-US")} sessions across {playtimeData.totalCustomers.toLocaleString("en-US")} customers{playtimeData.clusterCount ? ` across ${playtimeData.clusterCount} clusters` : ""} in the latest ML run{playtimeData.createdAt ? `, updated ${formatExactDateTime(playtimeData.createdAt)} (${getRelativeTime(playtimeData.createdAt)})` : ""}.
                     </div>
                   ) : null}
                 </div>
