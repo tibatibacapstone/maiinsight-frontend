@@ -6,11 +6,8 @@ import {
   BarChart3,
   ChevronDown,
   Clock,
-  Info,
   Loader2,
   Sparkles,
-  TrendingDown,
-  TrendingUp,
   Users,
   Zap,
 } from "lucide-react"
@@ -43,7 +40,14 @@ import { BusinessErrorAlert } from "@/components/business-error-alert"
 import { HeatmapGrid } from "@/components/segment-visualization"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  KpiCard,
+  CardTitleTooltip,
+} from "@/components/ui/card"
 import {
   Tooltip,
   TooltipContent,
@@ -534,34 +538,6 @@ const pieLabelRenderer = ({
     <text x={x} y={y} fill="white" textAnchor="middle" dominantBaseline="central" fontSize={11} fontWeight={600}>
       {`${Math.round(percent * 100)}%`}
     </text>
-  )
-}
-
-function InfoTooltip({ content }: { content: string }) {
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <button
-          type="button"
-          className="inline-flex h-5 w-5 items-center justify-center rounded-full text-muted-foreground transition hover:bg-accent hover:text-foreground"
-          aria-label="More information"
-        >
-          <Info className="h-3.5 w-3.5" />
-        </button>
-      </TooltipTrigger>
-      <TooltipContent side="top" sideOffset={8} className="max-w-xs text-left leading-relaxed">
-        {content}
-      </TooltipContent>
-    </Tooltip>
-  )
-}
-
-function TitleWithTooltip({ title, tooltip }: { title: string; tooltip: string }) {
-  return (
-    <div className="flex items-center gap-2">
-      <span>{title}</span>
-      <InfoTooltip content={tooltip} />
-    </div>
   )
 }
 
@@ -1233,15 +1209,13 @@ export function AnalyticsDashboard() {
             <CardHeader>
               <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                 <div>
-                  <CardTitle className="flex items-center gap-2 text-xl">
-                    <Sparkles className="h-5 w-5 text-primary" />
-                    <span>Business Insight</span>
-                  </CardTitle>
-                  <CardDescription>
-                    {businessInsight?.source === "ai"
-                      ? "AI summary from revenue, bookings, ads reach, and customer groups."
-                      : "Summary from your business metrics."}
-                  </CardDescription>
+                  <CardTitleTooltip
+                    title="Business Insight"
+                    tooltip={businessInsight?.source === "ai"
+                      ? "AI-generated business recommendations based on your data. AI summary from revenue, bookings, ads reach, and customer groups."
+                      : "AI-generated business recommendations based on your data. Summary from your business metrics."}
+                    className="text-xl"
+                  />
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   {isLoadingBusinessInsight ? (
@@ -1328,89 +1302,51 @@ export function AnalyticsDashboard() {
           </Card>
 
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <Card className="border-border bg-card shadow-sm">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-sm font-medium text-muted-foreground">Occupancy Rate</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="flex items-end justify-between">
-                  <div>
-                    <p className="text-3xl font-bold">{overviewKpi ? `${overviewKpi.occupancyRate}%` : "-"}</p>
-                    <p className={`mt-2 flex items-center gap-1 text-xs ${overviewKpi && overviewKpi.occupancyChange < 0 ? "text-destructive" : "text-primary"}`}>
-                      {overviewKpi && overviewKpi.occupancyChange < 0 ? <TrendingDown className="h-3 w-3" /> : <TrendingUp className="h-3 w-3" />}
-                      {overviewKpi ? `${overviewKpi.occupancyChange >= 0 ? "+" : ""}${overviewKpi.occupancyChange}% vs previous period` : "No comparison available"}
-                    </p>
-                  </div>
-                  <Users className="h-6 w-6 text-primary" />
-                </div>
-              </CardContent>
-            </Card>
-            <Card className="border-border bg-card shadow-sm">
-              <CardHeader>
-                <CardTitle className="text-sm font-medium text-muted-foreground">Revenue
-        
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="flex items-end justify-between">
-                  <div>
-                    <p className="text-3xl font-bold">{formatCurrency(reportData?.summary.totalRevenue ?? overviewKpi?.totalRevenue ?? 0)}</p>
-                    <p className={`mt-2 flex items-center gap-1 text-xs ${overviewKpi && overviewKpi.revenueChange < 0 ? "text-destructive" : "text-primary"}`}>
-                      {overviewKpi && overviewKpi.revenueChange < 0 ? <TrendingDown className="h-3 w-3" /> : <TrendingUp className="h-3 w-3" />}
-                      {overviewKpi ? `${overviewKpi.revenueChange >= 0 ? "+" : ""}${overviewKpi.revenueChange}% vs previous period` : "No comparison available"}
-                    </p>
-                  </div>
-                  <BarChart3 className="h-6 w-6 text-primary" />
-                </div>
-              </CardContent>
-            </Card>
-            <Card className="border-border bg-card shadow-sm">
-              <CardHeader className="space-y-3">
-                <div className="flex items-center justify-between gap-3">
-                  <CardTitle className="text-sm font-medium text-muted-foreground">Lowest-Demand Session</CardTitle>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className="flex items-end justify-between">
-                  <div>
-                    <p className="text-xl font-bold">{overviewKpi?.lowSessionLabel || "No data"}</p>
-                    <p className="mt-2 text-xs text-muted-foreground">
-                      {overviewKpi?.lowSessionLabel && overviewKpi?.lowSessionLabel !== "-"
-                        ? "Lowest booking volume among all sessions"
-                        : "Session data will be available after transactions are imported."}
-                    </p>
-                  </div>
-                  <Clock className="h-5 w-5 text-muted-foreground" />
-                </div>
-              </CardContent>
-            </Card>
-            <Card className="border-border bg-card shadow-sm">
-              <CardHeader>
-                <CardTitle className="text-sm font-medium text-muted-foreground">Peak Session Revenue</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="flex items-end justify-between">
-                  <div>
-                    <p className="text-xl font-bold">{overviewKpi?.peakSessionLabel || "-"}</p>
-                    <p className="mt-2 text-xs text-muted-foreground">
-                      {(overviewKpi?.peakSessionRevenue || 0) > 0
-                        ? formatCurrency(overviewKpi?.peakSessionRevenue || 0)
-                        : "No revenue data available"}
-                    </p>
-                  </div>
-                  <Zap className="h-5 w-5 text-primary" />
-                </div>
-              </CardContent>
-            </Card>
+            <KpiCard
+              label="Occupancy Rate"
+              tooltip="Percentage of court hours booked out of total available hours in the selected period."
+              value={overviewKpi ? `${overviewKpi.occupancyRate}%` : "-"}
+              change={overviewKpi?.occupancyChange}
+              icon={Users}
+            />
+            <KpiCard
+              label="Revenue"
+              tooltip="Total booking revenue from transactions in the selected period."
+              value={formatCurrency(reportData?.summary.totalRevenue ?? overviewKpi?.totalRevenue ?? 0)}
+              change={overviewKpi?.revenueChange}
+              icon={BarChart3}
+            />
+            <KpiCard
+              label="Lowest-Demand Session"
+              tooltip="The time slot with the fewest bookings — a candidate for promotional pricing."
+              value={overviewKpi?.lowSessionLabel || "No data"}
+              valueClassName="text-xl"
+              changeLabel={
+                overviewKpi?.lowSessionLabel && overviewKpi?.lowSessionLabel !== "-"
+                  ? "Lowest booking volume among all sessions"
+                  : "Session data will be available after transactions are imported."
+              }
+              icon={Clock}
+              iconClassName="text-muted-foreground"
+            />
+            <KpiCard
+              label="Peak Session Revenue"
+              tooltip="The time slot generating the highest total revenue — your most valuable session."
+              value={overviewKpi?.peakSessionLabel || "-"}
+              valueClassName="text-xl"
+              changeLabel={
+                (overviewKpi?.peakSessionRevenue || 0) > 0
+                  ? formatCurrency(overviewKpi?.peakSessionRevenue || 0)
+                  : "No revenue data available"
+              }
+              icon={Zap}
+            />
           </div>
 
           <div className="grid gap-6 sm:grid-cols-1 lg:grid-cols-2 xl:grid-cols-2">
             <Card className="border-border bg-card shadow-sm">
               <CardHeader>
-                <CardTitle><TitleWithTooltip title="Occupancy Trend" tooltip="Shows how many court hours were booked during the selected period." /></CardTitle>
-                <CardDescription>
-                  {reportData?.insights.occupancyInsight || "Court hours booked in this period."}
-                </CardDescription>
+                <CardTitleTooltip title="Occupancy Trend" tooltip={reportData?.insights.occupancyInsight || "Court hours booked in this period."} />
               </CardHeader>
               <CardContent>
                 <div className="h-[320px]">
@@ -1449,8 +1385,7 @@ export function AnalyticsDashboard() {
 
             <Card className="border-border bg-card shadow-sm">
               <CardHeader>
-                <CardTitle><TitleWithTooltip title="Revenue Trend" tooltip="Shows booking revenue grouped by play date, using the same filters as the overview card." /></CardTitle>
-                <CardDescription>{revenueTrendSubtitle}</CardDescription>
+                <CardTitleTooltip title="Revenue Trend" tooltip={revenueTrendSubtitle} />
               </CardHeader>
               <CardContent>
                 <div className="h-[320px]">
@@ -1480,8 +1415,7 @@ export function AnalyticsDashboard() {
           <div className="grid gap-6 xl:grid-cols-2">
             <Card className="border-border bg-card shadow-sm">
               <CardHeader>
-                <CardTitle><TitleWithTooltip title="Revenue vs Meta Insight" tooltip="Compares booking revenue with Meta reach and engagement rate to see if marketing is working well." /></CardTitle>
-                <CardDescription>Compare booking revenue with Meta reach and engagement rate for this period.</CardDescription>
+                <CardTitleTooltip title="Revenue vs Meta Insight" tooltip="Compares booking revenue with Meta reach and engagement rate for this period." />
               </CardHeader>
               <CardContent className="space-y-4">
                 {metaDashboard?.hasData && revenueMetaComparisonData.length > 0 ? (
@@ -1548,8 +1482,7 @@ export function AnalyticsDashboard() {
 
             <Card className="border-border bg-card shadow-sm">
               <CardHeader>
-                <CardTitle><TitleWithTooltip title="Booking Type" tooltip="Shows how bookings are split between members and guests." /></CardTitle>
-                <CardDescription>Mix of member vs guest bookings.</CardDescription>
+                <CardTitleTooltip title="Booking Type" tooltip="Mix of member vs guest bookings." />
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="h-[280px]">
@@ -1601,8 +1534,7 @@ export function AnalyticsDashboard() {
 
           <Card className="border-border bg-card shadow-sm">
             <CardHeader>
-              <CardTitle><TitleWithTooltip title="Play-Time Distribution" tooltip="Shows which time of day (morning, afternoon, or night) is most popular for bookings." /></CardTitle>
-              <CardDescription>{playtimeBehaviorInsight}</CardDescription>
+              <CardTitleTooltip title="Play-Time Distribution" tooltip={playtimeBehaviorInsight} />
             </CardHeader>
             <CardContent>
               <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">

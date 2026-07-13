@@ -8,8 +8,6 @@ import {
   Info,
   Loader2,
   RefreshCw,
-  TrendingDown,
-  TrendingUp,
   Users,
 } from "lucide-react"
 import {
@@ -33,7 +31,15 @@ import { getApiUrl } from "@/lib/api"
 import { getAuthHeaders } from "@/lib/roles"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  KpiCard,
+  CardTitleTooltip,
+  StateCard,
+} from "@/components/ui/card"
 import {
   Table,
   TableBody,
@@ -187,17 +193,12 @@ const buildSegmentActionContext = (segmentName: string, recommendedAction?: stri
 }
 
 const EmptyState = () => (
-  <Card className="border-border bg-card shadow-sm">
-    <CardContent className="flex min-h-[280px] flex-col items-center justify-center gap-3 text-center">
-      <BrainCircuit className="h-12 w-12 text-muted-foreground" />
-      <div>
-        <p className="font-medium">No customer segmentation result yet.</p>
-        <p className="text-sm text-muted-foreground">
-          Run ML from Data Center to generate customer segments.
-        </p>
-      </div>
-    </CardContent>
-  </Card>
+  <StateCard
+    state="empty"
+    title="No customer segmentation result yet."
+    description="Run ML from Data Center to generate customer segments."
+    icon={BrainCircuit}
+  />
 )
 
 export const HeatmapGrid = ({ heatmapSummary }: { heatmapSummary: HeatmapSummary | null }) => {
@@ -210,10 +211,7 @@ export const HeatmapGrid = ({ heatmapSummary }: { heatmapSummary: HeatmapSummary
     return (
       <Card className="border-border bg-card shadow-sm">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            Empty Slot Heatmap
-          </CardTitle>
-          <CardDescription>No empty slot pattern available yet.</CardDescription>
+          <CardTitleTooltip title="Empty Slot Heatmap" tooltip="No empty slot pattern available yet." />
         </CardHeader>
         <CardContent>
           <div className="rounded-2xl border border-orange-200 bg-gradient-to-br from-orange-50 via-amber-50 to-white p-4 text-sm text-orange-900/80">
@@ -227,22 +225,9 @@ export const HeatmapGrid = ({ heatmapSummary }: { heatmapSummary: HeatmapSummary
   return (
     <Card className="border-border bg-card shadow-sm">
       <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          Empty Slot Heatmap
-          <Tooltip>
-            <TooltipTrigger>
-              <Info className="h-4 w-4 text-muted-foreground" />
-            </TooltipTrigger>
-            <TooltipContent>
-              <p>Orange palette highlights the slowest hours across the month.</p>
-            </TooltipContent>
-          </Tooltip>
-        </CardTitle>
-          <CardDescription>
-            {mostEmptySlot
+        <CardTitleTooltip title="Empty Slot Heatmap" tooltip={mostEmptySlot
               ? `${mostEmptySlot.dayLabel} ${mostEmptySlot.hourLabel} is usually the emptiest slot this month.`
-              : "No empty slot pattern available yet."}
-          </CardDescription>
+              : "No empty slot pattern available yet."} />
       </CardHeader>
       <CardContent>
         <div className="overflow-x-auto">
@@ -542,12 +527,10 @@ export function SegmentVisualization() {
   if (isLoading) {
     return (
       <div className="space-y-6">
-        <Card className="border-border bg-card shadow-sm">
-          <CardContent className="flex min-h-[280px] items-center justify-center gap-3 text-muted-foreground">
-            <Loader2 className="h-5 w-5 animate-spin" />
-            Loading customer segmentation...
-          </CardContent>
-        </Card>
+        <StateCard
+          state="loading"
+          title="Loading customer segmentation..."
+        />
       </div>
     )
   }
@@ -555,19 +538,17 @@ export function SegmentVisualization() {
   if (error) {
     return (
       <div className="space-y-6">
-        <Card className="border-border bg-card shadow-sm">
-          <CardContent className="flex min-h-[280px] flex-col items-center justify-center gap-3 text-center">
-            <AlertCircle className="h-12 w-12 text-destructive" />
-            <div>
-              <p className="font-medium text-destructive">Failed to load customer segmentation.</p>
-              <p className="text-sm text-muted-foreground">{error}</p>
-            </div>
+        <StateCard
+          state="error"
+          title="Failed to load customer segmentation."
+          description={error}
+          action={
             <Button variant="outline" onClick={() => void loadSegmentation()}>
               <RefreshCw className="mr-2 h-4 w-4" />
               Retry
             </Button>
-          </CardContent>
-        </Card>
+          }
+        />
       </div>
     )
   }
@@ -600,113 +581,57 @@ export function SegmentVisualization() {
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <Card className="border-border bg-card shadow-sm">
-            <CardContent className="pt-6">
-              <div className="flex items-start justify-between gap-4">
-                <div className="min-w-0 text-center">
-                  <p className="text-sm font-medium uppercase tracking-[0.12em] text-muted-foreground">
-                    Total Customers
-                  </p>
-                  <p className="mt-4 text-3xl font-semibold text-foreground">
-                    {formatNumber(latestData.totalCustomers, 0)}
-                  </p>
-                  <p className={`mt-2 text-sm font-medium ${totalCustomersChange < 0 ? "text-destructive" : "text-emerald-600"}`}>
-                    {previousTotalCustomers
-                      ? `${formatChange((totalCustomersChange / previousTotalCustomers) * 100)} vs last month`
-                      : "No comparison available"}
-                  </p>
-                </div>
-                <Badge variant="outline" className="rounded-full border-primary/20 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-primary">
-                  Customers
-                </Badge>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="border-border bg-card shadow-sm">
-            <CardContent className="pt-6">
-              <div className="flex items-start justify-between gap-4">
-                <div className="min-w-0 text-center">
-                  <p className="text-sm font-medium uppercase tracking-[0.12em] text-muted-foreground">
-                    Top Segment
-                  </p>
-                  <p className="mt-4 text-3xl font-semibold text-foreground">
-                    {clusters.length > 0 && clusters.reduce((a, b) => (a.customerCount && b.customerCount ? (b.customerCount > a.customerCount ? b : a) : a)).segmentName}
-                  </p>
-                  <p className="mt-2 text-sm text-muted-foreground">
-                    {clusters.length > 0 && latestData?.totalCustomers
-                      ? `${Math.round((clusters.reduce((a, b) => (a.customerCount && b.customerCount ? (b.customerCount > a.customerCount ? b : a) : a)).customerCount || 0) / latestData.totalCustomers * 100)}% of customers`
-                      : "No data available"}
-                  </p>
-                </div>
-                <Badge variant="outline" className="rounded-full border-primary/20 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-primary">
-                  Segment
-                </Badge>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="border-border bg-card shadow-sm">
-            <CardContent className="pt-6">
-              <div className="flex items-start justify-between gap-4">
-                <div className="min-w-0 text-center">
-                  <p className="text-sm font-medium uppercase tracking-[0.12em] text-muted-foreground">
-                    Top 3 Segment Share
-                  </p>
-                  <p className="mt-4 text-3xl font-semibold text-foreground">
-                    {clusters.length > 0 && latestData?.totalCustomers
-                      ? `${Math.round((clusters
-                        .slice(0)
-                        .sort((x, y) => (y.customerCount || 0) - (x.customerCount || 0))
-                        .slice(0, 3)
-                        .reduce((sum, c) => sum + (c.customerCount || 0), 0) / latestData.totalCustomers) * 100)}%`
-                      : "-"}
-                  </p>
-                  <p className="mt-2 text-sm text-muted-foreground">Share of customers in top 3 segments</p>
-                </div>
-                <Badge variant="outline" className="rounded-full border-primary/20 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-primary">
-                  Share
-                </Badge>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="border-border bg-card shadow-sm">
-            <CardContent className="pt-6">
-              <div className="flex items-start justify-between gap-4">
-                <div className="min-w-0 text-center">
-                  <p className="text-sm font-medium uppercase tracking-[0.12em] text-muted-foreground">
-                    Active Segments
-                  </p>
-                  <p className="mt-4 text-3xl font-semibold text-foreground">
-                    {clusters.length}
-                  </p>
-                  <p className="mt-2 text-sm text-muted-foreground">{selectedCluster?.segmentName || "No segment selected"}</p>
-                </div>
-                <Badge variant="outline" className="rounded-full border-primary/20 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-primary">
-                  Active
-                </Badge>
-              </div>
-            </CardContent>
-          </Card>
+          <KpiCard
+            label="Total Customers"
+            tooltip="Total number of unique customers identified from transaction data."
+            value={formatNumber(latestData.totalCustomers, 0)}
+            changeLabel={
+              previousTotalCustomers
+                ? `${formatChange((totalCustomersChange / previousTotalCustomers) * 100)} vs last month`
+                : "No comparison available"
+            }
+            icon={Users}
+            iconClassName={totalCustomersChange < 0 ? "text-destructive" : "text-emerald-600"}
+          />
+          <KpiCard
+            label="Top Segment"
+            tooltip="The customer segment with the largest population from the latest ML clustering run."
+            value={
+              clusters.length > 0
+                ? clusters.reduce((a, b) => (a.customerCount && b.customerCount ? (b.customerCount > a.customerCount ? b : a) : a)).segmentName
+                : "-"
+            }
+            changeLabel={
+              clusters.length > 0 && latestData?.totalCustomers
+                ? `${Math.round((clusters.reduce((a, b) => (a.customerCount && b.customerCount ? (b.customerCount > a.customerCount ? b : a) : a)).customerCount || 0) / latestData.totalCustomers * 100)}% of customers`
+                : "No data available"
+            }
+          />
+          <KpiCard
+            label="Top 3 Segment Share"
+            tooltip="Combined customer share of the three largest segments — indicates concentration."
+            value={
+              clusters.length > 0 && latestData?.totalCustomers
+                ? `${Math.round((clusters
+                    .slice(0)
+                    .sort((x, y) => (y.customerCount || 0) - (x.customerCount || 0))
+                    .slice(0, 3)
+                    .reduce((sum, c) => sum + (c.customerCount || 0), 0) / latestData.totalCustomers) * 100)}%`
+                : "-"
+            }
+            changeLabel="Share of customers in top 3 segments"
+          />
+          <KpiCard
+            label="Active Segments"
+            tooltip="Number of distinct customer segments generated by the latest Machine Learning run."
+            value={clusters.length}
+            changeLabel={selectedCluster?.segmentName || "No segment selected"}
+          />
         </div>
 
         <Card className="border-border bg-card shadow-sm">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              Customer Value Segments
-              <Tooltip>
-                <TooltipTrigger>
-                  <Info className="h-4 w-4 text-muted-foreground" />
-                </TooltipTrigger>
-                <TooltipContent>
-                  <p>
-                    Groups customers by their value to your business. This shows the final results used by the system.
-                  </p>
-                </TooltipContent>
-              </Tooltip>
-            </CardTitle>
-            <CardDescription>{buildBusinessSegmentationMessage(latestData)}</CardDescription>
+            <CardTitleTooltip title="Customer Value Segments" tooltip={buildBusinessSegmentationMessage(latestData)} />
           </CardHeader>
           <CardContent>
             <div className="flex flex-wrap gap-3">
@@ -737,29 +662,11 @@ export function SegmentVisualization() {
               <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                 <div>
                   <div className="flex items-center gap-2">
-                    <CardTitle>
-                      {viewMode === "distribution" && "Segment Distribution"}
-                      {viewMode === "profile" && "Segment Profile Comparison"}
-                      {viewMode === "radar" && "Segment Radar Analysis"}
-                    </CardTitle>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <button className="rounded-full p-1 text-muted-foreground transition hover:bg-slate-100">
-                          <Info className="h-4 w-4" />
-                        </button>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p>
-                          Switch between distribution, profile comparison and radar views to explore segment behavior.
-                        </p>
-                      </TooltipContent>
-                    </Tooltip>
+                    <CardTitleTooltip
+                      title={viewMode === "distribution" ? "Segment Distribution" : viewMode === "profile" ? "Segment Profile Comparison" : "Segment Radar Analysis"}
+                      tooltip={viewMode === "distribution" ? "How customers are split across the main business segments" : viewMode === "profile" ? "Compare booking recency, frequency, and value across segments" : "A compact radar view of the selected segment"}
+                    />
                   </div>
-                  <CardDescription>
-                    {viewMode === "distribution" && "How customers are split across the main business segments"}
-                    {viewMode === "profile" && "Compare booking recency, frequency, and value across segments"}
-                    {viewMode === "radar" && "A compact radar view of the selected segment"}
-                  </CardDescription>
                 </div>
 
                 <div className="flex w-full flex-wrap overflow-hidden rounded-lg border border-border bg-background/80 sm:w-auto">
@@ -832,23 +739,10 @@ export function SegmentVisualization() {
           <Card className="border-border bg-card shadow-sm">
             <CardHeader>
               <div className="flex items-center gap-2">
-                <CardTitle>Segment Details</CardTitle>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button className="rounded-full p-1 text-muted-foreground transition hover:bg-slate-100">
-                      <Info className="h-4 w-4" />
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>Details and recommended actions for the currently selected customer segment.</p>
-                  </TooltipContent>
-                </Tooltip>
-              </div>
-              <CardDescription>
-                {selectedCluster
+                <CardTitleTooltip title="Segment Details" tooltip={selectedCluster
                   ? `${selectedCluster.segmentName} business profile and next action`
-                  : "Select a segment to view details"}
-              </CardDescription>
+                  : "Select a segment to view details"} />
+              </div>
             </CardHeader>
             <CardContent className="space-y-4">
               {selectedCluster ? (
@@ -966,23 +860,10 @@ export function SegmentVisualization() {
             <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
               <div>
                 <div className="flex items-center gap-2">
-                  <CardTitle>Customer Table</CardTitle>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <button className="rounded-full p-1 text-muted-foreground transition hover:bg-slate-100">
-                        <Info className="h-4 w-4" />
-                      </button>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p>Customer rows for the selected segment, filtered for completed bookings and business-ready records.</p>
-                    </TooltipContent>
-                  </Tooltip>
-                </div>
-                <CardDescription>
-                  {selectedSegment
+                  <CardTitleTooltip title="Customer Table" tooltip={selectedSegment
                     ? `Customer rows for ${selectedSegment}`
-                    : "Latest customer rows from the cleaned segmentation result"}
-                </CardDescription>
+                    : "Latest customer rows from the cleaned segmentation result"} />
+                </div>
               </div>
 
               <div className="grid gap-2 sm:grid-cols-3">

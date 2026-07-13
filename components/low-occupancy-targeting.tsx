@@ -24,9 +24,9 @@ import { Button } from "@/components/ui/button"
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
+  CardTitleTooltip,
 } from "@/components/ui/card"
 import {
   Tooltip,
@@ -793,20 +793,7 @@ useEffect(() => {
 
 <Card className="border-border bg-card shadow-sm">
   <CardHeader>
-    <CardTitle className="flex items-center gap-2">
-      <span>Play-Time Preference Mix</span>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <button type="button" className="inline-flex h-5 w-5 items-center justify-center rounded-full text-muted-foreground transition hover:bg-accent hover:text-foreground" aria-label="More information">
-            <Info className="h-3.5 w-3.5" />
-          </button>
-        </TooltipTrigger>
-        <TooltipContent side="top" sideOffset={8} className="max-w-xs text-left leading-relaxed">
-          Shows which time of day is most popular for bookings. Click a bar to see the customer list for that session.
-        </TooltipContent>
-      </Tooltip>
-    </CardTitle>
-    <CardDescription>{playtimeBehaviorInsight}</CardDescription>
+    <CardTitleTooltip title="Play-Time Preference Mix" tooltip={playtimeBehaviorInsight || "Shows which time of day is most popular for bookings to identify promo opportunities"} />
   </CardHeader>
   <CardContent>
     
@@ -986,13 +973,7 @@ useEffect(() => {
 
 <Card>
   <CardHeader>
-    <CardTitle className="flex items-center gap-2 text-xl">
-      <Target className="h-5 w-5 text-primary" />
-      Campaign Targeting
-    </CardTitle>
-          <CardDescription>
-            Choose the historical demand lens, then narrow the audience most worth targeting.
-          </CardDescription>
+    <CardTitleTooltip title="Campaign Targeting" tooltip="Configure campaign parameters to find the best customers for low-occupancy sessions. Choose the historical demand lens, then narrow the audience most worth targeting." className="text-xl" />
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -1160,10 +1141,7 @@ useEffect(() => {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-xl">Historically Low-Demand Sessions</CardTitle>
-          <CardDescription>
-            Use these session buckets as promo opportunities for the selected campaign date, then click a card to target the matching audience.
-          </CardDescription>
+          <CardTitleTooltip title="Historically Low-Demand Sessions" tooltip="Session buckets with the lowest historical demand, useful as promo opportunities. Use these session buckets as promo opportunities for the selected campaign date, then click a card to target the matching audience." className="text-xl" />
         </CardHeader>
         <CardContent>
           {sessionError ? (
@@ -1240,10 +1218,7 @@ useEffect(() => {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-xl">Recommended Customers</CardTitle>
-          <CardDescription>
-            Customers whose historical behavior best matches the selected session and campaign filters.
-          </CardDescription>
+          <CardTitleTooltip title="Recommended Customers" tooltip="Customers whose historical behavior best matches the selected session and campaign filters." className="text-xl" />
         </CardHeader>
         <CardContent>
           {customerError ? (

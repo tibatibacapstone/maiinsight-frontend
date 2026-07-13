@@ -7,7 +7,7 @@ import {
   type ChangeEvent,
   type DragEvent,
 } from "react"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardTitleTooltip, StateCard } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
@@ -1316,14 +1316,12 @@ const response = await fetch(getApiUrl(`/imports/batches/${batchId}/rows`), {
 if (!canAccessDataCenter) {
   return (
     <div className="flex min-h-[60vh] items-center justify-center">
-      <Card className="max-w-md border-border bg-card shadow-sm">
-        <CardHeader>
-          <CardTitle>Access Denied</CardTitle>
-          <CardDescription>
-            You do not have permission to access Data Center.
-          </CardDescription>
-        </CardHeader>
-      </Card>
+      <StateCard
+        state="access-denied"
+        title="Access Denied"
+        description="You do not have permission to access Data Center."
+        className="max-w-md"
+      />
     </div>
   )
 }
@@ -1665,17 +1663,7 @@ if (!canAccessDataCenter) {
 )}
         <Card className="border-border bg-card shadow-sm">
           <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2 text-sm">
-              Format File to Upload
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Info className="h-4 w-4 cursor-help text-muted-foreground" />
-                </TooltipTrigger>
-                <TooltipContent>
-                  <p>Preview the upload structure before using a real transaction file.</p>
-                </TooltipContent>
-              </Tooltip>
-            </CardTitle>
+            <CardTitleTooltip title="Format File to Upload" tooltip="Preview the upload structure before using a real transaction file" className="text-sm" />
           </CardHeader>
           <CardContent className="pt-0">
             <div className="flex items-center justify-between gap-4 rounded-lg border bg-background px-4 py-3">
@@ -1705,17 +1693,7 @@ if (!canAccessDataCenter) {
 
         <Card className="border-border bg-card shadow-sm">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              Sync Jobs
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Info className="h-4 w-4 cursor-help text-muted-foreground" />
-                </TooltipTrigger>
-                <TooltipContent>
-                  <p>Track the status of data synchronization tasks</p>
-                </TooltipContent>
-              </Tooltip>
-            </CardTitle>
+            <CardTitleTooltip title="Sync Jobs" tooltip="Monitor data import and synchronization progress" />
             <CardDescription>
               Monitor data import and synchronization progress
             </CardDescription>

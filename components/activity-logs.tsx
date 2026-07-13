@@ -18,7 +18,7 @@ import {
 import { BusinessErrorAlert } from "@/components/business-error-alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle, CardTitleTooltip } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { getApiUrl } from "@/lib/api"
 import { getAuthHeaders } from "@/lib/roles"
@@ -242,10 +242,7 @@ useEffect(() => {
 
       <Card className="bg-card border-border shadow-sm">
         <CardHeader>
-          <CardTitle>Recent Activity</CardTitle>
-          <CardDescription>
-            Showing {filteredActivities.length} of {activities.length} activity item(s)
-          </CardDescription>
+          <CardTitleTooltip title="Recent Activity" tooltip={`Chronological list of user actions, system events, and configuration changes. Showing ${filteredActivities.length} of ${activities.length} activity item(s)`} />
         </CardHeader>
         <CardContent>
           {isLoading ? (

@@ -22,7 +22,7 @@ import { BusinessErrorAlert } from "@/components/business-error-alert"
 import { HeatmapGrid } from "@/components/segment-visualization" // ⬅️ NEW: reused for Empty Slot Heatmap
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle, CardTitleTooltip, KpiCard, StateCard } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { getApiUrl } from "@/lib/api"
 import { getAuthHeaders } from "@/lib/roles"
@@ -35,20 +35,18 @@ import {
 import {
   AlertTriangle,
   ArrowRight,
-  BarChart3, // ⬅️ NEW
+  BarChart3,
   Calendar,
   CheckCircle2,
-  Clock, // ⬅️ NEW
+  Clock,
   Download,
   FileText,
   Loader2,
   Sparkles,
   Target,
-  TrendingDown, // ⬅️ NEW
-  TrendingUp,
   Users,
   Wallet,
-  Zap, // ⬅️ NEW
+  Zap,
   ChevronDown,
 } from "lucide-react"
 import {
@@ -525,7 +523,7 @@ const overviewParams = new URLSearchParams({
         { label: "Revenue", value: formatCurrency(report.summary.totalRevenue), icon: Wallet, tone: "emerald" as const },
         { label: "Bookings", value: report.summary.totalBookings.toLocaleString("en-US"), icon: Users, tone: "sky" as const },
         { label: "Occupancy", value: `${report.summary.occupancyRate}%`, icon: Target, tone: "amber" as const },
-        { label: "Avg Value", value: formatCurrency(report.summary.avgRevenuePerBooking), icon: TrendingUp, tone: "rose" as const },
+        { label: "Avg Value", value: formatCurrency(report.summary.avgRevenuePerBooking), icon: Wallet, tone: "rose" as const },
       ]
     : []
 
@@ -582,7 +580,7 @@ const overviewParams = new URLSearchParams({
         previous: formatCurrency(report.comparison.avgRevenuePerBooking.previous),
         change: formatPercent(report.comparison.avgRevenuePerBooking.changePct),
         tone: "rose" as const,
-        icon: TrendingUp,
+        icon: Wallet,
       },
     ]
   })()
@@ -886,11 +884,7 @@ const overviewParams = new URLSearchParams({
             <div className="grid gap-6 lg:grid-cols-2">
             <Card className="border-border bg-card shadow-sm">
               <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Sparkles className="h-4 w-4 text-primary" />
-                  Executive Summary
-                </CardTitle>
-                <CardDescription>Presentation-ready summary for management review</CardDescription>
+                <CardTitleTooltip title="Executive Summary" tooltip="AI-generated overview combining occupancy, revenue, and segmentation insights for the selected period. Presentation-ready summary for management review" />
               </CardHeader>
               <CardContent className="space-y-3 text-sm text-muted-foreground">
                 <div className="rounded-2xl border border-border bg-gradient-to-br from-background to-secondary/20 p-4 text-foreground shadow-sm">
@@ -915,11 +909,7 @@ const overviewParams = new URLSearchParams({
 
             <Card className="border-border bg-card shadow-sm">
               <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <CheckCircle2 className="h-4 w-4 text-primary" />
-                  Recommendations / Notes
-                </CardTitle>
-                <CardDescription>Business-friendly follow-up suggestions based on the selected period</CardDescription>
+                <CardTitleTooltip title="Recommendations / Notes" tooltip="Actionable follow-up suggestions derived from the period's data analysis. Business-friendly follow-up suggestions based on the selected period" />
               </CardHeader>
               <CardContent className="space-y-3 text-sm text-muted-foreground">
                 {report.insights.recommendations.map((recommendation) => (
@@ -1092,87 +1082,46 @@ const overviewParams = new URLSearchParams({
         <>
           {/* ⬅️ NEW: on-screen KPI cards (mirrors Overview) */}
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <Card className="border-border bg-card shadow-sm">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-sm font-medium text-muted-foreground">Occupancy Rate</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="flex items-end justify-between">
-                  <div>
-                    <p className="text-3xl font-bold">{overviewKpi ? `${overviewKpi.occupancyRate}%` : `${report.summary.occupancyRate}%`}</p>
-                    {overviewKpi ? (
-                      <p className={`mt-2 flex items-center gap-1 text-xs ${overviewKpi.occupancyChange < 0 ? "text-destructive" : "text-primary"}`}>
-                        {overviewKpi.occupancyChange < 0 ? <TrendingDown className="h-3 w-3" /> : <TrendingUp className="h-3 w-3" />}
-                        {`${overviewKpi.occupancyChange >= 0 ? "+" : ""}${overviewKpi.occupancyChange}% vs previous period`}
-                      </p>
-                    ) : (
-                      <p className="mt-2 text-xs text-muted-foreground">No comparison available</p>
-                    )}
-                  </div>
-                  <Users className="h-6 w-6 text-primary" />
-                </div>
-              </CardContent>
-            </Card>
-            <Card className="border-border bg-card shadow-sm">
-              <CardHeader>
-                <CardTitle className="text-sm font-medium text-muted-foreground">Revenue by Play Date</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="flex items-end justify-between">
-                  <div>
-                    <p className="text-3xl font-bold">{formatCurrency(overviewKpi?.totalRevenue ?? report.summary.totalRevenue)}</p>
-                    {overviewKpi ? (
-                      <p className={`mt-2 flex items-center gap-1 text-xs ${overviewKpi.revenueChange < 0 ? "text-destructive" : "text-primary"}`}>
-                        {overviewKpi.revenueChange < 0 ? <TrendingDown className="h-3 w-3" /> : <TrendingUp className="h-3 w-3" />}
-                        {`${overviewKpi.revenueChange >= 0 ? "+" : ""}${overviewKpi.revenueChange}% vs previous period`}
-                      </p>
-                    ) : (
-                      <p className="mt-2 text-xs text-muted-foreground">No comparison available</p>
-                    )}
-                  </div>
-                  <BarChart3 className="h-6 w-6 text-primary" />
-                </div>
-              </CardContent>
-            </Card>
-            <Card className="border-border bg-card shadow-sm">
-              <CardHeader>
-                <CardTitle className="text-sm font-medium text-muted-foreground">Lowest-Demand Session</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="flex items-end justify-between">
-                  <div>
-                    <p className="text-xl font-bold">{overviewKpi?.lowSessionLabel || "No data"}</p>
-                    <p className="mt-2 text-xs text-muted-foreground">Lowest booking volume among all sessions</p>
-                  </div>
-                  <Clock className="h-5 w-5 text-muted-foreground" />
-                </div>
-              </CardContent>
-            </Card>
-            <Card className="border-border bg-card shadow-sm">
-              <CardHeader>
-                <CardTitle className="text-sm font-medium text-muted-foreground">Peak Session Revenue</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="flex items-end justify-between">
-                  <div>
-                    <p className="text-xl font-bold">{overviewKpi?.peakSessionLabel || "-"}</p>
-                    <p className="mt-2 text-xs text-muted-foreground">
-                      {(overviewKpi?.peakSessionRevenue || 0) > 0 ? formatCurrency(overviewKpi?.peakSessionRevenue || 0) : "No revenue data available"}
-                    </p>
-                  </div>
-                  <Zap className="h-5 w-5 text-primary" />
-                </div>
-              </CardContent>
-            </Card>
+            <KpiCard
+              label="Occupancy Rate"
+              tooltip="Percentage of court hours booked out of total available hours in the selected period."
+              value={overviewKpi ? `${overviewKpi.occupancyRate}%` : `${report.summary.occupancyRate}%`}
+              change={overviewKpi?.occupancyChange}
+              icon={Users}
+            />
+            <KpiCard
+              label="Revenue by Play Date"
+              tooltip="Total booking revenue from transactions grouped by play date in the selected period."
+              value={formatCurrency(overviewKpi?.totalRevenue ?? report.summary.totalRevenue)}
+              change={overviewKpi?.revenueChange}
+              icon={BarChart3}
+            />
+            <KpiCard
+              label="Lowest-Demand Session"
+              tooltip="The time slot with the fewest bookings — a candidate for promotional pricing."
+              value={overviewKpi?.lowSessionLabel || "No data"}
+              valueClassName="text-xl"
+              changeLabel="Lowest booking volume among all sessions"
+              icon={Clock}
+              iconClassName="text-muted-foreground"
+            />
+            <KpiCard
+              label="Peak Session Revenue"
+              tooltip="The time slot generating the highest total revenue — your most valuable session."
+              value={overviewKpi?.peakSessionLabel || "-"}
+              valueClassName="text-xl"
+              changeLabel={
+                (overviewKpi?.peakSessionRevenue || 0) > 0
+                  ? formatCurrency(overviewKpi?.peakSessionRevenue || 0)
+                  : "No revenue data available"
+              }
+              icon={Zap}
+            />
           </div>
 
           <Card className="border-border bg-gradient-to-br from-emerald-50 via-background to-sky-50 shadow-sm">
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Sparkles className="h-4 w-4 text-primary" />
-                Meta Signal
-              </CardTitle>
-              <CardDescription>Reach and audience profile from synced Meta data</CardDescription>
+              <CardTitleTooltip title="Meta Signal" tooltip="Reach and audience demographics pulled from synced Meta advertising data. Reach and audience profile from synced Meta data" />
             </CardHeader>
             <CardContent className="space-y-3 text-sm text-muted-foreground">
               {metaInsightSummary ? (
@@ -1193,8 +1142,7 @@ const overviewParams = new URLSearchParams({
           <div className="grid gap-6 lg:grid-cols-2">
             <Card className="border-border bg-card shadow-sm">
               <CardHeader>
-                <CardTitle>Revenue Trend</CardTitle>
-                <CardDescription>Revenue progression across the selected reporting period</CardDescription>
+                <CardTitleTooltip title="Revenue Trend" tooltip="Shows booking revenue grouped by play date over time. Revenue progression across the selected reporting period" />
               </CardHeader>
               <CardContent>
                 <div className="h-[320px]">
@@ -1220,8 +1168,7 @@ const overviewParams = new URLSearchParams({
             {/* ⬅️ NEW: Occupancy Trend (on-screen, ResponsiveContainer since it's always visible) */}
             <Card className="border-border bg-card shadow-sm">
               <CardHeader>
-                <CardTitle>Occupancy Trend</CardTitle>
-                <CardDescription>Court hours booked across the selected reporting period</CardDescription>
+                <CardTitleTooltip title="Occupancy Trend" tooltip="Shows how court occupancy rates changed over the selected period. Court hours booked across the selected reporting period" />
               </CardHeader>
               <CardContent>
                 <div className="h-[320px]">
@@ -1254,8 +1201,7 @@ const overviewParams = new URLSearchParams({
           <div className="grid gap-6 lg:grid-cols-2">
             <Card className="border-border bg-card shadow-sm">
               <CardHeader>
-                <CardTitle>Booking Mix</CardTitle>
-                <CardDescription>Booking type distribution for the selected reporting period</CardDescription>
+                <CardTitleTooltip title="Booking Mix" tooltip="Shows the distribution of bookings between members and non-members. Booking type distribution for the selected reporting period" />
               </CardHeader>
               <CardContent>
                 <div className="h-[320px]">
@@ -1276,8 +1222,7 @@ const overviewParams = new URLSearchParams({
             {/* ⬅️ NEW: Play-Time Preference Mix (on-screen) */}
             <Card className="border-border bg-card shadow-sm">
               <CardHeader>
-                <CardTitle>Play-Time Preference Mix</CardTitle>
-                <CardDescription>{playtimeBehaviorInsight}</CardDescription>
+                <CardTitleTooltip title="Play-Time Preference Mix" tooltip={`Shows which time of day is most popular for bookings. ${playtimeBehaviorInsight}`} />
               </CardHeader>
               <CardContent>
                 <div className="h-[320px]">
@@ -1311,12 +1256,7 @@ const overviewParams = new URLSearchParams({
           {/* ⬅️ NEW: Customer Value Segments (on-screen) */}
           <Card className="border-border bg-card shadow-sm">
             <CardHeader>
-              <CardTitle>Customer Value Segments</CardTitle>
-              <CardDescription>
-                {segmentChartTotal > 0
-                  ? `${segmentChartTotal.toLocaleString("en-US")} customers across ${segmentChart.length} segments`
-                  : "No segmentation result yet. Run Machine Learning from Data Center to generate customer segments."}
-              </CardDescription>
+              <CardTitleTooltip title="Customer Value Segments" tooltip={`Groups customers by their booking frequency, recency, and spending patterns. ${segmentChartTotal > 0 ? `${segmentChartTotal.toLocaleString("en-US")} customers across ${segmentChart.length} segments` : "No segmentation result yet. Run Machine Learning from Data Center to generate customer segments."}`} />
             </CardHeader>
             <CardContent>
               <div className="h-[280px]">

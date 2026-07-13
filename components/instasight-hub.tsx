@@ -34,7 +34,7 @@ import {
 import { BusinessErrorAlert } from "@/components/business-error-alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardTitleTooltip, StateCard } from "@/components/ui/card"
 import { getApiUrl } from "@/lib/api"
 import { getAuthHeaders, getStoredRole, USER_ROLES } from "@/lib/roles"
 
@@ -58,6 +58,7 @@ interface MetaStatusResponse {
     } | null
     setupMessage: string | null
     suggestion: string | null
+    connectionError: string | null
   }
 }
 
@@ -420,9 +421,14 @@ if (contentLabelFilter && contentLabelFilter !== "all") {
 
     if (!dashboardResponse.ok || !dashboardResult?.success || !dashboardResult.data) {
       setDashboard(null)
+      const isMetaConfigured = statusResult?.data?.configured
       setError({
         message: dashboardResult?.message || "InstaSight data could not be loaded.",
-        suggestion: dashboardResult?.suggestion || "Please check the Meta connection and try again.",
+        suggestion: dashboardResult?.suggestion || (
+          isMetaConfigured
+            ? "The Meta API credentials are configured but data could not be loaded. Please try syncing again or contact IT Support."
+            : "Please check the Meta connection and try again."
+        ),
       })
       return
     }
@@ -466,21 +472,31 @@ const response = await fetch(getApiUrl("/meta/sync"), {
 
       const result = await response.json().catch(() => null)
       if (!response.ok || !result?.success) {
+        const isMetaConfigured = status?.configured
         setError({
           message: result?.message || "InstaSight could not sync Meta data.",
-          suggestion: result?.suggestion || "Please check the Meta connection and try again.",
+          suggestion: result?.suggestion || (
+            isMetaConfigured
+              ? "The Meta API returned an error. Please verify the access token is valid and not expired, then try again."
+              : "Please check the Meta connection and try again."
+          ),
           technical: result?.technicalMessage || null,
         })
+        await loadMetaDashboard()
         return
       }
 
       await loadMetaDashboard()
     } catch (syncError) {
+      const isMetaConfigured = status?.configured
       setError({
         message: "InstaSight could not sync Meta data.",
-        suggestion: "Please check the Meta connection and try again.",
+        suggestion: isMetaConfigured
+          ? "An unexpected error occurred while syncing. The Meta API access token may be invalid or expired. Please try again."
+          : "Please check the Meta connection and try again.",
         technical: syncError instanceof Error ? syncError.message : null,
       })
+      await loadMetaDashboard()
     } finally {
       setIsSyncing(false)
     }
@@ -666,7 +682,23 @@ return (
     </div>
   </CardContent>
 </Card>
-      {error ? (
+      {isLoading ? (
+        <StateCard state="loading" title="Loading InstaSight data..." minHeight="min-h-[240px]" />
+      ) : !status?.configured ? (
+        <StateCard
+          state="warning"
+          title="Meta API is not connected yet."
+          description={status?.suggestion || "Please ask IT Support to configure Meta credentials in Settings or environment variables."}
+          minHeight="min-h-[220px]"
+        />
+      ) : status?.connectionState === "error" && status?.connectionError ? (
+        <StateCard
+          state="error"
+          title="Meta connection error"
+          description={status.connectionError}
+          minHeight="min-h-[220px]"
+        />
+      ) : error ? (
         <BusinessErrorAlert
           title="InstaSight"
           message={error.message}
@@ -674,32 +706,24 @@ return (
           technicalDetails={error.technical}
           showTechnicalDetails={canViewTechnicalDetails}
         />
-      ) : null}
-
-      {isLoading ? (
-        <Card className="border-border bg-card shadow-sm">
-          <CardContent className="flex min-h-[240px] items-center justify-center gap-2 text-sm text-muted-foreground">
-            <Loader2 className="h-4 w-4 animate-spin" />
-            Loading InstaSight data...
-          </CardContent>
-        </Card>
-      ) : !status?.configured ? (
-        <Card className="border-amber-200 bg-amber-50/70 shadow-sm">
-          <CardContent className="flex min-h-[220px] flex-col items-center justify-center gap-3 text-center">
-            <AlertTriangle className="h-10 w-10 text-amber-600" />
-            <div>
-              <p className="font-medium">Meta API is not connected yet.</p>
-              <p className="text-sm text-muted-foreground">{status?.suggestion || "Please ask IT Support to configure Meta credentials in Settings or environment variables."}</p>
-            </div>
-          </CardContent>
-        </Card>
       ) : !hasRealData ? (
         <Card className="border-border bg-card shadow-sm">
           <CardHeader>
-            <CardTitle>InstaSight Ready to Sync</CardTitle>
-            <CardDescription>Meta is connected, but no Instagram data yet.</CardDescription>
+            <CardTitleTooltip
+              title="InstaSight Ready to Sync"
+              tooltip={
+                status?.connectionState === "connected"
+                  ? "Meta is connected, but no Instagram data yet."
+                  : status?.connectionState === "error"
+                    ? "Meta credentials are configured but the connection has issues."
+                    : "Meta is connected, but no Instagram data yet."
+              }
+            />
           </CardHeader>
           <CardContent className="space-y-3 text-sm text-muted-foreground">
+            {status?.connectionState === "error" && status?.connectionError ? (
+              <p className="text-red-600">{status.connectionError}</p>
+            ) : null}
             <p>Use <span className="font-medium text-foreground">Sync Meta Data</span> to get the latest Instagram performance data.</p>
             <p>Last sync status: <span className="font-medium text-foreground">{status?.latestSync?.status || "Not synced"}</span></p>
           </CardContent>
@@ -712,12 +736,7 @@ return (
 
   <Card className="border-border bg-card shadow-sm">
   <CardHeader>
-    <CardTitle className="text-sm font-medium text-muted-foreground">
-      Total Content
-    </CardTitle>
-    <CardDescription>
-      Synced Instagram content analyzed
-    </CardDescription>
+    <CardTitleTooltip title="Total Content" tooltip="Synced Instagram content analyzed" className="text-sm font-medium text-muted-foreground" />
   </CardHeader>
 
   <CardContent className="space-y-3">
@@ -771,12 +790,7 @@ return (
 
   <Card className="border-border bg-card shadow-sm">
   <CardHeader>
-    <CardTitle className="text-sm font-medium text-muted-foreground">
-      Total Followers
-    </CardTitle>
-    <CardDescription>
-      Followers and unfollows from Meta
-    </CardDescription>
+    <CardTitleTooltip title="Total Followers" tooltip="Followers and unfollows from Meta" className="text-sm font-medium text-muted-foreground" />
   </CardHeader>
 
   <CardContent className="space-y-3">
@@ -834,12 +848,7 @@ return (
 
   <Card className="border-border bg-card shadow-sm">
   <CardHeader>
-    <CardTitle className="text-sm font-medium text-muted-foreground">
-      Total Views
-    </CardTitle>
-    <CardDescription>
-      Views breakdown from Meta
-    </CardDescription>
+    <CardTitleTooltip title="Total Views" tooltip="Views breakdown from Meta" className="text-sm font-medium text-muted-foreground" />
   </CardHeader>
 
   <CardContent className="space-y-3">
@@ -897,12 +906,7 @@ return (
 
   <Card className="border-border bg-card shadow-sm">
   <CardHeader>
-    <CardTitle className="text-sm font-medium text-muted-foreground">
-      Total Reach
-    </CardTitle>
-    <CardDescription>
-      Reach breakdown from Meta
-    </CardDescription>
+    <CardTitleTooltip title="Total Reach" tooltip="Reach breakdown from Meta" className="text-sm font-medium text-muted-foreground" />
   </CardHeader>
 
   <CardContent className="space-y-3">
@@ -959,12 +963,7 @@ return (
 </Card>
 <Card className="border-border bg-card shadow-sm">
   <CardHeader>
-    <CardTitle className="text-sm font-medium text-muted-foreground">
-      Interactions
-    </CardTitle>
-    <CardDescription>
-      Total interaction breakdown from Meta
-    </CardDescription>
+    <CardTitleTooltip title="Interactions" tooltip="Total interaction breakdown from Meta" className="text-sm font-medium text-muted-foreground" />
   </CardHeader>
 
   <CardContent className="space-y-3">
@@ -983,12 +982,7 @@ return (
 
 <Card className="border-border bg-card shadow-sm">
   <CardHeader>
-    <CardTitle className="text-sm font-medium text-muted-foreground">
-      Profile Views
-    </CardTitle>
-    <CardDescription>
-      Visits to Instagram profile
-    </CardDescription>
+    <CardTitleTooltip title="Profile Views" tooltip="Visits to Instagram profile" className="text-sm font-medium text-muted-foreground" />
   </CardHeader>
 
   <CardContent>
@@ -1007,12 +1001,7 @@ return (
   
  <Card className="border-border bg-card shadow-sm">
   <CardHeader>
-    <CardTitle className="text-sm font-medium text-muted-foreground">
-      Engagement Rate
-    </CardTitle>
-    <CardDescription>
-      Interaction rate based on synced reach
-    </CardDescription>
+    <CardTitleTooltip title="Engagement Rate" tooltip="Interaction rate based on synced reach" className="text-sm font-medium text-muted-foreground" />
   </CardHeader>
 
   <CardContent>
@@ -1030,12 +1019,7 @@ return (
 
   <Card className="border-border bg-card shadow-sm">
   <CardHeader>
-    <CardTitle className="text-sm font-medium text-muted-foreground">
-      Conversion Rate
-    </CardTitle>
-    <CardDescription>
-      Profile views divided by reach
-    </CardDescription>
+    <CardTitleTooltip title="Conversion Rate" tooltip="Profile views divided by reach" className="text-sm font-medium text-muted-foreground" />
   </CardHeader>
 
   <CardContent>
@@ -1057,8 +1041,7 @@ return (
           <div className="grid gap-6 xl:grid-cols-2">
             <Card className="border-border bg-card shadow-sm">
               <CardHeader>
-                <CardTitle>Meta Metrics Trend</CardTitle>
-                <CardDescription>Reach, views, and interactions from synced Meta insight data.</CardDescription>
+                <CardTitleTooltip title="Meta Metrics Trend" tooltip="Reach, views, and interactions from synced Meta insight data." />
               </CardHeader>
               <CardContent>
                 <div className="h-[300px]">
@@ -1091,8 +1074,7 @@ return (
 
             <Card className="border-border bg-card shadow-sm">
               <CardHeader>
-                <CardTitle>Top Content by Views</CardTitle>
-                <CardDescription>Content ranking from the latest Meta sync.</CardDescription>
+                <CardTitleTooltip title="Top Content by Views" tooltip="Content ranking from the latest Meta sync." />
               </CardHeader>
               <CardContent>
                 <div className="h-[300px]">
@@ -1113,8 +1095,7 @@ return (
           <div className="grid gap-6 xl:grid-cols-2">
             <Card className="border-border bg-card shadow-sm">
               <CardHeader>
-                <CardTitle>Content Mix by Format</CardTitle>
-                <CardDescription>Which Instagram format is carrying views and interactions.</CardDescription>
+                <CardTitleTooltip title="Content Mix by Format" tooltip="Which Instagram format is carrying views and interactions." />
               </CardHeader>
               <CardContent>
                 <div className="h-[300px]">
@@ -1135,8 +1116,7 @@ return (
 
             <Card className="border-border bg-card shadow-sm">
               <CardHeader>
-                <CardTitle>Marketing Signals</CardTitle>
-                <CardDescription>Quick reads that normally require checking Meta graphs manually.</CardDescription>
+                <CardTitleTooltip title="Marketing Signals" tooltip="Quick reads that normally require checking Meta graphs manually." />
               </CardHeader>
               <CardContent className="space-y-4 text-sm">
                 <div className="flex items-center justify-between border-b pb-3">
@@ -1167,10 +1147,7 @@ return (
   <CardHeader>
   <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
     <div>
-      <CardTitle>Instagram Content Performance</CardTitle>
-      <CardDescription>
-        Real content performance from Meta API. Revenue and offline conversion are intentionally not shown until a connected source is available.
-      </CardDescription>
+      <CardTitleTooltip title="Instagram Content Performance" tooltip="Real content performance from Meta API. Revenue and offline conversion are intentionally not shown until a connected source is available." />
     </div>
 
     <div className="flex flex-col gap-2 sm:flex-row sm:items-center">

@@ -22,7 +22,7 @@ import {
 import { BusinessErrorAlert } from "@/components/business-error-alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle, CardTitleTooltip, StateCard } from "@/components/ui/card"
 import {
   Dialog,
   DialogContent,
@@ -406,15 +406,12 @@ export function GenAIWorkspace({ userRole: userRoleFromProps }: GenAIWorkspacePr
   if (!canViewPage) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center">
-        <Card className="max-w-md border-red-200 bg-red-50">
-          <CardContent className="p-8 text-center">
-            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-red-100">
-              <ShieldAlert className="h-6 w-6 text-red-600" />
-            </div>
-            <h2 className="mb-2 text-xl font-bold text-red-700">Access Denied</h2>
-            <p className="text-sm text-red-600">GenAI Workspace is available to Marketing Operational and IT Support only.</p>
-          </CardContent>
-        </Card>
+        <StateCard
+          state="access-denied"
+          title="Access Denied"
+          description="GenAI Workspace is available to Marketing Operational and IT Support only."
+          className="max-w-md"
+        />
       </div>
     )
   }
@@ -469,23 +466,13 @@ export function GenAIWorkspace({ userRole: userRoleFromProps }: GenAIWorkspacePr
       ) : null}
 
       {isLoadingStatus ? (
-        <Card className="border-border bg-card shadow-sm">
-          <CardContent className="flex min-h-[180px] items-center justify-center gap-2 text-sm text-muted-foreground">
-            <Loader2 className="h-4 w-4 animate-spin" />
-            Loading AI assistant status...
-          </CardContent>
-        </Card>
+        <StateCard state="loading" title="Loading AI assistant status..." minHeight="min-h-[180px]" />
       ) : !aiStatus?.configured ? (
-        <Card className="border-amber-200 bg-amber-50/70 shadow-sm">
-          <CardHeader>
-            <CardTitle>Setup Required</CardTitle>
-            <CardDescription>{aiStatus?.providerLabel || "AI provider"} is not connected for MaiinSight strategy generation yet.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm text-slate-700">
-            <p>{aiStatus?.setupMessage || "AI strategy generation is not configured yet."}</p>
-            <p className="text-muted-foreground">{aiStatus?.suggestion || "Please ask IT Support to configure AI provider credentials in the environment settings."}</p>
-          </CardContent>
-        </Card>
+        <StateCard
+          state="warning"
+          title="Setup Required"
+          description={`${aiStatus?.providerLabel || "AI provider"} is not connected for MaiinSight strategy generation yet.`}
+        />
       ) : (
         <>
           <Card className="border-border bg-card shadow-sm">
@@ -518,8 +505,7 @@ export function GenAIWorkspace({ userRole: userRoleFromProps }: GenAIWorkspacePr
           {outreachContext ? (
             <Card className="border-sky-200 bg-sky-50/70 shadow-sm">
               <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-base"><MessageSquare className="h-4 w-4 text-sky-600" /> Low Occupancy Outreach Context</CardTitle>
-                <CardDescription>Context passed from Fill Empty Sessions for outreach-focused AI strategy generation.</CardDescription>
+                <CardTitleTooltip title="Low Occupancy Outreach Context" tooltip="Context passed from Fill Empty Sessions for outreach-focused AI strategy generation." className="text-base" />
               </CardHeader>
               <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                 <div className="rounded-xl border border-white/80 bg-white/90 p-4 text-sm">
@@ -547,10 +533,7 @@ export function GenAIWorkspace({ userRole: userRoleFromProps }: GenAIWorkspacePr
           ) : null}
           <Card className="border-border bg-card shadow-sm">
   <CardHeader>
-    <CardTitle>Strategy Configuration</CardTitle>
-    <CardDescription>
-      Choose campaign parameters to generate a structured business recommendation.
-    </CardDescription>
+    <CardTitleTooltip title="Strategy Configuration" tooltip="Choose campaign parameters to generate a structured business recommendation." />
   </CardHeader>
 
   <CardContent className="space-y-5">
@@ -723,24 +706,18 @@ export function GenAIWorkspace({ userRole: userRoleFromProps }: GenAIWorkspacePr
 </Card>
 
           {!strategy ? (
-            <Card className="border-border bg-card shadow-sm">
-              <CardContent className="flex min-h-[220px] flex-col items-center justify-center gap-3 text-center text-muted-foreground">
-                <Sparkles className="h-10 w-10" />
-                <div>
-                  <p className="font-medium text-foreground">No AI strategy generated yet.</p>
-                  <p className="text-sm">Generate a strategy to populate campaign objective, offer, channel, outreach copy, and follow-up actions.</p>
-                </div>
-              </CardContent>
-            </Card>
+            <StateCard
+              state="empty"
+              title="No AI strategy generated yet."
+              description="Generate a strategy to populate campaign objective, offer, channel, outreach copy, and follow-up actions."
+              icon={Sparkles}
+            />
           ) : (
             <Card className="border-border bg-card shadow-sm">
               <CardHeader>
                 <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
                   <div>
-                    <CardTitle>Generated Strategy</CardTitle>
-                    <CardDescription>
-                      {formatExactDateTime(strategy.generatedAt)} ({getRelativeTime(strategy.generatedAt)})
-                    </CardDescription>
+                    <CardTitleTooltip title="Generated Strategy" tooltip={`AI-generated campaign strategy with objective, offer, channel, and follow-up actions. Generated ${formatExactDateTime(strategy.generatedAt)} (${getRelativeTime(strategy.generatedAt)})`} />
                   </div>
                   <Badge
                     variant="outline"
