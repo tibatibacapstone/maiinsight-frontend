@@ -163,15 +163,6 @@ interface HeatmapSummary {
   } | null
 }
 
-interface PlaytimeMlData {
-  totalCustomers: number
-  totalSessions: number
-  clusterCount?: number
-  createdAt?: string
-  sessionByTime?: unknown
-  heatmapSummary?: HeatmapSummary | null
-}
-
 interface ReportResponse {
   success: boolean
   data?: {
@@ -283,8 +274,8 @@ const parseJsonArray = <T,>(value: unknown): T[] => {
   return []
 }
 
-const buildPlaytimeChart = (playtimeMlData: PlaytimeMlData | null) => {
-  const directRows = parseJsonArray<PlaytimeSessionPoint>(playtimeMlData?.sessionByTime)
+const buildPlaytimeChart = (playtimeMix: { sessionByTime: PlaytimeSessionPoint[] } | null) => {
+  const directRows = parseJsonArray<PlaytimeSessionPoint>(playtimeMix?.sessionByTime)
 
   return directRows
     .map((row, index) => {
@@ -347,7 +338,9 @@ const [periodType, setPeriodType] = useState<"MTD" | "YTD" | null>("MTD")
   // ⬅️ NEW: state for the visuals pulled in from Overview / Fill Empty Sessions / Segments
   const [overviewKpi, setOverviewKpi] = useState<OverviewKpiData | null>(null)
   const [occupancyTrend, setOccupancyTrend] = useState<OccupancyTrendPoint[]>([])
-  const [playtimeMlData, setPlaytimeMlData] = useState<PlaytimeMlData | null>(null)
+  // ⬅️ NEW: playtime + heatmap now come from actual-data endpoints, not ML
+  const [playtimeMix, setPlaytimeMix] = useState<{ sessionByTime: PlaytimeSessionPoint[]; totalSessions: number; totalCustomers: number } | null>(null)
+  const [heatmapSummary, setHeatmapSummary] = useState<HeatmapSummary | null>(null)
   const [segmentation, setSegmentation] = useState<ClusterProfile[]>([])
 
   useEffect(() => {
@@ -406,6 +399,16 @@ const params = new URLSearchParams({
   bookingType: "all",
 })
 
+      // ⬅️ NEW: params for overview-kpis, derived from the current report filters
+      const { month, year, venue } = deriveOverviewParams(endDate, courtType)
+      const overviewParams = new URLSearchParams({
+        month,
+        year,
+        periodType: "YTD",
+        venue,
+        customerType: "All Type",
+        bookingType,
+      })
       // ⬅️ NEW: params for overview-kpis / occupancy-trend, derived from the current report filters
       const { month, year } = deriveOverviewParams(endDate, mappedCourtType)
 
@@ -418,13 +421,24 @@ const overviewParams = new URLSearchParams({
   bookingType: "all",
 })
 
+      // ⬅️ NEW: occupancy-trend uses the report's exact date range with per-date buckets
+      const occupancyTrendParams = new URLSearchParams({
+        startDate,
+        endDate,
+        bucket: "daily",
+        venue,
+        customerType: "All Type",
+        bookingType,
+      })
+
       const [
         reportResponse,
         metaDashboardResponse,
         metaAudienceResponse,
         overviewKpiResponse, // ⬅️ NEW
         occupancyTrendResponse, // ⬅️ NEW
-        playtimeResponse, // ⬅️ NEW
+        playtimeMixResponse, // ⬅️ NEW: actual data, replaces /ml/playtime/latest
+        heatmapResponse, // ⬅️ NEW: actual data, replaces /ml/playtime/latest heatmap
         segmentationResult, // ⬅️ NEW
       ] = await Promise.all([
         fetch(getApiUrl(`/operations/management-report?${params.toString()}`), {
@@ -447,12 +461,21 @@ const overviewParams = new URLSearchParams({
           cache: "no-store",
           headers: getAuthHeaders(),
         }).catch(() => null),
-        fetch(getApiUrl(`/dashboard/occupancy-trend?${overviewParams.toString()}`), {
+        fetch(getApiUrl(`/dashboard/occupancy-trend?${occupancyTrendParams.toString()}`), {
           method: "GET",
           cache: "no-store",
           headers: getAuthHeaders(),
         }).catch(() => null),
         fetch(getApiUrl(`/dashboard/playtime-mix?${overviewParams.toString()}`), {
+          method: "GET",
+          cache: "no-store",
+          headers: getAuthHeaders(),
+        }).catch(() => null),
+        fetch(getApiUrl(`/dashboard/empty-slot-heatmap?${overviewParams.toString()}`), {
+          method: "GET",
+          cache: "no-store",
+          headers: getAuthHeaders(),
+        }).catch(() => null),
   method: "GET",
   cache: "no-store",
   headers: getAuthHeaders(),
@@ -473,7 +496,8 @@ const overviewParams = new URLSearchParams({
       // ⬅️ NEW: parse the extra visuals' responses
       const overviewKpiResult = overviewKpiResponse ? await overviewKpiResponse.json().catch(() => null) : null
       const occupancyTrendResult = occupancyTrendResponse ? await occupancyTrendResponse.json().catch(() => null) : null
-      const playtimeResult = playtimeResponse ? await playtimeResponse.json().catch(() => null) : null
+      const playtimeMixResult = playtimeMixResponse ? await playtimeMixResponse.json().catch(() => null) : null
+      const heatmapResult = heatmapResponse ? await heatmapResponse.json().catch(() => null) : null
 
       setReport(result.data)
       setMetaDashboard(metaDashboardResult?.success ? metaDashboardResult.data : null)
@@ -482,7 +506,19 @@ const overviewParams = new URLSearchParams({
       // ⬅️ NEW: commit the extra visuals' state
       setOverviewKpi(overviewKpiResult?.success ? overviewKpiResult.data : null)
       setOccupancyTrend(occupancyTrendResult?.success && Array.isArray(occupancyTrendResult.data) ? occupancyTrendResult.data : [])
-      setPlaytimeMlData(playtimeResult?.success ? playtimeResult.data : null)
+      // ⬅️ NEW: actual-data playtime + heatmap (no more ML)
+      setPlaytimeMix(
+        playtimeMixResult?.success
+          ? {
+              sessionByTime: Array.isArray(playtimeMixResult.data?.sessionByTime)
+                ? playtimeMixResult.data.sessionByTime
+                : [],
+              totalSessions: Number(playtimeMixResult.data?.totalSessions || 0),
+              totalCustomers: Number(playtimeMixResult.data?.totalCustomers || 0),
+            }
+          : null
+      )
+      setHeatmapSummary(heatmapResult?.success ? (heatmapResult.data as HeatmapSummary) : null)
       setSegmentation(
         segmentationResult.success && segmentationResult.data
           ? sortClusterProfiles(segmentationResult.data.clusters || [])
@@ -496,7 +532,8 @@ const overviewParams = new URLSearchParams({
       setMetaAudienceSummary(null)
       setOverviewKpi(null) // ⬅️ NEW
       setOccupancyTrend([]) // ⬅️ NEW
-      setPlaytimeMlData(null) // ⬅️ NEW
+      setPlaytimeMix(null) // ⬅️ NEW
+      setHeatmapSummary(null) // ⬅️ NEW
       setSegmentation([]) // ⬅️ NEW
       setError(loadError instanceof Error ? loadError.message : "Management report could not be loaded.")
     } finally {
@@ -606,8 +643,8 @@ const overviewParams = new URLSearchParams({
     return lines
   })()
 
-  // ⬅️ NEW: derived chart data for Play-Time Preference Mix
-  const playtimeChart = useMemo(() => buildPlaytimeChart(playtimeMlData), [playtimeMlData])
+  // ⬅️ NEW: derived chart data for Play-Time Preference Mix (now from actual data, not ML)
+  const playtimeChart = useMemo(() => buildPlaytimeChart(playtimeMix), [playtimeMix])
   const playtimeChartTotal = useMemo(() => playtimeChart.reduce((sum, item) => sum + item.value, 0), [playtimeChart])
   const playtimeLegend = useMemo(
     () =>
@@ -626,11 +663,11 @@ const overviewParams = new URLSearchParams({
     [playtimeLegend]
   )
   const playtimeBehaviorInsight = useMemo(() => {
-    if (!dominantPlaytime || !playtimeMlData) {
+    if (!dominantPlaytime || !playtimeMix) {
       return "No historical play-time preference insight is available yet."
     }
     return `Most bookings are in the ${dominantPlaytime.name} slot with ${formatPercent(dominantPlaytime.percentage).replace("+", "")} of all bookings.`
-  }, [dominantPlaytime, playtimeMlData])
+  }, [dominantPlaytime, playtimeMix])
 
   // ⬅️ NEW: derived chart data for Customer Value Segments
   const segmentChart = useMemo(
@@ -926,7 +963,7 @@ const overviewParams = new URLSearchParams({
           </div>
             {/* ⬅️ NEW: Occupancy Trend, fixed-size Recharts (no ResponsiveContainer) so it renders even hidden→visible */}
             <div className="print-section rounded-2xl border border-border p-5">
-              <h2 className="text-sm font-semibold uppercase tracking-[0.14em] text-emerald-700">Occupancy Trend</h2>
+              <h2 className="text-sm font-semibold uppercase tracking-[0.14em] text-emerald-700">Occupancy Trend (per date)</h2>
               {occupancyTrend.length > 0 ? (
                 <div className="mt-3 flex justify-center">
                   <AreaChart width={700} height={260} data={occupancyTrend}>
@@ -1022,7 +1059,7 @@ const overviewParams = new URLSearchParams({
             </div>
 
             {/* ⬅️ NEW: Empty Slot Heatmap — plain CSS grid component, safe inside a hidden section */}
-            <HeatmapGrid heatmapSummary={playtimeMlData?.heatmapSummary ?? null} />
+            <HeatmapGrid heatmapSummary={heatmapSummary} />
 
             {/* ⬅️ NEW: Customer Value Segments, fixed-size Recharts + table */}
             <div className="print-section rounded-2xl border border-border p-5">
@@ -1168,6 +1205,8 @@ const overviewParams = new URLSearchParams({
             {/* ⬅️ NEW: Occupancy Trend (on-screen, ResponsiveContainer since it's always visible) */}
             <Card className="border-border bg-card shadow-sm">
               <CardHeader>
+                <CardTitle>Occupancy Trend (per date)</CardTitle>
+                <CardDescription>Court hours booked per day across the selected reporting period</CardDescription>
                 <CardTitleTooltip title="Occupancy Trend" tooltip="Shows how court occupancy rates changed over the selected period. Court hours booked across the selected reporting period" />
               </CardHeader>
               <CardContent>
@@ -1250,8 +1289,8 @@ const overviewParams = new URLSearchParams({
             </Card>
           </div>
 
-          {/* ⬅️ NEW: Empty Slot Heatmap (on-screen) */}
-          <HeatmapGrid heatmapSummary={playtimeMlData?.heatmapSummary ?? null} />
+          {/* ⬅️ NEW: Empty Slot Heatmap (on-screen) — actual data, not ML */}
+          <HeatmapGrid heatmapSummary={heatmapSummary} />
 
           {/* ⬅️ NEW: Customer Value Segments (on-screen) */}
           <Card className="border-border bg-card shadow-sm">

@@ -91,23 +91,14 @@ interface HeatmapSummary {
   } | null
 }
 
+interface PlaytimeMixData {
 interface PlaytimeData {
   totalCustomers: number
   totalSessions: number
-  clusterCount?: number
-  createdAt?: string
   sessionByTime?: unknown
-  heatmapSummary?: HeatmapSummary | null   // ⬅️ tambah baris ini
 }
 
-interface PlaytimeSessionCustomer {
-  customerName: string
-  sessionCount: number
-  totalSesi: number
-  playtimeSegment: string
-  activityLevel: string | null
-}
-
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 const PLAYTIME_CHART_COLORS = ["var(--chart-1)", "var(--chart-2)", "var(--chart-3)", "var(--chart-4)"]
 const PLAYTIME_ORDER: Record<string, number> = {
   Morning: 0, Afternoon: 1, Evening: 2, Night: 3,
@@ -139,24 +130,7 @@ const PlaytimeAxisTick = ({ x, y, payload }: { x?: number; y?: number; payload?:
 const PLAYTIME_LABEL_MAP: Record<string, string> = {
   Pagi: "Morning", Siang: "Afternoon", Malam: "Night",
 }
-const CHART_NAME_TO_SESSION_KEY: Record<string, string> = {
-  Morning: "Pagi", Afternoon: "Siang", Evening: "Evening", Night: "Malam",
-}
-
 const formatPlaytimePercent = (value: number) => `${Number(value.toFixed(1))}%`
-
-const getPlaytimeRelativeTime = (value?: string | null) => {
-  if (!value) return "Not updated yet"
-  const timestamp = new Date(value)
-  if (Number.isNaN(timestamp.getTime())) return "Not updated yet"
-  const diffMinutes = Math.floor((Date.now() - timestamp.getTime()) / 60000)
-  if (diffMinutes < 1) return "just now"
-  if (diffMinutes < 60) return `${diffMinutes} min ago`
-  const diffHours = Math.floor(diffMinutes / 60)
-  if (diffHours < 24) return `${diffHours} hour${diffHours === 1 ? "" : "s"} ago`
-  const diffDays = Math.floor(diffHours / 24)
-  return diffDays === 1 ? "yesterday" : `${diffDays} days ago`
-}
 
 const parsePlaytimeJsonArray = <T,>(value: unknown): T[] => {
   if (Array.isArray(value)) return value as T[]
@@ -171,6 +145,8 @@ const parsePlaytimeJsonArray = <T,>(value: unknown): T[] => {
   return []
 }
 
+const buildPlaytimeChart = (data: PlaytimeMixData | null) => {
+  const directRows = parsePlaytimeJsonArray<PlaytimeSessionPoint>(data?.sessionByTime)
 const buildPlaytimeChart = (playtimeData: PlaytimeData | null) => {
   const directRows = parsePlaytimeJsonArray<PlaytimeSessionPoint>(playtimeData?.sessionByTime)
 
@@ -298,6 +274,12 @@ function FilterLabel({ label, tooltip }: { label: string; tooltip: string }) {
 
 export function LowOccupancyTargeting({ onNavigate }: LowOccupancyTargetingProps) {
 
+  const [playtimeMixData, setPlaytimeMixData] = useState<PlaytimeMixData | null>(null)
+const [isLoadingPlaytime, setIsLoadingPlaytime] = useState(true)
+const [heatmapData, setHeatmapData] = useState<HeatmapSummary | null>(null)
+const [isLoadingHeatmap, setIsLoadingHeatmap] = useState(true)
+const [dataMonthLabel, setDataMonthLabel] = useState<string | null>(null)
+
   const [playtimeData, setPlaytimeData] = useState<PlaytimeData | null>(null)
   const [isLoadingPlaytime, setIsLoadingPlaytime] = useState(true)
   const [selectedPlaytimeSession, setSelectedPlaytimeSession] = useState<string | null>(null)
@@ -395,6 +377,59 @@ const [selectedCustomerType, setSelectedCustomerType] = useState("All Type")
       setIsLoadingCustomers(false)
     }
   }
+  useEffect(() => {
+  const loadPlaytimeData = async () => {
+    setIsLoadingPlaytime(true)
+    setIsLoadingHeatmap(true)
+    try {
+      const statusRes = await fetch(getApiUrl("/operations/status"), { headers: getAuthHeaders(), cache: "no-store" })
+      const statusResult = await statusRes.json().catch(() => null)
+      const availableMonths = statusResult?.success ? (statusResult.data?.transactionAvailableMonths as string[]) : null
+
+      let monthLabel = "All Month"
+      let year = String(new Date().getFullYear())
+      if (availableMonths && availableMonths.length > 0) {
+        const latest = availableMonths[availableMonths.length - 1]
+        const parts = latest.split("-")
+        if (parts.length === 2) {
+          year = parts[0]
+          const monthIndex = parseInt(parts[1], 10) - 1
+          if (monthIndex >= 0 && monthIndex < 12) {
+            monthLabel = MONTHS[monthIndex]
+          }
+        }
+      }
+      setDataMonthLabel(monthLabel)
+
+      const params = new URLSearchParams({
+        month: monthLabel,
+        year,
+        periodType: "MTD",
+        venue: "All Venue",
+        customerType: "All Type",
+      })
+
+      const [playtimeRes, heatmapRes] = await Promise.all([
+        fetch(getApiUrl(`/dashboard/playtime-mix?${params.toString()}`), { headers: getAuthHeaders(), cache: "no-store" }),
+        fetch(getApiUrl(`/dashboard/empty-slot-heatmap?${params.toString()}`), { headers: getAuthHeaders(), cache: "no-store" }),
+      ])
+
+      const playtimeResult = await playtimeRes.json().catch(() => null)
+      const heatmapResult = await heatmapRes.json().catch(() => null)
+
+      setPlaytimeMixData(playtimeResult?.success ? playtimeResult.data : null)
+      setHeatmapData(heatmapResult?.success ? heatmapResult.data : null)
+    } catch {
+      setPlaytimeMixData(null)
+      setHeatmapData(null)
+    } finally {
+      setIsLoadingPlaytime(false)
+      setIsLoadingHeatmap(false)
+    }
+  }
+  void loadPlaytimeData()
+}, [])
+
 
 
 
@@ -604,6 +639,7 @@ const loadPlaytime = async (filters?: {
   }
 
   const lowSessions = sessions.filter((session) => session.status === "Low")
+  const playtimeChart = buildPlaytimeChart(playtimeMixData)
   const playtimeChart = buildPlaytimeChart(playtimeData)
 const playtimeChartTotal = playtimeChart.reduce((sum, item) => sum + item.value, 0)
 const playtimeLegend = playtimeChart.map((item) => ({
@@ -614,6 +650,7 @@ const dominantPlaytime = playtimeLegend.reduce<typeof playtimeLegend[number] | n
   (selected, item) => (!selected || item.value > selected.value ? item : selected),
   null
 )
+const playtimeBehaviorInsight = !dominantPlaytime || !playtimeMixData
 const playtimeBehaviorInsight = !dominantPlaytime || !playtimeData
   ? "No historical play-time preference insight is available yet."
   : `Most bookings are in the ${dominantPlaytime.name} slot with ${formatPlaytimePercent(dominantPlaytime.percentage)} of all bookings.`
@@ -783,6 +820,39 @@ useEffect(() => {
         </Card>
       )}
       
+     {isLoadingHeatmap ? (
+  <Card className="border-border bg-card shadow-sm">
+    <CardContent className="flex items-center justify-center py-8 text-sm text-muted-foreground">
+      <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading slot data...
+    </CardContent>
+  </Card>
+) : (
+  <>
+    <HeatmapGrid heatmapSummary={heatmapData} />
+    {dataMonthLabel && (
+      <p className="mt-1 text-xs text-muted-foreground">
+        Data period: {dataMonthLabel}
+      </p>
+    )}
+  </>
+)}
+
+<Card className="border-border bg-card shadow-sm">
+  <CardHeader>
+    <CardTitle className="flex items-center gap-2">
+      <span>Play-Time Preference Mix</span>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button type="button" className="inline-flex h-5 w-5 items-center justify-center rounded-full text-muted-foreground transition hover:bg-accent hover:text-foreground" aria-label="More information">
+            <Info className="h-3.5 w-3.5" />
+          </button>
+        </TooltipTrigger>
+        <TooltipContent side="top" sideOffset={8} className="max-w-xs text-left leading-relaxed">
+          Shows how bookings are distributed across morning, afternoon, evening, and night.
+        </TooltipContent>
+      </Tooltip>
+    </CardTitle>
+    <CardDescription>{playtimeBehaviorInsight}</CardDescription>
    <div
   className={`transition-all duration-500 ease-out ${
     isLoadingPlaytime ? "opacity-60 blur-[0.5px]" : "opacity-100 blur-0"
@@ -805,6 +875,56 @@ useEffect(() => {
 ) : (
   <div className="relative">
     {isLoadingPlaytime ? (
+      <div className="flex h-[320px] items-center justify-center text-sm text-muted-foreground">
+        <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading play-time data...
+      </div>
+    ) : (
+      <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
+        <div className="h-[320px]">
+          {playtimeChart.every((item) => item.value === 0) || playtimeChart.length === 0 ? (
+            <div className="flex h-full items-center justify-center text-center text-sm text-muted-foreground">
+              No play-time data available yet.
+            </div>
+          ) : (
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={playtimeChart}>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                <XAxis dataKey="name" stroke="var(--muted-foreground)" tickLine={false} axisLine={false} tick={<PlaytimeAxisTick />} height={50} />
+                <YAxis stroke="var(--muted-foreground)" tickLine={false} axisLine={false} allowDecimals={false} />
+                <RechartsTooltip
+                  formatter={(value: number, _name: string, props: { payload?: { value?: number; name?: string } }) => {
+                    const sessionCount = Number(value || props.payload?.value || 0)
+                    const percentage = playtimeChartTotal > 0 ? (sessionCount / playtimeChartTotal) * 100 : 0
+                    return [`${sessionCount.toLocaleString("en-US")} sessions (${formatPlaytimePercent(percentage)})`, props.payload?.name || "Historical demand"]
+                  }}
+                />
+                <Bar dataKey="value" radius={[6, 6, 0, 0]} cursor="pointer">
+                  {playtimeChart.map((entry) => <Cell key={entry.name} fill={entry.color} />)}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          )}
+        </div>
+        <div className="space-y-3">
+          <div className="rounded-2xl border border-border bg-primary/5 p-4">
+            <p className="text-xs font-medium uppercase tracking-[0.2em] text-muted-foreground">Dominant Historical Preference</p>
+            <p className="mt-2 text-lg font-semibold text-slate-900">{dominantPlaytime?.name || "-"}</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {dominantPlaytime
+                ? `${formatPlaytimePercent(dominantPlaytime.percentage)} of booked sessions${dataMonthLabel ? ` in ${dataMonthLabel}` : " in the current period"} came from this play-time window.`
+                : "No historical data to determine dominant play-time window."}
+            </p>
+          </div>
+
+          {playtimeLegend.map((item) => (
+            <div key={item.name} className="rounded-xl border border-border bg-secondary/20 p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <span className="mt-1 inline-flex h-3 w-3 rounded-full" style={{ backgroundColor: item.color }} />
+                  <div>
+                    <p className="font-medium text-slate-900">{item.name}</p>
+                    <p className="text-xs text-muted-foreground">{formatPlaytimePercent(item.percentage)} of historical booked sessions</p>
+                  </div>
       <div className="pointer-events-none absolute inset-0 z-10 flex items-start justify-end rounded-2xl bg-background/20 p-3 backdrop-blur-[1px] transition-all duration-300">
         <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-background/95 px-3 py-1.5 text-xs font-medium text-primary shadow-sm">
           <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -910,6 +1030,15 @@ useEffect(() => {
                 {item.value.toLocaleString("en-US")}
               </p>
             </div>
+          ))}
+          {playtimeMixData ? (
+            <div className="rounded-xl border border-border bg-secondary/20 p-4 text-sm text-muted-foreground">
+              {playtimeMixData.totalSessions.toLocaleString("en-US")} sessions from {playtimeMixData.totalCustomers.toLocaleString("en-US")} customers in {dataMonthLabel || "the current period"}.
+            </div>
+          ) : null}
+        </div>
+      </div>
+    )}
           </div>
         ))}
 

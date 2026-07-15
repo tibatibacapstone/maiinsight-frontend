@@ -6,6 +6,7 @@ import { Copy, Eye, EyeOff, Key, Link as LinkIcon, Loader2, Save, Shield, Users,
 
 import { AccessDenied } from "@/components/access-denied"
 import { BusinessErrorAlert } from "@/components/business-error-alert"
+import { PageSkeleton } from "@/components/page-skeleton"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle, CardTitleTooltip, StateCard, KpiCard } from "@/components/ui/card"
@@ -218,6 +219,7 @@ export function SystemSettings() {
       {error ? <BusinessErrorAlert title="Action Failed" message={error} suggestion="Please try again." /> : null}
 
       {isLoading ? (
+        <PageSkeleton cards={4} lines={2} />
         <StateCard state="loading" title="Loading system settings..." minHeight="min-h-[200px]" />
       ) : (
         <>

@@ -16,6 +16,7 @@ import {
 } from "lucide-react"
 
 import { BusinessErrorAlert } from "@/components/business-error-alert"
+import { PageSkeleton } from "@/components/page-skeleton"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle, CardTitleTooltip } from "@/components/ui/card"
@@ -246,10 +247,7 @@ useEffect(() => {
         </CardHeader>
         <CardContent>
           {isLoading ? (
-            <div className="flex min-h-[200px] items-center justify-center gap-2 text-sm text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Loading activity history...
-            </div>
+            <PageSkeleton cards={3} lines={2} />
           ) : filteredActivities.length === 0 ? (
             <div className="flex min-h-[200px] flex-col items-center justify-center gap-3 text-center text-muted-foreground">
               <Filter className="h-10 w-10" />

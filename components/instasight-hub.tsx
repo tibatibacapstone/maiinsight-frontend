@@ -34,6 +34,8 @@ import {
 import { BusinessErrorAlert } from "@/components/business-error-alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { PageSkeleton } from "@/components/page-skeleton"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardTitleTooltip, StateCard } from "@/components/ui/card"
 import { getApiUrl } from "@/lib/api"
 import { getAuthHeaders, getStoredRole, USER_ROLES } from "@/lib/roles"
@@ -706,6 +708,20 @@ return (
           technicalDetails={error.technical}
           showTechnicalDetails={canViewTechnicalDetails}
         />
+      ) : null}
+
+      {isLoading ? (
+        <PageSkeleton cards={3} lines={2} />
+      ) : !status?.configured ? (
+        <Card className="border-amber-200 bg-amber-50/70 shadow-sm">
+          <CardContent className="flex min-h-[220px] flex-col items-center justify-center gap-3 text-center">
+            <AlertTriangle className="h-10 w-10 text-amber-600" />
+            <div>
+              <p className="font-medium">Meta API is not connected yet.</p>
+              <p className="text-sm text-muted-foreground">{status?.suggestion || "Please ask IT Support to configure Meta credentials in Settings or environment variables."}</p>
+            </div>
+          </CardContent>
+        </Card>
       ) : !hasRealData ? (
         <Card className="border-border bg-card shadow-sm">
           <CardHeader>

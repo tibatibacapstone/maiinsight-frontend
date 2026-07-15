@@ -199,6 +199,24 @@ interface DataCenterResponse {
 interface MetaSyncResponse {
   success?: boolean
   message?: string
+  data?: {
+    configured: boolean
+    connectionState: "not_configured" | "ready" | "connected" | "syncing" | "error"
+    latestSync: {
+      status: string
+      message?: string | null
+      startedAt?: string | null
+      finishedAt?: string | null
+    } | null
+    setupMessage: string | null
+    suggestion: string | null
+  }
+}
+
+interface AiStrategyResponse {
+  success?: boolean
+  message?: string
+}
 }
 
 interface AiStrategyResponse {
@@ -217,6 +235,11 @@ interface MlSummary {
   records: number
   totalCustomers: number
 } 
+
+interface TemplatePreviewData {
+  headers: string[]
+  rows: string[][]
+}
 
 const defaultDataSources: DataSource[] = [
   {
@@ -350,6 +373,27 @@ const formatDisplaySyncTime = (value?: string | null) => {
 
 const getDisplayNow = () => formatDisplaySyncTime(new Date().toISOString())
 
+const getMetaSyncTimestamp = (metaStatusResult: MetaSyncResponse | null) => {
+  const latestSync = metaStatusResult?.data?.latestSync
+  return latestSync?.finishedAt || latestSync?.startedAt || null
+}
+
+const getMetaSourceStatus = (metaStatusResult: MetaSyncResponse | null): DataSource["status"] => {
+  if (!metaStatusResult?.success || !metaStatusResult.data) {
+    return "disconnected"
+  }
+
+  if (!metaStatusResult.data.configured) {
+    return "disconnected"
+  }
+
+  if (metaStatusResult.data.connectionState === "error") {
+    return "error"
+  }
+
+  return "connected"
+}
+
 const publishLastSyncTime = () => {
   if (typeof window === "undefined") return
 
@@ -446,6 +490,39 @@ const escapeCsvCell = (value: unknown) => {
   return `"${text.replace(/"/g, '""')}"`
 }
 
+const parseCsvLine = (line: string) => {
+  const values: string[] = []
+  let current = ""
+  let inQuotes = false
+
+  for (let index = 0; index < line.length; index += 1) {
+    const char = line[index]
+    const nextChar = line[index + 1]
+
+    if (char === '"' && inQuotes && nextChar === '"') {
+      current += '"'
+      index += 1
+      continue
+    }
+
+    if (char === '"') {
+      inQuotes = !inQuotes
+      continue
+    }
+
+    if (char === ',' && !inQuotes) {
+      values.push(current)
+      current = ""
+      continue
+    }
+
+    current += char
+  }
+
+  values.push(current)
+  return values
+}
+
 const createSyncJob = (source: DataSource, status: SyncStatus, progress: number): SyncJob => ({
   id: `sync-${source.id}-${Date.now()}`,
   name: `${source.name} Sync`,
@@ -484,6 +561,7 @@ const [mlSummary, setMlSummary] = useState<MlSummary>({
   const [selectedRawJob, setSelectedRawJob] = useState<SyncJob | null>(null)
   const [rawRows, setRawRows] = useState<RawTransactionRow[]>([])
   const [rawHeaders, setRawHeaders] = useState<string[]>([])
+  const [templatePreviewData, setTemplatePreviewData] = useState<TemplatePreviewData | null>(null)
   const [isLoadingRawRows, setIsLoadingRawRows] = useState(false)
   const [rawRowsError, setRawRowsError] = useState<BusinessErrorState | null>(null)
   const [syncingSourceId, setSyncingSourceId] = useState<string | null>(null)
@@ -541,6 +619,8 @@ const [mlSummary, setMlSummary] = useState<MlSummary>({
     const latestBatch = summaryResult.data.latestBatch
     const latestBatchTime = latestBatch?.updatedAt || latestBatch?.createdAt || null
     const metaConfigured = Boolean(metaStatusResult?.success && metaStatusResult?.data?.configured)
+    const latestMetaSync = getMetaSyncTimestamp(metaStatusResult)
+    const metaSourceStatus = getMetaSourceStatus(metaStatusResult)
     const latestMetaSync =
   metaStatusResult?.data?.latestSync?.startedAt ||
   summaryResult.data.latestMetaSync?.startedAt ||
@@ -556,6 +636,13 @@ const [mlSummary, setMlSummary] = useState<MlSummary>({
         records: Number(summaryResult.data.totalFacilityTransactions || 0),
       },
       {
+        id: "2",
+        name: "Meta Graph API",
+        type: "api",
+        status: metaSourceStatus,
+        lastSync: metaConfigured ? formatDisplaySyncTime(latestMetaSync) : "Not connected",
+        records: Number(summaryResult.data.metaMediaCount || 0),
+      },
   id: "2",
   name: "Meta Graph API",
   type: "api",
@@ -573,7 +660,7 @@ const [mlSummary, setMlSummary] = useState<MlSummary>({
         type: "api",
         status: "connected",
         lastSync: latestBatchTime ? formatDisplaySyncTime(latestBatchTime) : "Ready when data is available",
-        records: Number(summaryResult.data.totalBatches || 0),
+        records: Number(summaryResult.data.aiStrategySuggestionCount || 0),
       },
     ])
   } catch (error) {
@@ -802,6 +889,7 @@ const fetchMlSummary = useCallback(async () => {
       return
     }
 
+    const response = await fetch(getApiUrl("/system/summary"), {
     const response = await fetch(getApiUrl("/segmentation/latest"), {
       method: "GET",
       cache: "no-store",
@@ -810,6 +898,9 @@ const fetchMlSummary = useCallback(async () => {
       },
     })
 
+    const result = await response
+      .json()
+      .catch(() => null)
     const result = await response.json().catch(() => null)
 
     if (!response.ok || !result?.success || !result.data) {
@@ -821,6 +912,12 @@ const fetchMlSummary = useCallback(async () => {
       return
     }
 
+    const latestSegmentationRun = result.data.latestSegmentationRun
+
+    setMlSummary({
+      lastRun: latestSegmentationRun?.runDate ? formatDisplaySyncTime(latestSegmentationRun.runDate) : "Not run yet",
+      records: latestSegmentationRun?.totalCustomers || 0,
+      totalCustomers: latestSegmentationRun?.totalCustomers || 0,
     const run =
       result.data?.run ??
       result.data?.latestRun ??
@@ -849,7 +946,7 @@ const fetchMlSummary = useCallback(async () => {
       totalCustomers: Number(totalCustomers || 0),
     })
   } catch (error) {
-    console.warn("Failed to fetch ML summary:", error)
+    console.warn("Failed to fetch segmentation summary:", error)
 
     setMlSummary({
       lastRun: "Not run yet",
@@ -868,10 +965,58 @@ const fetchMlSummary = useCallback(async () => {
   }, [fetchDataCenter])
 
   useEffect(() => {
-  fetchMlSummary()
-}, [fetchMlSummary])
+    fetchMlSummary()
+  }, [fetchMlSummary])
 
-  const resetUploadState = () => {
+  useEffect(() => {
+    if (!templatePreviewOpen) {
+      return
+    }
+
+    const controller = new AbortController()
+
+    const loadTemplatePreview = async () => {
+      try {
+        const response = await fetch("/tmp-upload-sample.csv", {
+          cache: "no-store",
+          signal: controller.signal,
+        })
+
+        if (!response.ok) {
+          throw new Error("Failed to load template preview.")
+        }
+
+        const csvText = await response.text()
+        const lines = csvText
+          .split(/\r?\n/)
+          .map((line) => line.trim())
+          .filter(Boolean)
+
+        if (lines.length === 0) {
+          setTemplatePreviewData(null)
+          return
+        }
+
+        const [headerLine, ...dataLines] = lines
+        setTemplatePreviewData({
+          headers: parseCsvLine(headerLine),
+          rows: dataLines.map(parseCsvLine),
+        })
+      } catch (error) {
+        if (error instanceof Error && error.name === "AbortError") {
+          return
+        }
+
+        setTemplatePreviewData(null)
+      }
+    }
+
+    void loadTemplatePreview()
+
+    return () => controller.abort()
+  }, [templatePreviewOpen])
+
+    const resetUploadState = () => {
     setUploadFile(null)
     setUploadProgress(0)
     setUploadMessage("")
@@ -937,6 +1082,54 @@ const fetchMlSummary = useCallback(async () => {
     setUploadFile(file)
   }
 
+  const uploadFileWithProgress = async (
+    url: string,
+    formData: FormData,
+    headers: Record<string, string>,
+  ): Promise<UploadImportResponse> => {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest()
+      xhr.open("POST", url)
+
+      Object.entries(headers).forEach(([key, value]) => {
+        if (value && key.toLowerCase() !== "content-type") {
+          xhr.setRequestHeader(key, value)
+        }
+      })
+
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable) {
+          const percent = Math.round((event.loaded / event.total) * 100)
+          setUploadProgress(Math.min(Math.max(percent, 0), 100))
+        }
+      }
+
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try {
+            resolve(JSON.parse(xhr.responseText))
+          } catch (error) {
+            reject(new Error("Invalid server response during upload."))
+          }
+          return
+        }
+
+        let parsed: UploadImportResponse | null = null
+        try {
+          parsed = JSON.parse(xhr.responseText)
+        } catch {
+          // ignore parse failure
+        }
+
+        reject(createFriendlyImportError(parsed, "Import Failed"))
+      }
+
+      xhr.onerror = () => reject(new Error("Upload request failed."))
+      xhr.onabort = () => reject(new Error("Upload aborted."))
+      xhr.send(formData)
+    })
+  }
+
   const handleUploadImport = async () => {
     const userRole = getStoredRole()
 
@@ -970,7 +1163,7 @@ const fetchMlSummary = useCallback(async () => {
 
     try {
       setIsUploading(true)
-      setUploadProgress(10)
+      setUploadProgress(0)
       setUploadMessage("")
       setUploadError(null)
 
@@ -979,7 +1172,7 @@ const fetchMlSummary = useCallback(async () => {
         name: currentFile.name,
         type: "file",
         status: "processing",
-        progress: 10,
+        progress: 0,
         records: 0,
         startedAt,
       }
@@ -989,18 +1182,15 @@ const fetchMlSummary = useCallback(async () => {
       const formData = new FormData()
       formData.append("file", currentFile)
 
-      setUploadProgress(40)
+      const result = await uploadFileWithProgress(
+        getApiUrl("/imports/upload-file"),
+        formData,
+        getAuthHeaders(),
+      )
 
-      const response = await fetch(getApiUrl("/imports/upload-file"), {
-        method: "POST",
-        headers: getAuthHeaders(),
-        body: formData,
-      })
-
-      setUploadProgress(75)
-
-      const result: UploadImportResponse | null = await response.json().catch(() => null)
-
+      if (!result?.success || !result.data) {
+        throw createFriendlyImportError(result, "Import Failed")
+      }
 console.log("UPLOAD ERROR RESPONSE:", result)
 
 if (!response.ok || !result?.success || !result.data) {
@@ -1054,7 +1244,7 @@ if (!response.ok || !result?.success || !result.data) {
     if (!canRunMachineLearning) {
       const businessError = createBusinessErrorState({
         title: "Access Denied",
-        message: "Machine learning is available to Marketing Operational and IT Support only.",
+        message: "Customer segmentation is available to Marketing Operational and IT Support only.",
         suggestion: "Please sign in with a Marketing Operational or IT Support account.",
         errorCode: "ACCESS_DENIED",
       })
@@ -1088,20 +1278,21 @@ const summary: CombinedMlSummary = {
       notifySegmentationUpdated()
 
       setMlMessage(
+        `Customer segmentation completed. Customer Value Segmentation processed ${segmentationResult.run?.totalCustomers.toLocaleString() || 0} customers with Business Segmentation K: ${segmentationResult.selectedK ?? 4}.`
+      )
   `Machine learning completed. Customer Value Segmentation processed ${summary.segmentationCustomers.toLocaleString()} customers with Business Segmentation K: ${summary.selectedK ?? 4}.`
 )
 
-      toast.success("Machine learning completed", {
-        description: `Customer Value Segmentation is ready with Business Segmentation K: ${summary.selectedK ?? 4}.`,
+      toast.success("Customer segmentation completed", {
+        description: `Customer Value Segmentation is ready with Business Segmentation K: ${segmentationResult.selectedK ?? 4}.`,
       })
     } catch (error) {
       const businessError = createBusinessErrorState({
-        title: "Machine Learning Failed",
-        message: "We couldn't complete the machine learning run.",
+        title: "Customer Segmentation Failed",
+        message: "We couldn't complete the segmentation run.",
         suggestion: "Please try again after the latest data import is complete. Contact IT Support if the issue continues.",
-        errorCode: "ML_RUN_FAILED",
-        technicalDetails:
-          error instanceof Error ? error.message : "Failed to run machine learning.",
+        errorCode: "SEGMENTATION_RUN_FAILED",
+        technicalDetails: error instanceof Error ? error.message : "Failed to run segmentation.",
       })
 
       setMlError(businessError)
@@ -1344,7 +1535,7 @@ if (!canAccessDataCenter) {
               </Button>
             </DialogTrigger>
 
-            <DialogContent className="w-[min(96vw,48rem)] max-w-none p-0">
+            <DialogContent className="!w-[min(96vw,48rem)] !max-w-none p-0">
               <div className="border-b px-6 py-5">
                 <DialogHeader className="text-left">
                   <DialogTitle>Upload Data File</DialogTitle>
@@ -1420,7 +1611,9 @@ if (!canAccessDataCenter) {
                 {isUploading && (
                   <div className="space-y-2">
                     <div className="flex justify-between text-sm">
-                      <span>Uploading...</span>
+                      <span>
+                        {uploadProgress < 100 ? "Uploading..." : "Finalizing import..."}
+                      </span>
                       <span>{uploadProgress}%</span>
                     </div>
                     <Progress value={uploadProgress} />
@@ -1505,7 +1698,7 @@ if (!canAccessDataCenter) {
                   {isUploading ? (
                     <>
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Uploading...
+                      {uploadProgress < 100 ? "Uploading..." : "Finalizing..."}
                     </>
                   ) : (
                     "Start Import"
@@ -1574,7 +1767,7 @@ if (!canAccessDataCenter) {
         <h3 className="mb-1 font-semibold">{source.name}</h3>
 
         <p className="mb-3 text-sm text-muted-foreground">
-          {source.records.toLocaleString()} records - Last sync:{" "}
+          {source.records.toLocaleString()} {source.id === "3" ? "suggestions" : "records"} - Last sync:{" "}
           {source.lastSync}
         </p>
 
@@ -1612,9 +1805,11 @@ if (!canAccessDataCenter) {
         </Badge>
       </div>
 
-      <h3 className="mb-1 font-semibold">Machine Learning Engine</h3>
+      <h3 className="mb-1 font-semibold">Customer Segmentation Engine</h3>
 
       <p className="mb-1 text-sm text-muted-foreground">
+        {mlSummary.records.toLocaleString()} customers - Last run:{" "}
+        {mlSummary.lastRun}
         last run: {mlSummary.lastRun}
       </p>
 
@@ -1637,7 +1832,7 @@ if (!canAccessDataCenter) {
         ) : (
           <>
             <RefreshCw className="h-4 w-4" />
-            Run Machine Learning
+            Run Segmentation
           </>
         )}
       </Button>
@@ -1672,7 +1867,7 @@ if (!canAccessDataCenter) {
                   <FileSpreadsheet className="h-5 w-5 text-primary" />
                 </div>
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-medium">maiin-upload-template.csv</p>
+                    <p className="truncate text-sm font-medium">tmp-upload-sample.csv</p>
                   <p className="text-xs text-muted-foreground">CSV, XLSX, or XLS upload structure</p>
                 </div>
               </div>
@@ -1886,34 +2081,145 @@ if (!canAccessDataCenter) {
         </AlertDialog>
 
         <Dialog open={templatePreviewOpen} onOpenChange={setTemplatePreviewOpen}>
-          <DialogContent className="max-w-2xl">
+          <DialogContent
+            className="!max-w-none !w-[95vw] !max-h-[90vh] overflow-hidden"
+            style={{ width: "95vw", maxWidth: "95vw", maxHeight: "90vh" }}
+          >
             <DialogHeader>
               <DialogTitle>Format File to Upload</DialogTitle>
               <DialogDescription>
-                Compact preview of the transaction file structure expected by MaiinSight.
+                Preview of the transaction file structure expected by MaiinSight, including the expected data type for each column.
               </DialogDescription>
             </DialogHeader>
 
-            <div className="grid gap-3 sm:grid-cols-2">
-              {[
-                ["Order ID", "ORD-001"],
-                ["Nama", "Test Customer"],
-                ["Tanggal Transaksi", "2026-06-27"],
-                ["Tanggal Main", "2026-06-28"],
-                ["Jam Main", "08:00 - 09:00"],
-                ["Venue", "Mini Soccer"],
-                ["Lapangan", "Court 1"],
-                ["Harga Bersih", "100000"],
-              ].map(([label, value]) => (
-                <div key={label} className="rounded-lg border bg-muted/20 px-3 py-2">
-                  <p className="text-xs uppercase tracking-wide text-muted-foreground">{label}</p>
-                  <p className="mt-1 text-sm font-medium">{value}</p>
+            <div className="overflow-x-auto overflow-y-auto max-h-[70vh]">
+              <table className="min-w-[1400px] w-full border-separate border-spacing-0 text-left text-sm">
+                <thead>
+                  <tr className="bg-muted/70">
+                    {(templatePreviewData?.headers || []).map((label) => (
+                      <th
+                        key={label}
+                        className="border-b border-border px-4 py-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+                      >
+                        {label}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {(templatePreviewData?.rows || []).map((row, rowIndex) => (
+                    <tr key={`sample-row-${rowIndex}`} className={rowIndex % 2 === 0 ? "bg-background" : "bg-muted/10"}>
+                      {row.map((value, index) => (
+                        <td
+                          key={`${rowIndex}-${index}`}
+                          className="border-b border-border px-4 py-3 align-top text-sm text-foreground"
+                        >
+                          {value}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {!templatePreviewData && (
+                <div className="px-4 py-6 text-sm text-muted-foreground">
+                  Loading sample file from <code>/tmp-upload-sample.csv</code>...
                 </div>
-              ))}
+              )}
             </div>
           </DialogContent>
         </Dialog>
         <Dialog open={rawModalOpen} onOpenChange={setRawModalOpen}>
+          <DialogContent className="max-h-[92vh] !w-[98vw] !max-w-[98vw] !sm:w-[98vw] !sm:max-w-[98vw] overflow-hidden">
+            <DialogHeader>
+              <DialogTitle>Raw Uploaded Data</DialogTitle>
+              <DialogDescription>
+                {selectedRawJob
+                  ? `${selectedRawJob.name} - ${selectedRawJob.records.toLocaleString()} records`
+                  : "Preview uploaded transaction data"}
+              </DialogDescription>
+            </DialogHeader>
+
+            {isLoadingRawRows ? (
+              <div className="flex items-center gap-2 rounded-lg border p-4 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Loading raw data...
+              </div>
+                        ) : rawRowsError ? (
+              <BusinessErrorAlert
+                title={rawRowsError.title}
+                message={rawRowsError.message}
+                suggestion={rawRowsError.suggestion}
+                errorCode={rawRowsError.errorCode}
+                technicalDetails={rawRowsError.technicalDetails}
+                showTechnicalDetails={canViewTechnicalDetails}
+              />
+            ) : rawRows.length === 0 ? (
+              <div className="rounded-md border p-4 text-sm text-muted-foreground">
+                No raw data found for this upload history.
+              </div>
+            ) : (
+              <div className="space-y-3 overflow-hidden">
+                <p className="text-sm text-muted-foreground">
+                  Showing first {rawRows.length} rows from the uploaded transaction file.
+                </p>
+
+                                <div className="max-h-[68vh] overflow-x-auto overflow-y-auto rounded-xl border bg-muted/20 p-2">
+                  <div className="block w-max min-w-max align-top rounded-lg border bg-background shadow-sm">
+                    <table className="min-w-max table-auto border-separate border-spacing-0 text-sm">
+                      <thead className="sticky top-0 z-20 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/90">
+                        <tr>
+                          <th className="sticky left-0 z-30 min-w-[72px] border-b border-r bg-background px-3 py-2 text-left font-semibold whitespace-nowrap">
+                            Row
+                          </th>
+
+                          {rawHeaders.map((header) => (
+                            <th
+                              key={header}
+                              className="min-w-[160px] border-b border-r bg-background px-3 py-2 text-left font-semibold whitespace-nowrap last:border-r-0"
+                            >
+                              {header}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+
+                      <tbody>
+                        {rawRows.map((row) => (
+                          <tr key={row.id} className="hover:bg-muted/40">
+                            <td className="sticky left-0 z-10 border-b border-r bg-background px-3 py-2 text-muted-foreground whitespace-nowrap">
+                              {row.rowNumber}
+                            </td>
+
+                            {rawHeaders.map((header) => {
+                              const value = row.data?.[header]
+
+                              return (
+                                <td
+                                  key={`${row.id}-${header}`}
+                                  className="min-w-[180px] border-b border-r px-3 py-2 align-top whitespace-nowrap last:border-r-0"
+                                  title={
+                                    value === null || value === undefined
+                                      ? "-"
+                                      : String(value)
+                                  }
+                                >
+                                  {value === null || value === undefined || value === ""
+                                    ? "-"
+                                    : String(value)}
+                                </td>
+                              )
+                            })}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
   <DialogContent className="flex h-[92vh] w-[calc(100vw-48px)] max-w-[calc(100vw-48px)] sm:max-w-[calc(100vw-48px)] flex-col overflow-hidden p-0">
     <div className="shrink-0 border-b px-6 py-5">
       <DialogHeader>

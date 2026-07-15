@@ -215,7 +215,7 @@ export const HeatmapGrid = ({ heatmapSummary }: { heatmapSummary: HeatmapSummary
         </CardHeader>
         <CardContent>
           <div className="rounded-2xl border border-orange-200 bg-gradient-to-br from-orange-50 via-amber-50 to-white p-4 text-sm text-orange-900/80">
-            Waiting for playtime ML output.
+            No slot data available for the selected period.
           </div>
         </CardContent>
       </Card>
@@ -225,6 +225,19 @@ export const HeatmapGrid = ({ heatmapSummary }: { heatmapSummary: HeatmapSummary
   return (
     <Card className="border-border bg-card shadow-sm">
       <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          Empty Slot Heatmap
+          <Tooltip>
+            <TooltipTrigger>
+              <Info className="h-4 w-4 text-muted-foreground" />
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>Lighter shades indicate more empty slots across the month.</p>
+            </TooltipContent>
+          </Tooltip>
+        </CardTitle>
+          <CardDescription>
+            {mostEmptySlot
         <CardTitleTooltip title="Empty Slot Heatmap" tooltip={mostEmptySlot
               ? `${mostEmptySlot.dayLabel} ${mostEmptySlot.hourLabel} is usually the emptiest slot this month.`
               : "No empty slot pattern available yet."} />
@@ -250,10 +263,10 @@ export const HeatmapGrid = ({ heatmapSummary }: { heatmapSummary: HeatmapSummary
                     const count = slot?.session_count || 0
                     // Compute alpha based on relative booked sessions so that emptier slots render thinner.
                     const maxCount = Math.max(1, ...slots.map((s) => s.session_count || 0))
-                    const normalizedBooked = count / maxCount
+                    const normalizedEmpty = count / maxCount
                     const minAlpha = 0.08
                     const maxAlpha = 0.95
-                    const alpha = Math.max(minAlpha, Math.min(maxAlpha, minAlpha + normalizedBooked * (maxAlpha - minAlpha)))
+                    const alpha = Math.max(minAlpha, Math.min(maxAlpha, maxAlpha - normalizedEmpty * (maxAlpha - minAlpha)))
 
                     return (
                       <Tooltip key={`${day}-${hour}`}>
@@ -284,7 +297,7 @@ export const HeatmapGrid = ({ heatmapSummary }: { heatmapSummary: HeatmapSummary
         <div className="mt-4 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
           <span className="inline-flex items-center gap-2">
             <span className="h-3 w-3 rounded-sm bg-orange-200" />
-            Low empty rate
+            High empty rate
           </span>
           <span className="inline-flex items-center gap-2">
             <span className="h-3 w-3 rounded-sm bg-orange-400" />
@@ -292,9 +305,9 @@ export const HeatmapGrid = ({ heatmapSummary }: { heatmapSummary: HeatmapSummary
           </span>
           <span className="inline-flex items-center gap-2">
             <span className="h-3 w-3 rounded-sm bg-orange-600" />
-            High empty rate
+            Low empty rate
           </span>
-          <span className="text-xs text-muted-foreground">| The thinner the color, the emptier it is</span>
+          <span className="text-xs text-muted-foreground">| The lighter the color, the emptier it is</span>
         </div>
       </CardContent>
     </Card>
