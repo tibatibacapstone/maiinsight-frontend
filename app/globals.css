@@ -191,6 +191,11 @@
     break-inside: avoid;
     page-break-inside: avoid;
   }
+    .print-report .print-section {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  
 
   html,
   body {

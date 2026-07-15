@@ -9,7 +9,7 @@ import { BusinessErrorAlert } from "@/components/business-error-alert"
 import { PageSkeleton } from "@/components/page-skeleton"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle, CardTitleTooltip, StateCard, KpiCard } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { getApiUrl } from "@/lib/api"
@@ -220,79 +220,55 @@ export function SystemSettings() {
 
       {isLoading ? (
         <PageSkeleton cards={4} lines={2} />
+        <StateCard state="loading" title="Loading system settings..." minHeight="min-h-[200px]" />
       ) : (
         <>
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <Card className="border-border/60 bg-card/90 shadow-sm">
-              <CardContent className="p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Gemini</p>
-                    <p className="mt-2 text-lg font-semibold">{summary?.integrations.aiConfigured ? "Connected" : "Offline"}</p>
-                    <p className="text-sm text-muted-foreground">{summary?.integrations.geminiModel || "No model configured"}</p>
-                  </div>
-                  <Badge variant={summary?.integrations.aiConfigured ? "default" : "secondary"} className="rounded-full px-3">
-                    AI
-                  </Badge>
-                </div>
-              </CardContent>
-            </Card>
+            <KpiCard
+              label="Gemini"
+              value={summary?.integrations.aiConfigured ? "Connected" : "Offline"}
+              changeLabel={summary?.integrations.geminiModel || "No model configured"}
+            >
+              <Badge variant={summary?.integrations.aiConfigured ? "default" : "secondary"} className="rounded-full px-3">
+                AI
+              </Badge>
+            </KpiCard>
 
-            <Card className="border-border/60 bg-card/90 shadow-sm">
-              <CardContent className="p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Meta</p>
-                    <p className="mt-2 text-lg font-semibold">{summary?.integrations.metaConfigured ? "Connected" : "Offline"}</p>
-                    <p className="text-sm text-muted-foreground">{summary?.integrations.metaGraphVersion || "No graph version"}</p>
-                  </div>
-                  <Badge variant={summary?.integrations.metaConfigured ? "default" : "secondary"} className="rounded-full px-3">
-                    API
-                  </Badge>
-                </div>
-              </CardContent>
-            </Card>
+            <KpiCard
+              label="Meta"
+              value={summary?.integrations.metaConfigured ? "Connected" : "Offline"}
+              changeLabel={summary?.integrations.metaGraphVersion || "No graph version"}
+            >
+              <Badge variant={summary?.integrations.metaConfigured ? "default" : "secondary"} className="rounded-full px-3">
+                API
+              </Badge>
+            </KpiCard>
 
-            <Card className="border-border/60 bg-card/90 shadow-sm">
-              <CardContent className="p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Database</p>
-                    <p className="mt-2 text-lg font-semibold">{isDatabaseConnected ? "Connected" : "Error"}</p>
-                    <p className="text-sm text-muted-foreground">{summary?.database?.subtitle || "Error establishing database connection"}</p>
-                    <p className="mt-2 text-sm text-muted-foreground">{summary?.database?.name || "Unknown database"}</p>
-                  </div>
-                  <Badge variant={isDatabaseConnected ? "default" : "secondary"} className="rounded-full px-3">
-                    DB
-                  </Badge>
-                </div>
-              </CardContent>
-            </Card>
+            <KpiCard
+              label="Database"
+              value={isDatabaseConnected ? "Connected" : "Error"}
+              changeLabel={summary?.database?.subtitle || "Error establishing database connection"}
+            >
+              <Badge variant={isDatabaseConnected ? "default" : "secondary"} className="rounded-full px-3">
+                DB
+              </Badge>
+            </KpiCard>
 
-            <Card className="border-border/60 bg-card/90 shadow-sm">
-              <CardContent className="p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Machine Learning</p>
-                    <p className="mt-2 text-lg font-semibold">{summary?.latestMlRun ? "Last running" : "Idle"}</p>
-                    <p className="text-sm text-muted-foreground">{latestMlLabel}</p>
-                  </div>
-                  <Badge variant={summary?.latestMlRun ? "default" : "secondary"} className="rounded-full px-3">
-                    ML
-                  </Badge>
-                </div>
-              </CardContent>
-            </Card>
+            <KpiCard
+              label="Machine Learning"
+              value={summary?.latestMlRun ? "Last running" : "Idle"}
+              changeLabel={latestMlLabel}
+            >
+              <Badge variant={summary?.latestMlRun ? "default" : "secondary"} className="rounded-full px-3">
+                ML
+              </Badge>
+            </KpiCard>
           </div>
 
           <div className="grid gap-6 xl:grid-cols-2">
             <Card className="border-border/60 bg-card/90 shadow-sm">
               <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Shield className="h-5 w-5" />
-                  Integration Configuration
-                </CardTitle>
-                <CardDescription>Editable secrets for IT Support only.</CardDescription>
+                <CardTitleTooltip title="Integration Configuration" tooltip="Manage API keys and credentials for Gemini AI and Meta integrations. Editable secrets for IT Support only." />
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="rounded-2xl border border-border/60 bg-secondary/20 p-4">
@@ -397,11 +373,7 @@ export function SystemSettings() {
 
             <Card className="border-border/60 bg-card/90 shadow-sm">
               <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Users className="h-5 w-5" />
-                  User Accounts
-                </CardTitle>
-                <CardDescription>Invite users and let them set their own password.</CardDescription>
+                <CardTitleTooltip title="User Accounts" tooltip="Invite new users and manage existing accounts. Invite users and let them set their own password." />
               </CardHeader>
               <CardContent className="space-y-3">
                 <div className="grid gap-3 sm:grid-cols-2">

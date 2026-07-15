@@ -11,12 +11,19 @@ import {
   ShieldAlert,
   Sparkles,
 } from "lucide-react"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 
 import { BusinessErrorAlert } from "@/components/business-error-alert"
 import { PageSkeleton } from "@/components/page-skeleton"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle, CardTitleTooltip, StateCard } from "@/components/ui/card"
 import {
   Dialog,
   DialogContent,
@@ -400,15 +407,12 @@ export function GenAIWorkspace({ userRole: userRoleFromProps }: GenAIWorkspacePr
   if (!canViewPage) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center">
-        <Card className="max-w-md border-red-200 bg-red-50">
-          <CardContent className="p-8 text-center">
-            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-red-100">
-              <ShieldAlert className="h-6 w-6 text-red-600" />
-            </div>
-            <h2 className="mb-2 text-xl font-bold text-red-700">Access Denied</h2>
-            <p className="text-sm text-red-600">GenAI Workspace is available to Marketing Operational and IT Support only.</p>
-          </CardContent>
-        </Card>
+        <StateCard
+          state="access-denied"
+          title="Access Denied"
+          description="GenAI Workspace is available to Marketing Operational and IT Support only."
+          className="max-w-md"
+        />
       </div>
     )
   }
@@ -464,17 +468,13 @@ export function GenAIWorkspace({ userRole: userRoleFromProps }: GenAIWorkspacePr
 
       {isLoadingStatus ? (
         <PageSkeleton cards={2} lines={2} />
+        <StateCard state="loading" title="Loading AI assistant status..." minHeight="min-h-[180px]" />
       ) : !aiStatus?.configured ? (
-        <Card className="border-amber-200 bg-amber-50/70 shadow-sm">
-          <CardHeader>
-            <CardTitle>Setup Required</CardTitle>
-            <CardDescription>{aiStatus?.providerLabel || "AI provider"} is not connected for MaiinSight strategy generation yet.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm text-slate-700">
-            <p>{aiStatus?.setupMessage || "AI strategy generation is not configured yet."}</p>
-            <p className="text-muted-foreground">{aiStatus?.suggestion || "Please ask IT Support to configure AI provider credentials in the environment settings."}</p>
-          </CardContent>
-        </Card>
+        <StateCard
+          state="warning"
+          title="Setup Required"
+          description={`${aiStatus?.providerLabel || "AI provider"} is not connected for MaiinSight strategy generation yet.`}
+        />
       ) : (
         <>
           <Card className="border-border bg-card shadow-sm">
@@ -507,8 +507,7 @@ export function GenAIWorkspace({ userRole: userRoleFromProps }: GenAIWorkspacePr
           {outreachContext ? (
             <Card className="border-sky-200 bg-sky-50/70 shadow-sm">
               <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-base"><MessageSquare className="h-4 w-4 text-sky-600" /> Low Occupancy Outreach Context</CardTitle>
-                <CardDescription>Context passed from Fill Empty Sessions for outreach-focused AI strategy generation.</CardDescription>
+                <CardTitleTooltip title="Low Occupancy Outreach Context" tooltip="Context passed from Fill Empty Sessions for outreach-focused AI strategy generation." className="text-base" />
               </CardHeader>
               <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                 <div className="rounded-xl border border-white/80 bg-white/90 p-4 text-sm">
@@ -534,84 +533,193 @@ export function GenAIWorkspace({ userRole: userRoleFromProps }: GenAIWorkspacePr
               </CardContent>
             </Card>
           ) : null}
-
           <Card className="border-border bg-card shadow-sm">
-            <CardHeader>
-              <CardTitle>Strategy Configuration</CardTitle>
-              <CardDescription>Choose campaign parameters to generate a structured business recommendation.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-5">
-              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                <label className="space-y-2 text-sm font-medium">
-                  <span>Workspace Mode</span>
-                  <select value={workspaceMode} onChange={(event) => setWorkspaceMode(event.target.value as "general" | "outreach")} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm">
-                    <option value="general">General Strategy</option>
-                    <option value="outreach">Low Occupancy Outreach</option>
-                  </select>
-                </label>
-                <label className="space-y-2 text-sm font-medium">
-                  <span>Venue Type</span>
-                  <select value={selectedVenueType} onChange={(event) => setSelectedVenueType(event.target.value as (typeof venueTypes)[number])} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm">
-                    {venueTypes.map((option) => <option key={option} value={option}>{option}</option>)}
-                  </select>
-                </label>
-                <label className="space-y-2 text-sm font-medium">
-                  <span>Customer Segment</span>
-                  <select value={selectedSegment} onChange={(event) => setSelectedSegment(event.target.value)} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm">
-                    {targetSegments.map((option) => <option key={option} value={option}>{option}</option>)}
-                  </select>
-                </label>
-                <label className="space-y-2 text-sm font-medium">
-                  <span>Campaign Objective</span>
-                  <select value={selectedObjective} onChange={(event) => setSelectedObjective(event.target.value)} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm">
-                    {campaignObjectives.map((option) => <option key={option} value={option}>{option}</option>)}
-                  </select>
-                </label>
-                <label className="space-y-2 text-sm font-medium">
-                  <span>Offer Framework</span>
-                  <select value={selectedIncentive} onChange={(event) => setSelectedIncentive(event.target.value)} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm">
-                    {incentiveFrameworks.map((option) => <option key={option} value={option}>{option}</option>)}
-                  </select>
-                </label>
-                <label className="space-y-2 text-sm font-medium">
-                  <span>Message Tone</span>
-                  <select value={selectedTone} onChange={(event) => setSelectedTone(event.target.value)} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm">
-                    {copywritingTones.map((option) => <option key={option} value={option}>{option}</option>)}
-                  </select>
-                </label>
-              </div>
-              <div className="flex flex-wrap gap-3">
-                <Button className="gap-2" onClick={() => void handleGenerateStrategy()} disabled={!canGenerateAi || isGenerating || !aiStatus?.configured}>
-                  {isGenerating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-                  Generate Strategy
-                </Button>
-                <Button variant="outline" className="gap-2" onClick={() => setStrategy(null)} disabled={isGenerating}>
-                  <RefreshCw className="h-4 w-4" />
-                  Clear Result
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+  <CardHeader>
+    <CardTitleTooltip title="Strategy Configuration" tooltip="Choose campaign parameters to generate a structured business recommendation." />
+  </CardHeader>
+
+  <CardContent className="space-y-5">
+    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+      {/* Workspace Mode */}
+      <label className="space-y-2 text-sm font-medium">
+        <span>Workspace Mode</span>
+
+        <Select
+          value={workspaceMode}
+          onValueChange={(value) =>
+            setWorkspaceMode(value as "general" | "outreach")
+          }
+        >
+          <SelectTrigger className="h-12 w-full rounded-2xl border border-border/70 bg-background/90 px-4 text-sm font-medium text-foreground shadow-sm outline-none transition hover:border-primary/35 hover:bg-background focus:ring-2 focus:ring-primary/15">
+            <SelectValue placeholder="Select workspace mode" />
+          </SelectTrigger>
+
+          <SelectContent
+            position="popper"
+            className="w-[var(--radix-select-trigger-width)] rounded-xl border bg-background shadow-lg"
+          >
+            <SelectItem value="general">General Strategy</SelectItem>
+            <SelectItem value="outreach">Low Occupancy Outreach</SelectItem>
+          </SelectContent>
+        </Select>
+      </label>
+
+      {/* Venue Type */}
+      <label className="space-y-2 text-sm font-medium">
+        <span>Venue Type</span>
+
+        <Select
+          value={selectedVenueType}
+          onValueChange={(value) =>
+            setSelectedVenueType(value as (typeof venueTypes)[number])
+          }
+        >
+          <SelectTrigger className="h-12 w-full rounded-2xl border border-border/70 bg-background/90 px-4 text-sm font-medium text-foreground shadow-sm outline-none transition hover:border-primary/35 hover:bg-background focus:ring-2 focus:ring-primary/15">
+            <SelectValue placeholder="Select venue type" />
+          </SelectTrigger>
+
+          <SelectContent
+            position="popper"
+            className="w-[var(--radix-select-trigger-width)] rounded-xl border bg-background shadow-lg"
+          >
+            {venueTypes.map((option) => (
+              <SelectItem key={option} value={option}>
+                {option}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </label>
+
+      {/* Customer Segment */}
+      <label className="space-y-2 text-sm font-medium">
+        <span>Customer Segment</span>
+
+        <Select value={selectedSegment} onValueChange={setSelectedSegment}>
+          <SelectTrigger className="h-12 w-full rounded-2xl border border-border/70 bg-background/90 px-4 text-sm font-medium text-foreground shadow-sm outline-none transition hover:border-primary/35 hover:bg-background focus:ring-2 focus:ring-primary/15">
+            <SelectValue placeholder="Select customer segment" />
+          </SelectTrigger>
+
+          <SelectContent
+            position="popper"
+            className="w-[var(--radix-select-trigger-width)] rounded-xl border bg-background shadow-lg"
+          >
+            {targetSegments.map((option) => (
+              <SelectItem key={option} value={option}>
+                {option}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </label>
+
+      {/* Campaign Objective */}
+      <label className="space-y-2 text-sm font-medium">
+        <span>Campaign Objective</span>
+
+        <Select value={selectedObjective} onValueChange={setSelectedObjective}>
+          <SelectTrigger className="h-12 w-full rounded-2xl border border-border/70 bg-background/90 px-4 text-sm font-medium text-foreground shadow-sm outline-none transition hover:border-primary/35 hover:bg-background focus:ring-2 focus:ring-primary/15">
+            <SelectValue placeholder="Select campaign objective" />
+          </SelectTrigger>
+
+          <SelectContent
+            position="popper"
+            className="w-[var(--radix-select-trigger-width)] rounded-xl border bg-background shadow-lg"
+          >
+            {campaignObjectives.map((option) => (
+              <SelectItem key={option} value={option}>
+                {option}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </label>
+
+      {/* Offer Framework */}
+      <label className="space-y-2 text-sm font-medium">
+        <span>Offer Framework</span>
+
+        <Select value={selectedIncentive} onValueChange={setSelectedIncentive}>
+          <SelectTrigger className="h-12 w-full rounded-2xl border border-border/70 bg-background/90 px-4 text-sm font-medium text-foreground shadow-sm outline-none transition hover:border-primary/35 hover:bg-background focus:ring-2 focus:ring-primary/15">
+            <SelectValue placeholder="Select offer framework" />
+          </SelectTrigger>
+
+          <SelectContent
+            position="popper"
+            className="w-[var(--radix-select-trigger-width)] rounded-xl border bg-background shadow-lg"
+          >
+            {incentiveFrameworks.map((option) => (
+              <SelectItem key={option} value={option}>
+                {option}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </label>
+
+      {/* Message Tone */}
+      <label className="space-y-2 text-sm font-medium">
+        <span>Message Tone</span>
+
+        <Select value={selectedTone} onValueChange={setSelectedTone}>
+          <SelectTrigger className="h-12 w-full rounded-2xl border border-border/70 bg-background/90 px-4 text-sm font-medium text-foreground shadow-sm outline-none transition hover:border-primary/35 hover:bg-background focus:ring-2 focus:ring-primary/15">
+            <SelectValue placeholder="Select message tone" />
+          </SelectTrigger>
+
+          <SelectContent
+            position="popper"
+            className="w-[var(--radix-select-trigger-width)] rounded-xl border bg-background shadow-lg"
+          >
+            {copywritingTones.map((option) => (
+              <SelectItem key={option} value={option}>
+                {option}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </label>
+    </div>
+
+    <div className="flex flex-wrap gap-3">
+      <Button
+        className="h-11 gap-2 rounded-xl px-5"
+        onClick={() => void handleGenerateStrategy()}
+        disabled={!canGenerateAi || isGenerating || !aiStatus?.configured}
+      >
+        {isGenerating ? (
+          <Loader2 className="h-4 w-4 animate-spin" />
+        ) : (
+          <Sparkles className="h-4 w-4" />
+        )}
+        Generate Strategy
+      </Button>
+
+      <Button
+        variant="outline"
+        className="h-11 gap-2 rounded-xl px-5"
+        onClick={() => setStrategy(null)}
+        disabled={isGenerating}
+      >
+        <RefreshCw className="h-4 w-4" />
+        Clear Result
+      </Button>
+    </div>
+  </CardContent>
+</Card>
 
           {!strategy ? (
-            <Card className="border-border bg-card shadow-sm">
-              <CardContent className="flex min-h-[220px] flex-col items-center justify-center gap-3 text-center text-muted-foreground">
-                <Sparkles className="h-10 w-10" />
-                <div>
-                  <p className="font-medium text-foreground">No AI strategy generated yet.</p>
-                  <p className="text-sm">Generate a strategy to populate campaign objective, offer, channel, outreach copy, and follow-up actions.</p>
-                </div>
-              </CardContent>
-            </Card>
+            <StateCard
+              state="empty"
+              title="No AI strategy generated yet."
+              description="Generate a strategy to populate campaign objective, offer, channel, outreach copy, and follow-up actions."
+              icon={Sparkles}
+            />
           ) : (
             <Card className="border-border bg-card shadow-sm">
               <CardHeader>
                 <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
                   <div>
-                    <CardTitle>Generated Strategy</CardTitle>
-                    <CardDescription>
-                      {formatExactDateTime(strategy.generatedAt)} ({getRelativeTime(strategy.generatedAt)})
-                    </CardDescription>
+                    <CardTitleTooltip title="Generated Strategy" tooltip={`AI-generated campaign strategy with objective, offer, channel, and follow-up actions. Generated ${formatExactDateTime(strategy.generatedAt)} (${getRelativeTime(strategy.generatedAt)})`} />
                   </div>
                   <Badge
                     variant="outline"

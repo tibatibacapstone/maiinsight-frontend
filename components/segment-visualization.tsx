@@ -8,8 +8,6 @@ import {
   Info,
   Loader2,
   RefreshCw,
-  TrendingDown,
-  TrendingUp,
   Users,
 } from "lucide-react"
 import {
@@ -33,7 +31,15 @@ import { getApiUrl } from "@/lib/api"
 import { getAuthHeaders } from "@/lib/roles"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  KpiCard,
+  CardTitleTooltip,
+  StateCard,
+} from "@/components/ui/card"
 import {
   Table,
   TableBody,
@@ -49,6 +55,15 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import {
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+  PaginationLink,
+  PaginationPrevious,
+  PaginationNext,
+  PaginationEllipsis,
+} from "@/components/ui/pagination"
+import {
   CUSTOMER_SEGMENT_COLORS,
   SEGMENTATION_UPDATED_EVENT,
   fetchSegmentationCustomers,
@@ -57,6 +72,7 @@ import {
   sortClusterProfiles,
   type ClusterProfile,
   type CustomerRfmScore,
+  type SegmentationCustomersData,
   type SegmentationLatestData,
   type SegmentationSummaryData,
 } from "@/lib/segmentation"
@@ -177,17 +193,12 @@ const buildSegmentActionContext = (segmentName: string, recommendedAction?: stri
 }
 
 const EmptyState = () => (
-  <Card className="border-border bg-card shadow-sm">
-    <CardContent className="flex min-h-[280px] flex-col items-center justify-center gap-3 text-center">
-      <BrainCircuit className="h-12 w-12 text-muted-foreground" />
-      <div>
-        <p className="font-medium">No customer segmentation result yet.</p>
-        <p className="text-sm text-muted-foreground">
-          Run ML from Data Center to generate customer segments.
-        </p>
-      </div>
-    </CardContent>
-  </Card>
+  <StateCard
+    state="empty"
+    title="No customer segmentation result yet."
+    description="Run ML from Data Center to generate customer segments."
+    icon={BrainCircuit}
+  />
 )
 
 export const HeatmapGrid = ({ heatmapSummary }: { heatmapSummary: HeatmapSummary | null }) => {
@@ -200,10 +211,7 @@ export const HeatmapGrid = ({ heatmapSummary }: { heatmapSummary: HeatmapSummary
     return (
       <Card className="border-border bg-card shadow-sm">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            Empty Slot Heatmap
-          </CardTitle>
-          <CardDescription>No empty slot pattern available yet.</CardDescription>
+          <CardTitleTooltip title="Empty Slot Heatmap" tooltip="No empty slot pattern available yet." />
         </CardHeader>
         <CardContent>
           <div className="rounded-2xl border border-orange-200 bg-gradient-to-br from-orange-50 via-amber-50 to-white p-4 text-sm text-orange-900/80">
@@ -230,9 +238,9 @@ export const HeatmapGrid = ({ heatmapSummary }: { heatmapSummary: HeatmapSummary
         </CardTitle>
           <CardDescription>
             {mostEmptySlot
+        <CardTitleTooltip title="Empty Slot Heatmap" tooltip={mostEmptySlot
               ? `${mostEmptySlot.dayLabel} ${mostEmptySlot.hourLabel} is usually the emptiest slot this month.`
-              : "No empty slot pattern available yet."}
-          </CardDescription>
+              : "No empty slot pattern available yet."} />
       </CardHeader>
       <CardContent>
         <div className="overflow-x-auto">
@@ -319,6 +327,9 @@ export function SegmentVisualization() {
   const [showBestBusinessUse, setShowBestBusinessUse] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
   const [isLoadingCustomers, setIsLoadingCustomers] = useState(false)
+  const [customerPagination, setCustomerPagination] = useState<SegmentationCustomersData["pagination"] | null>(null)
+  const [currentPage, setCurrentPage] = useState(1)
+  const [pageSize, setPageSize] = useState(10)
   const [error, setError] = useState("")
 
   const loadSegmentation = async () => {
@@ -410,8 +421,13 @@ export function SegmentVisualization() {
   }, [])
 
   useEffect(() => {
+    setCurrentPage(1)
+  }, [selectedSegment, pageSize])
+
+  useEffect(() => {
     if (!latestData?.run?.id) {
       setCustomers([])
+      setCustomerPagination(null)
       return
     }
 
@@ -420,10 +436,11 @@ export function SegmentVisualization() {
         setIsLoadingCustomers(true)
         const customerResult = await fetchSegmentationCustomers({
           segmentName: selectedSegment || undefined,
-          limit: 100,
-          offset: 0,
+          limit: pageSize,
+          offset: (currentPage - 1) * pageSize,
         })
         setCustomers(customerResult.customers)
+        setCustomerPagination(customerResult.pagination)
       } catch (customerError) {
         setError(
           customerError instanceof Error
@@ -431,13 +448,14 @@ export function SegmentVisualization() {
             : "Failed to load segmentation customers."
         )
         setCustomers([])
+        setCustomerPagination(null)
       } finally {
         setIsLoadingCustomers(false)
       }
     }
 
     void loadCustomers()
-  }, [latestData?.run?.id, selectedSegment])
+  }, [latestData?.run?.id, selectedSegment, currentPage, pageSize])
 
   const clusters = useMemo(() => summaryData?.clusters || [], [summaryData])
   const selectedCluster =
@@ -445,6 +463,29 @@ export function SegmentVisualization() {
   const selectedCustomers = selectedSegment
     ? customers.filter((customer) => customer.segmentName === selectedSegment)
     : customers
+  const totalCustomerRows = customerPagination?.totalCustomers ?? selectedCustomers.length
+  const totalPages = Math.max(1, Math.ceil(totalCustomerRows / pageSize))
+  const displayedRowStart = totalCustomerRows === 0 ? 0 : (customerPagination?.offset || 0) + 1
+  const displayedRowEnd = customerPagination
+    ? (customerPagination.offset || 0) + customerPagination.returned
+    : selectedCustomers.length
+  const pageButtons = useMemo(() => {
+    const buttons: Array<number | "ellipsis"> = []
+
+    for (let page = 1; page <= totalPages; page += 1) {
+      if (
+        page === 1 ||
+        page === totalPages ||
+        Math.abs(page - currentPage) <= 1
+      ) {
+        buttons.push(page)
+      } else if (buttons[buttons.length - 1] !== "ellipsis") {
+        buttons.push("ellipsis")
+      }
+    }
+
+    return buttons
+  }, [currentPage, totalPages])
   const distributionData = clusters.map((cluster) => ({
     ...cluster,
     color: CUSTOMER_SEGMENT_COLORS[cluster.segmentName] || "var(--chart-5)",
@@ -490,7 +531,7 @@ export function SegmentVisualization() {
   }, [clusters, selectedCluster])
   const chartHeightClass =
     viewMode === "radar" ? "h-[clamp(320px,52vw,520px)]" : "h-[clamp(300px,48vw,440px)]"
-  const selectedCustomerCount = selectedCustomers.length
+  const selectedCustomerCount = totalCustomerRows
   const topCustomer = selectedCustomers[0] || null
   const uniqueBookingTypes = new Set(
     selectedCustomers.map((customer) => customer.bookingTypeDominant || "Unknown")
@@ -499,12 +540,10 @@ export function SegmentVisualization() {
   if (isLoading) {
     return (
       <div className="space-y-6">
-        <Card className="border-border bg-card shadow-sm">
-          <CardContent className="flex min-h-[280px] items-center justify-center gap-3 text-muted-foreground">
-            <Loader2 className="h-5 w-5 animate-spin" />
-            Loading customer segmentation...
-          </CardContent>
-        </Card>
+        <StateCard
+          state="loading"
+          title="Loading customer segmentation..."
+        />
       </div>
     )
   }
@@ -512,19 +551,17 @@ export function SegmentVisualization() {
   if (error) {
     return (
       <div className="space-y-6">
-        <Card className="border-border bg-card shadow-sm">
-          <CardContent className="flex min-h-[280px] flex-col items-center justify-center gap-3 text-center">
-            <AlertCircle className="h-12 w-12 text-destructive" />
-            <div>
-              <p className="font-medium text-destructive">Failed to load customer segmentation.</p>
-              <p className="text-sm text-muted-foreground">{error}</p>
-            </div>
+        <StateCard
+          state="error"
+          title="Failed to load customer segmentation."
+          description={error}
+          action={
             <Button variant="outline" onClick={() => void loadSegmentation()}>
               <RefreshCw className="mr-2 h-4 w-4" />
               Retry
             </Button>
-          </CardContent>
-        </Card>
+          }
+        />
       </div>
     )
   }
@@ -557,113 +594,57 @@ export function SegmentVisualization() {
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <Card className="border-border bg-card shadow-sm">
-            <CardContent className="pt-6">
-              <div className="flex items-start justify-between gap-4">
-                <div className="min-w-0 text-center">
-                  <p className="text-sm font-medium uppercase tracking-[0.12em] text-muted-foreground">
-                    Total Customers
-                  </p>
-                  <p className="mt-4 text-3xl font-semibold text-foreground">
-                    {formatNumber(latestData.totalCustomers, 0)}
-                  </p>
-                  <p className={`mt-2 text-sm font-medium ${totalCustomersChange < 0 ? "text-destructive" : "text-emerald-600"}`}>
-                    {previousTotalCustomers
-                      ? `${formatChange((totalCustomersChange / previousTotalCustomers) * 100)} vs last month`
-                      : "No comparison available"}
-                  </p>
-                </div>
-                <Badge variant="outline" className="rounded-full border-primary/20 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-primary">
-                  Customers
-                </Badge>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="border-border bg-card shadow-sm">
-            <CardContent className="pt-6">
-              <div className="flex items-start justify-between gap-4">
-                <div className="min-w-0 text-center">
-                  <p className="text-sm font-medium uppercase tracking-[0.12em] text-muted-foreground">
-                    Top Segment
-                  </p>
-                  <p className="mt-4 text-3xl font-semibold text-foreground">
-                    {clusters.length > 0 && clusters.reduce((a, b) => (a.customerCount && b.customerCount ? (b.customerCount > a.customerCount ? b : a) : a)).segmentName}
-                  </p>
-                  <p className="mt-2 text-sm text-muted-foreground">
-                    {clusters.length > 0 && latestData?.totalCustomers
-                      ? `${Math.round((clusters.reduce((a, b) => (a.customerCount && b.customerCount ? (b.customerCount > a.customerCount ? b : a) : a)).customerCount || 0) / latestData.totalCustomers * 100)}% of customers`
-                      : "No data available"}
-                  </p>
-                </div>
-                <Badge variant="outline" className="rounded-full border-primary/20 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-primary">
-                  Segment
-                </Badge>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="border-border bg-card shadow-sm">
-            <CardContent className="pt-6">
-              <div className="flex items-start justify-between gap-4">
-                <div className="min-w-0 text-center">
-                  <p className="text-sm font-medium uppercase tracking-[0.12em] text-muted-foreground">
-                    Top 3 Segment Share
-                  </p>
-                  <p className="mt-4 text-3xl font-semibold text-foreground">
-                    {clusters.length > 0 && latestData?.totalCustomers
-                      ? `${Math.round((clusters
-                        .slice(0)
-                        .sort((x, y) => (y.customerCount || 0) - (x.customerCount || 0))
-                        .slice(0, 3)
-                        .reduce((sum, c) => sum + (c.customerCount || 0), 0) / latestData.totalCustomers) * 100)}%`
-                      : "-"}
-                  </p>
-                  <p className="mt-2 text-sm text-muted-foreground">Share of customers in top 3 segments</p>
-                </div>
-                <Badge variant="outline" className="rounded-full border-primary/20 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-primary">
-                  Share
-                </Badge>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="border-border bg-card shadow-sm">
-            <CardContent className="pt-6">
-              <div className="flex items-start justify-between gap-4">
-                <div className="min-w-0 text-center">
-                  <p className="text-sm font-medium uppercase tracking-[0.12em] text-muted-foreground">
-                    Active Segments
-                  </p>
-                  <p className="mt-4 text-3xl font-semibold text-foreground">
-                    {clusters.length}
-                  </p>
-                  <p className="mt-2 text-sm text-muted-foreground">{selectedCluster?.segmentName || "No segment selected"}</p>
-                </div>
-                <Badge variant="outline" className="rounded-full border-primary/20 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-primary">
-                  Active
-                </Badge>
-              </div>
-            </CardContent>
-          </Card>
+          <KpiCard
+            label="Total Customers"
+            tooltip="Total number of unique customers identified from transaction data."
+            value={formatNumber(latestData.totalCustomers, 0)}
+            changeLabel={
+              previousTotalCustomers
+                ? `${formatChange((totalCustomersChange / previousTotalCustomers) * 100)} vs last month`
+                : "No comparison available"
+            }
+            icon={Users}
+            iconClassName={totalCustomersChange < 0 ? "text-destructive" : "text-emerald-600"}
+          />
+          <KpiCard
+            label="Top Segment"
+            tooltip="The customer segment with the largest population from the latest ML clustering run."
+            value={
+              clusters.length > 0
+                ? clusters.reduce((a, b) => (a.customerCount && b.customerCount ? (b.customerCount > a.customerCount ? b : a) : a)).segmentName
+                : "-"
+            }
+            changeLabel={
+              clusters.length > 0 && latestData?.totalCustomers
+                ? `${Math.round((clusters.reduce((a, b) => (a.customerCount && b.customerCount ? (b.customerCount > a.customerCount ? b : a) : a)).customerCount || 0) / latestData.totalCustomers * 100)}% of customers`
+                : "No data available"
+            }
+          />
+          <KpiCard
+            label="Top 3 Segment Share"
+            tooltip="Combined customer share of the three largest segments — indicates concentration."
+            value={
+              clusters.length > 0 && latestData?.totalCustomers
+                ? `${Math.round((clusters
+                    .slice(0)
+                    .sort((x, y) => (y.customerCount || 0) - (x.customerCount || 0))
+                    .slice(0, 3)
+                    .reduce((sum, c) => sum + (c.customerCount || 0), 0) / latestData.totalCustomers) * 100)}%`
+                : "-"
+            }
+            changeLabel="Share of customers in top 3 segments"
+          />
+          <KpiCard
+            label="Active Segments"
+            tooltip="Number of distinct customer segments generated by the latest Machine Learning run."
+            value={clusters.length}
+            changeLabel={selectedCluster?.segmentName || "No segment selected"}
+          />
         </div>
 
         <Card className="border-border bg-card shadow-sm">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              Customer Value Segments
-              <Tooltip>
-                <TooltipTrigger>
-                  <Info className="h-4 w-4 text-muted-foreground" />
-                </TooltipTrigger>
-                <TooltipContent>
-                  <p>
-                    Groups customers by their value to your business. This shows the final results used by the system.
-                  </p>
-                </TooltipContent>
-              </Tooltip>
-            </CardTitle>
-            <CardDescription>{buildBusinessSegmentationMessage(latestData)}</CardDescription>
+            <CardTitleTooltip title="Customer Value Segments" tooltip={buildBusinessSegmentationMessage(latestData)} />
           </CardHeader>
           <CardContent>
             <div className="flex flex-wrap gap-3">
@@ -694,29 +675,11 @@ export function SegmentVisualization() {
               <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                 <div>
                   <div className="flex items-center gap-2">
-                    <CardTitle>
-                      {viewMode === "distribution" && "Segment Distribution"}
-                      {viewMode === "profile" && "Segment Profile Comparison"}
-                      {viewMode === "radar" && "Segment Radar Analysis"}
-                    </CardTitle>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <button className="rounded-full p-1 text-muted-foreground transition hover:bg-slate-100">
-                          <Info className="h-4 w-4" />
-                        </button>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p>
-                          Switch between distribution, profile comparison and radar views to explore segment behavior.
-                        </p>
-                      </TooltipContent>
-                    </Tooltip>
+                    <CardTitleTooltip
+                      title={viewMode === "distribution" ? "Segment Distribution" : viewMode === "profile" ? "Segment Profile Comparison" : "Segment Radar Analysis"}
+                      tooltip={viewMode === "distribution" ? "How customers are split across the main business segments" : viewMode === "profile" ? "Compare booking recency, frequency, and value across segments" : "A compact radar view of the selected segment"}
+                    />
                   </div>
-                  <CardDescription>
-                    {viewMode === "distribution" && "How customers are split across the main business segments"}
-                    {viewMode === "profile" && "Compare booking recency, frequency, and value across segments"}
-                    {viewMode === "radar" && "A compact radar view of the selected segment"}
-                  </CardDescription>
                 </div>
 
                 <div className="flex w-full flex-wrap overflow-hidden rounded-lg border border-border bg-background/80 sm:w-auto">
@@ -789,23 +752,10 @@ export function SegmentVisualization() {
           <Card className="border-border bg-card shadow-sm">
             <CardHeader>
               <div className="flex items-center gap-2">
-                <CardTitle>Segment Details</CardTitle>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button className="rounded-full p-1 text-muted-foreground transition hover:bg-slate-100">
-                      <Info className="h-4 w-4" />
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>Details and recommended actions for the currently selected customer segment.</p>
-                  </TooltipContent>
-                </Tooltip>
-              </div>
-              <CardDescription>
-                {selectedCluster
+                <CardTitleTooltip title="Segment Details" tooltip={selectedCluster
                   ? `${selectedCluster.segmentName} business profile and next action`
-                  : "Select a segment to view details"}
-              </CardDescription>
+                  : "Select a segment to view details"} />
+              </div>
             </CardHeader>
             <CardContent className="space-y-4">
               {selectedCluster ? (
@@ -923,23 +873,10 @@ export function SegmentVisualization() {
             <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
               <div>
                 <div className="flex items-center gap-2">
-                  <CardTitle>Customer Table</CardTitle>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <button className="rounded-full p-1 text-muted-foreground transition hover:bg-slate-100">
-                        <Info className="h-4 w-4" />
-                      </button>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p>Customer rows for the selected segment, filtered for completed bookings and business-ready records.</p>
-                    </TooltipContent>
-                  </Tooltip>
-                </div>
-                <CardDescription>
-                  {selectedSegment
+                  <CardTitleTooltip title="Customer Table" tooltip={selectedSegment
                     ? `Customer rows for ${selectedSegment}`
-                    : "Latest customer rows from the cleaned segmentation result"}
-                </CardDescription>
+                    : "Latest customer rows from the cleaned segmentation result"} />
+                </div>
               </div>
 
               <div className="grid gap-2 sm:grid-cols-3">
@@ -998,7 +935,7 @@ export function SegmentVisualization() {
               </div>
             ) : (
               <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
-                <div className="border-b border-border bg-gradient-to-r from-background to-secondary/20 px-4 py-3">
+                <div className="flex flex-col gap-4 border-b border-border bg-gradient-to-r from-background to-secondary/20 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
                   <div className="grid grid-cols-[1.6fr_1fr_1fr_1fr_1fr_0.8fr] gap-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
                     <Tooltip>
                       <TooltipTrigger asChild>
@@ -1049,65 +986,137 @@ export function SegmentVisualization() {
                       </TooltipContent>
                     </Tooltip>
                   </div>
-                </div>
-                <div className="divide-y divide-border/60">
-                  {customers.map((customer, index) => {
-                    const scoreTone =
-                      customer.monetary >= (selectedCluster?.avgMonetary || 0)
-                        ? "from-emerald-50 to-background"
-                        : index % 2 === 0
-                          ? "from-background to-secondary/10"
-                          : "from-background to-muted/10"
-
-                    return (
-                      <div
-                        key={`${customer.customerKey}-${customer.segmentName}`}
-                        className={`grid grid-cols-[1.6fr_1fr_1fr_1fr_1fr_0.8fr] items-center gap-3 px-4 py-4 transition-all hover:-translate-y-[1px] hover:bg-gradient-to-r ${scoreTone}`}
+                  <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+                    <span>
+                      Showing {displayedRowStart}-{displayedRowEnd} of {totalCustomerRows}
+                    </span>
+                    <label className="flex items-center gap-2 rounded-full border border-border bg-muted/30 px-3 py-1">
+                      <span>Rows:</span>
+                      <select
+                        value={pageSize}
+                        onChange={(event) => setPageSize(Number(event.target.value))}
+                        className="rounded-full border border-border bg-background px-2 py-1 text-xs"
                       >
-                        <div className="flex items-center gap-3">
-                          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary">
-                            {(customer.customerName || customer.customerKey || "?").charAt(0).toUpperCase()}
-                          </div>
-                          <div className="min-w-0">
-                            <p className="truncate font-medium text-foreground">
-                              {customer.customerName || customer.customerKey}
-                            </p>
-                            <p className="truncate text-xs text-muted-foreground">
-                              {customer.customerKey}
-                            </p>
-                          </div>
-                        </div>
-
-                        <div>
-                          <Badge variant="secondary" className="rounded-full">
-                            {customer.bookingTypeDominant || "Unknown"}
-                          </Badge>
-                        </div>
-
-                        <div className="text-sm text-muted-foreground">
-                          <span className="font-medium text-foreground">{customer.recency}</span> days ago
-                        </div>
-
-                        <div className="text-sm text-muted-foreground">
-                          <span className="font-medium text-foreground">{customer.frequency}</span> visits
-                        </div>
-
-                        <div className="text-sm font-medium text-foreground">
-                          {formatCurrency(customer.monetary)}
-                        </div>
-
-                        <div>
-                          <Badge
-                            className="rounded-full bg-orange-500/10 text-orange-700 hover:bg-orange-500/10"
-                            variant="outline"
-                          >
-                            {customer.segmentName}
-                          </Badge>
-                        </div>
-                      </div>
-                    )
-                  })}
+                        {[10, 20, 50].map((size) => (
+                          <option key={size} value={size}>{size}</option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
                 </div>
+                <div className="max-h-[560px] overflow-y-auto">
+                  <div className="divide-y divide-border/60">
+                    {customers.map((customer, index) => {
+                      const scoreTone =
+                        customer.monetary >= (selectedCluster?.avgMonetary || 0)
+                          ? "from-emerald-50 to-background"
+                          : index % 2 === 0
+                            ? "from-background to-secondary/10"
+                            : "from-background to-muted/10"
+
+                      return (
+                        <div
+                          key={`${customer.customerKey}-${customer.segmentName}`}
+                          className={`grid grid-cols-[1.6fr_1fr_1fr_1fr_1fr_0.8fr] items-center gap-3 px-4 py-4 transition-all hover:-translate-y-[1px] hover:bg-gradient-to-r ${scoreTone}`}
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary">
+                              {(customer.customerName || customer.customerKey || "?").charAt(0).toUpperCase()}
+                            </div>
+                            <div className="min-w-0">
+                              <p className="truncate font-medium text-foreground">
+                                {customer.customerName || customer.customerKey}
+                              </p>
+                              <p className="truncate text-xs text-muted-foreground">
+                                {customer.customerKey}
+                              </p>
+                            </div>
+                          </div>
+
+                          <div>
+                            <Badge variant="secondary" className="rounded-full">
+                              {customer.bookingTypeDominant || "Unknown"}
+                            </Badge>
+                          </div>
+
+                          <div className="text-sm text-muted-foreground">
+                            <span className="font-medium text-foreground">{customer.recency}</span> days ago
+                          </div>
+
+                          <div className="text-sm text-muted-foreground">
+                            <span className="font-medium text-foreground">{customer.frequency}</span> visits
+                          </div>
+
+                          <div className="text-sm font-medium text-foreground">
+                            {formatCurrency(customer.monetary)}
+                          </div>
+
+                          <div>
+                            <Badge
+                              className="rounded-full bg-orange-500/10 text-orange-700 hover:bg-orange-500/10"
+                              variant="outline"
+                            >
+                              {customer.segmentName}
+                            </Badge>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+                {totalPages > 1 ? (
+                  <div className="border-t border-border bg-background/80 px-4 py-3">
+                    <Pagination className="justify-between gap-4">
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                        Page {currentPage} of {totalPages}
+                      </div>
+                      <PaginationContent>
+                        <PaginationItem>
+                          <PaginationPrevious
+                            href="#"
+                            aria-disabled={currentPage === 1}
+                            onClick={(event) => {
+                              event.preventDefault()
+                              if (currentPage === 1) return
+                              setCurrentPage((page) => Math.max(page - 1, 1))
+                            }}
+                          />
+                        </PaginationItem>
+                        {pageButtons.map((page, index) =>
+                          page === "ellipsis" ? (
+                            <PaginationItem key={`ellipsis-${index}`}>
+                              <PaginationEllipsis />
+                            </PaginationItem>
+                          ) : (
+                            <PaginationItem key={page}>
+                              <PaginationLink
+                                href="#"
+                                isActive={page === currentPage}
+                                onClick={(event) => {
+                                  event.preventDefault()
+                                  setCurrentPage(page)
+                                }}
+                              >
+                                {page}
+                              </PaginationLink>
+                            </PaginationItem>
+                          ),
+                        )}
+                        <PaginationItem>
+                          <PaginationNext
+                            href="#"
+                            aria-disabled={currentPage === totalPages}
+                            onClick={(event) => {
+                              event.preventDefault()
+                              if (currentPage === totalPages) return
+                              setCurrentPage((page) => Math.min(page + 1, totalPages))
+                            }}
+                          />
+                        </PaginationItem>
+                      </PaginationContent>
+                    </Pagination>
+                  </div>
+                ) : null}
               </div>
             )}
           </CardContent>

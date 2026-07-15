@@ -18,7 +18,7 @@ import { AlertTriangle, ArrowLeft, MapPin, Sparkles, Users, VenusAndMars } from 
 
 import { BusinessErrorAlert } from "@/components/business-error-alert"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle, CardTitleTooltip, StateCard } from "@/components/ui/card"
 import { getApiUrl } from "@/lib/api"
 import { getAuthHeaders, getStoredRole, USER_ROLES } from "@/lib/roles"
 
@@ -233,11 +233,7 @@ function MetaAudienceCharts({ onBack }: MetaAudienceProps) {
 
   if (loading) {
     return (
-      <Card className="border-border bg-card shadow-sm">
-        <CardContent className="flex min-h-[240px] items-center justify-center text-sm text-muted-foreground">
-          Loading audience insights...
-        </CardContent>
-      </Card>
+      <StateCard state="loading" title="Loading audience insights..." minHeight="min-h-[240px]" />
     )
   }
 
@@ -255,15 +251,13 @@ function MetaAudienceCharts({ onBack }: MetaAudienceProps) {
 
   if (!data?.hasData) {
     return (
-      <Card className="border-border bg-card shadow-sm">
-        <CardContent className="flex min-h-[240px] flex-col items-center justify-center gap-3 text-center">
-          <AlertTriangle className="h-10 w-10 text-amber-600" />
-          <div>
-            <p className="font-medium">No audience insight data is available yet.</p>
-            <p className="text-sm text-muted-foreground">Sync InstaSight first to populate audience demographics from Meta.</p>
-          </div>
-        </CardContent>
-      </Card>
+      <StateCard
+        state="empty"
+        title="No audience insight data is available yet."
+        description="Sync InstaSight first to populate audience demographics from Meta."
+        icon={AlertTriangle}
+        minHeight="min-h-[240px]"
+      />
     )
   }
 
@@ -348,8 +342,7 @@ function MetaAudienceCharts({ onBack }: MetaAudienceProps) {
       <div className="grid gap-6 xl:grid-cols-2">
         <Card className="border-border bg-card shadow-sm">
           <CardHeader>
-            <CardTitle>Gender Distribution</CardTitle>
-            <CardDescription>Audience composition by gender.</CardDescription>
+            <CardTitleTooltip title="Gender Distribution" tooltip="Audience composition by gender." />
           </CardHeader>
           <CardContent>
             <div className="h-[300px]">
@@ -370,8 +363,7 @@ function MetaAudienceCharts({ onBack }: MetaAudienceProps) {
 
         <Card className="border-border bg-card shadow-sm">
           <CardHeader>
-            <CardTitle>Age and Gender</CardTitle>
-            <CardDescription>Audience distribution by age band and gender.</CardDescription>
+            <CardTitleTooltip title="Age and Gender" tooltip="Audience distribution by age band and gender." />
           </CardHeader>
           <CardContent>
             <div className="h-[300px]">
@@ -394,8 +386,7 @@ function MetaAudienceCharts({ onBack }: MetaAudienceProps) {
       <div className="grid gap-6 xl:grid-cols-3">
         <Card className="border-border bg-card shadow-sm">
           <CardHeader>
-            <CardTitle>Top Cities</CardTitle>
-            <CardDescription>Cities with the strongest audience contribution.</CardDescription>
+            <CardTitleTooltip title="Top Cities" tooltip="Cities with the strongest audience contribution." />
           </CardHeader>
           <CardContent className="space-y-4">
             {data.topCities.map((item) => (
@@ -414,8 +405,7 @@ function MetaAudienceCharts({ onBack }: MetaAudienceProps) {
 
         <Card className="border-border bg-card shadow-sm">
           <CardHeader>
-            <CardTitle>Top Countries</CardTitle>
-            <CardDescription>Country concentration from Meta follower demographics.</CardDescription>
+            <CardTitleTooltip title="Top Countries" tooltip="Country concentration from Meta follower demographics." />
           </CardHeader>
           <CardContent className="space-y-4">
             {(data.topCountries || []).map((item) => (
@@ -434,8 +424,7 @@ function MetaAudienceCharts({ onBack }: MetaAudienceProps) {
 
         <Card className="border-border bg-card shadow-sm">
           <CardHeader>
-            <CardTitle>Audience Insight</CardTitle>
-            <CardDescription>Short business summary from synced audience profile data.</CardDescription>
+            <CardTitleTooltip title="Audience Insight" tooltip="Short business summary from synced audience profile data." />
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="rounded-xl bg-secondary/20 p-4">
