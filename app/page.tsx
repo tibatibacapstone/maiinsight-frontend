@@ -139,10 +139,41 @@ export default function Home() {
     }
   }
 
+  const handleGoogleCredential = async (credential: string) => {
+    setIsLoading(true)
+    setAuthError(null)
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/auth/google`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ credential }),
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        const message = data?.error || "Google login failed"
+        setAuthError(message)
+        return
+      }
+
+      const loginData = data as LoginResponse
+      handleLogin(loginData.token, loginData.user)
+    } catch (error) {
+      setAuthError("Unable to connect to the API. Please try again.")
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
   if (!isAuthenticated) {
     return (
       <LoginPage
         onSubmit={handleLoginSubmit}
+        onGoogleCredential={handleGoogleCredential}
         isLoading={isLoading}
         error={authError}
       />

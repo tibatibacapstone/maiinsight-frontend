@@ -173,7 +173,7 @@ const buildBusinessSegmentationMessage = (latest: SegmentationLatestData | null)
 const buildSegmentBusinessSummary = (segmentName: string, description?: string | null) => {
   const summaryMap: Record<string, string> = {
     "Prime Players": "High-value customers worth protecting with priority treatment and loyalty perks.",
-    "Routine Players": "Stable repeat customers who respond well to consistency and light incentives.",
+    "Routine Players": "Consistent high-frequency customers with stable contribution but lower overall value than Prime Players.",
     "Growth Players": "Promising customers who may spend more with the right nudge and follow-up.",
     "Re-Engagement Players": "Inactive or low-frequency customers who need a simple reactivation push.",
   }
@@ -184,7 +184,7 @@ const buildSegmentBusinessSummary = (segmentName: string, description?: string |
 const buildSegmentActionContext = (segmentName: string, recommendedAction?: string | null) => {
   const actionMap: Record<string, string> = {
     "Prime Players": "Use retention offers, VIP treatment, and priority booking reminders.",
-    "Routine Players": "Keep them engaged with consistent offers and recurring booking packages.",
+    "Routine Players": "Maintain engagement with frequency-based loyalty perks, membership upgrades, and consistent booking packages.",
     "Growth Players": "Push follow-up campaigns, bundles, and repeat-booking incentives.",
     "Re-Engagement Players": "Send a simple reactivation message and make it easy to book again.",
   }

@@ -152,7 +152,7 @@ function MetaAudienceCharts({ onBack }: MetaAudienceProps) {
         if (!response.ok || !result?.success || !result.data) {
           setData(null)
           setError({
-            message: result?.message || "Audience insight data could not be loaded.",
+            message: result?.message || "Audience demographic data could not be loaded.",
             suggestion: result?.suggestion || "Please sync InstaSight data again after the Meta API connection is available.",
             technical: result?.technicalMessage || null,
           })
@@ -163,7 +163,7 @@ function MetaAudienceCharts({ onBack }: MetaAudienceProps) {
       } catch (loadError) {
         setData(null)
         setError({
-          message: "Audience insight data could not be loaded.",
+          message: "Audience demographic data could not be loaded.",
           suggestion: "Please sync InstaSight data again after the Meta API connection is available.",
           technical: loadError instanceof Error ? loadError.message : null,
         })
@@ -233,14 +233,14 @@ function MetaAudienceCharts({ onBack }: MetaAudienceProps) {
 
   if (loading) {
     return (
-      <StateCard state="loading" title="Loading audience insights..." minHeight="min-h-[240px]" />
+      <StateCard state="loading" title="Loading audience demographics..." minHeight="min-h-[240px]" />
     )
   }
 
   if (error) {
     return (
       <BusinessErrorAlert
-        title="Audience Insight"
+        title="Audience Demographic"
         message={error.message}
         suggestion={error.suggestion}
         technicalDetails={error.technical}
@@ -253,7 +253,7 @@ function MetaAudienceCharts({ onBack }: MetaAudienceProps) {
     return (
       <StateCard
         state="empty"
-        title="No audience insight data is available yet."
+        title="No audience demographic data is available yet."
         description="Sync InstaSight first to populate audience demographics from Meta."
         icon={AlertTriangle}
         minHeight="min-h-[240px]"
@@ -327,7 +327,7 @@ function MetaAudienceCharts({ onBack }: MetaAudienceProps) {
           <CardContent className="p-5">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground">Audience Insight</p>
+                <p className="text-sm text-muted-foreground">Audience Demographic</p>
                 <p className="mt-1 text-base font-semibold leading-6 text-foreground">Profile ready</p>
                 <p className="text-sm text-muted-foreground">Use this to guide Meta content and targeting.</p>
               </div>
@@ -424,7 +424,7 @@ function MetaAudienceCharts({ onBack }: MetaAudienceProps) {
 
         <Card className="border-border bg-card shadow-sm">
           <CardHeader>
-            <CardTitleTooltip title="Audience Insight" tooltip="Short business summary from synced audience profile data." />
+            <CardTitleTooltip title="Audience Demographic" tooltip="Short business summary from synced audience profile data." />
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="rounded-xl bg-secondary/20 p-4">

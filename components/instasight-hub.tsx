@@ -604,7 +604,7 @@ return (
         <div className="flex flex-wrap gap-2">
           <Button variant="outline" className="gap-2" onClick={onViewAudience}>
             <Users className="h-4 w-4" />
-            View Audience Insight
+            View Audience Demographic
           </Button>
           <Button className="gap-2" onClick={() => void handleSync()} disabled={isSyncing || !status?.configured}>
             {isSyncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
