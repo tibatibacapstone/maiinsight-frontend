@@ -2,13 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react"
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -22,7 +15,7 @@ import { BusinessErrorAlert } from "@/components/business-error-alert"
 import { HeatmapGrid } from "@/components/segment-visualization" // ⬅️ NEW: reused for Empty Slot Heatmap
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Card, CardContent, CardHeader, CardTitle, CardTitleTooltip, KpiCard, StateCard } from "@/components/ui/card"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardTitleTooltip } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { getApiUrl } from "@/lib/api"
 import { getAuthHeaders } from "@/lib/roles"
@@ -35,20 +28,28 @@ import {
 import {
   AlertTriangle,
   ArrowRight,
-  BarChart3,
+  BarChart3, // ⬅️ NEW
   Calendar,
   CheckCircle2,
-  Clock,
+  Clock, // ⬅️ NEW
   Download,
   FileText,
+  Info,
   Loader2,
   Sparkles,
   Target,
+  TrendingDown, // ⬅️ NEW
+  TrendingUp,
   Users,
   Wallet,
-  Zap,
+  Zap, // ⬅️ NEW
   ChevronDown,
 } from "lucide-react"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 import {
   Area,
   AreaChart,
@@ -63,6 +64,29 @@ import {
   XAxis,
   YAxis,
 } from "recharts"
+
+function InfoTooltip({ content }: { content: string }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-muted-foreground transition hover:bg-accent hover:text-foreground"
+          aria-label="More information"
+        >
+          <Info className="h-3.5 w-3.5" />
+        </button>
+      </TooltipTrigger>
+      <TooltipContent
+        side="top"
+        sideOffset={8}
+        className="max-w-xs text-left leading-relaxed"
+      >
+        {content}
+      </TooltipContent>
+    </Tooltip>
+  )
+}
 
 interface ComparisonMetric {
   current: number
@@ -233,19 +257,6 @@ interface ReportResponse {
 // ⬅️ NEW: shared helper constants for the playtime + segment charts
 const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 const chartColors = ["var(--chart-1)", "var(--chart-2)", "var(--chart-3)", "var(--chart-4)"]
-const venues = [
-  { value: "All Venue", label: "All Venue" },
-  { value: "Mini Soccer", label: "Mini Soccer" },
-  { value: "Basketball", label: "Basketball" },
-]
-
-const customerTypes = ["All Type", "Membership", "Non Membership", "Internal"]
-
-const mapVenueToCourtType = (venue: string) => {
-  if (venue === "Mini Soccer") return "mini_soccer"
-  if (venue === "Basketball") return "basketball"
-  return "all"
-}
 const playtimeOrder: Record<string, number> = {
   Morning: 0,
   Afternoon: 1,
@@ -323,9 +334,8 @@ const getLastMonthRange = () => {
 export function ManagementReport() {
   const [startDate, setStartDate] = useState<string>("")
   const [endDate, setEndDate] = useState<string>("")
-  const [selectedVenue, setSelectedVenue] = useState("All Venue")
-const [selectedCustomerType, setSelectedCustomerType] = useState("All Type")
-const [periodType, setPeriodType] = useState<"MTD" | "YTD" | null>("MTD")
+  const [courtType, setCourtType] = useState("all")
+  const [bookingType, setBookingType] = useState("all")
   const [report, setReport] = useState<ReportResponse["data"] | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isApplyingDefaultRange, setIsApplyingDefaultRange] = useState(true)
@@ -389,15 +399,12 @@ const [periodType, setPeriodType] = useState<"MTD" | "YTD" | null>("MTD")
       setIsLoading(true)
       setError(null)
 
-      const mappedCourtType = mapVenueToCourtType(selectedVenue)
-
-const params = new URLSearchParams({
-  startDate,
-  endDate,
-  courtType: mappedCourtType,
-  customerType: selectedCustomerType,
-  bookingType: "all",
-})
+      const params = new URLSearchParams({
+        startDate,
+        endDate,
+        courtType,
+        bookingType,
+      })
 
       // ⬅️ NEW: params for overview-kpis, derived from the current report filters
       const { month, year, venue } = deriveOverviewParams(endDate, courtType)
@@ -409,17 +416,6 @@ const params = new URLSearchParams({
         customerType: "All Type",
         bookingType,
       })
-      // ⬅️ NEW: params for overview-kpis / occupancy-trend, derived from the current report filters
-      const { month, year } = deriveOverviewParams(endDate, mappedCourtType)
-
-const overviewParams = new URLSearchParams({
-  month,
-  year,
-  periodType: periodType || "MTD",
-  venue: selectedVenue,
-  customerType: selectedCustomerType,
-  bookingType: "all",
-})
 
       // ⬅️ NEW: occupancy-trend uses the report's exact date range with per-date buckets
       const occupancyTrendParams = new URLSearchParams({
@@ -476,10 +472,6 @@ const overviewParams = new URLSearchParams({
           cache: "no-store",
           headers: getAuthHeaders(),
         }).catch(() => null),
-  method: "GET",
-  cache: "no-store",
-  headers: getAuthHeaders(),
-}).catch(() => null),
         fetchSegmentationSummary()
           .then((data) => ({ success: true, data }))
           .catch(() => ({ success: false, data: null })),
@@ -539,7 +531,7 @@ const overviewParams = new URLSearchParams({
     } finally {
       setIsLoading(false)
     }
-  }, [endDate, periodType, selectedCustomerType, selectedVenue, startDate])
+  }, [bookingType, courtType, endDate, startDate])
 
   useEffect(() => {
     if (isApplyingDefaultRange) return
@@ -560,7 +552,7 @@ const overviewParams = new URLSearchParams({
         { label: "Revenue", value: formatCurrency(report.summary.totalRevenue), icon: Wallet, tone: "emerald" as const },
         { label: "Bookings", value: report.summary.totalBookings.toLocaleString("en-US"), icon: Users, tone: "sky" as const },
         { label: "Occupancy", value: `${report.summary.occupancyRate}%`, icon: Target, tone: "amber" as const },
-        { label: "Avg Value", value: formatCurrency(report.summary.avgRevenuePerBooking), icon: Wallet, tone: "rose" as const },
+        { label: "Avg Value", value: formatCurrency(report.summary.avgRevenuePerBooking), icon: TrendingUp, tone: "rose" as const },
       ]
     : []
 
@@ -617,7 +609,7 @@ const overviewParams = new URLSearchParams({
         previous: formatCurrency(report.comparison.avgRevenuePerBooking.previous),
         change: formatPercent(report.comparison.avgRevenuePerBooking.changePct),
         tone: "rose" as const,
-        icon: Wallet,
+        icon: TrendingUp,
       },
     ]
   })()
@@ -716,131 +708,71 @@ const overviewParams = new URLSearchParams({
       </div>
 
       <div className="rounded-2xl border border-border/70 bg-card/80 p-3 shadow-sm backdrop-blur no-print">
-  <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
-    <p className="shrink-0 text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
-      Report filters
-    </p>
-
-    <div className="flex flex-wrap items-center justify-end gap-2">
-      {/* Start Date */}
-      <div className="group relative w-[200px]">
-        <span className="pointer-events-none absolute left-3 top-1/2 z-10 -translate-y-1/2 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground transition-colors group-focus-within:text-foreground">
-          Start
-        </span>
-
-        <Input
-          type="date"
-          value={startDate}
-          onChange={(event) => setStartDate(event.target.value)}
-          className="h-11 w-full rounded-xl border border-border/70 bg-background/90 pl-[4.1rem] pr-3 text-sm font-medium text-foreground shadow-sm outline-none transition hover:border-primary/35 hover:bg-background focus:border-primary focus:ring-2 focus:ring-primary/15"
-        />
-      </div>
-
-      {/* End Date */}
-      <div className="group relative w-[200px]">
-        <span className="pointer-events-none absolute left-3 top-1/2 z-10 -translate-y-1/2 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground transition-colors group-focus-within:text-foreground">
-          End
-        </span>
-
-        <Input
-          type="date"
-          value={endDate}
-          onChange={(event) => setEndDate(event.target.value)}
-          className="h-11 w-full rounded-xl border border-border/70 bg-background/90 pl-[3.6rem] pr-3 text-sm font-medium text-foreground shadow-sm outline-none transition hover:border-primary/35 hover:bg-background focus:border-primary focus:ring-2 focus:ring-primary/15"
-        />
-      </div>
-
-      {/* Venue */}
-      <div className="w-[184px]">
-        <Select value={selectedVenue} onValueChange={setSelectedVenue}>
-          <SelectTrigger className="h-11 w-full rounded-xl border border-border/70 bg-background/90 px-3 shadow-sm outline-none transition hover:border-primary/35 hover:bg-background focus:ring-2 focus:ring-primary/15">
-            <div className="flex min-w-0 items-center gap-3">
-              <span className="shrink-0 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                Venue
+        <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+          <p className="shrink-0 text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">Report filters</p>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <div className="group relative min-w-[132px]">
+              <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[9px] font-semibold uppercase tracking-[0.12em] text-muted-foreground transition-colors group-focus-within:text-foreground">
+                Start
               </span>
-              <SelectValue placeholder="Venue" />
+              <Input
+                type="date"
+                value={startDate}
+                onChange={(event) => setStartDate(event.target.value)}
+                className="h-10 w-full rounded-lg border border-border/70 bg-background/90 pl-[3.6rem] pr-2.5 text-xs shadow-sm outline-none transition hover:border-primary/35 hover:bg-background focus:border-primary focus:ring-2 focus:ring-primary/15"
+              />
             </div>
-          </SelectTrigger>
-
-          <SelectContent
-            position="popper"
-            className="w-[var(--radix-select-trigger-width)] rounded-xl border bg-background shadow-lg"
-          >
-            {venues.map((venue) => (
-              <SelectItem key={venue.value} value={venue.value}>
-                {venue.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-
-      {/* Customer */}
-      <div className="w-[220px]">
-        <Select
-          value={selectedCustomerType}
-          onValueChange={setSelectedCustomerType}
-        >
-          <SelectTrigger className="h-11 w-full rounded-xl border border-border/70 bg-background/90 px-3 shadow-sm outline-none transition hover:border-primary/35 hover:bg-background focus:ring-2 focus:ring-primary/15">
-            <div className="flex min-w-0 items-center gap-3">
-              <span className="shrink-0 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                Customer
+            <div className="group relative min-w-[132px]">
+              <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[9px] font-semibold uppercase tracking-[0.12em] text-muted-foreground transition-colors group-focus-within:text-foreground">
+                End
               </span>
-              <SelectValue placeholder="Customer" />
+              <Input
+                type="date"
+                value={endDate}
+                onChange={(event) => setEndDate(event.target.value)}
+                className="h-10 w-full rounded-lg border border-border/70 bg-background/90 pl-[3.2rem] pr-2.5 text-xs shadow-sm outline-none transition hover:border-primary/35 hover:bg-background focus:border-primary focus:ring-2 focus:ring-primary/15"
+              />
             </div>
-          </SelectTrigger>
-
-          <SelectContent
-            position="popper"
-            className="w-[var(--radix-select-trigger-width)] rounded-xl border bg-background shadow-lg"
-          >
-            {customerTypes.map((customerType) => (
-              <SelectItem key={customerType} value={customerType}>
-                {customerType}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+            <div className="group relative min-w-[128px]">
+              <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[9px] font-semibold uppercase tracking-[0.12em] text-muted-foreground transition-colors group-focus-within:text-foreground">
+                Court
+              </span>
+              <select
+                value={courtType}
+                onChange={(event) => setCourtType(event.target.value)}
+                className="h-10 w-full appearance-none rounded-lg border border-border/70 bg-background/90 pl-[3.2rem] pr-8 text-xs font-medium text-foreground shadow-sm outline-none transition hover:border-primary/35 hover:bg-background focus:border-primary focus:ring-2 focus:ring-primary/15"
+              >
+                <option value="all">All courts</option>
+                <option value="mini_soccer">Mini Soccer</option>
+                <option value="basketball">Basketball</option>
+              </select>
+                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground transition-transform group-hover:translate-y-[-45%] group-focus-within:text-foreground" />
+            </div>
+            <div className="group relative min-w-[150px]">
+              <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[9px] font-semibold uppercase tracking-[0.12em] text-muted-foreground transition-colors group-focus-within:text-foreground">
+                Booking
+              </span>
+              <select
+                value={bookingType}
+                onChange={(event) => setBookingType(event.target.value)}
+                className="h-10 w-full appearance-none rounded-lg border border-border/70 bg-background/90 pl-[4.2rem] pr-8 text-xs font-medium text-foreground shadow-sm outline-none transition hover:border-primary/35 hover:bg-background focus:border-primary focus:ring-2 focus:ring-primary/15"
+              >
+                <option value="all">All booking types</option>
+                <option value="regular_booking">Regular booking</option>
+                <option value="member_internal_booking">Member / internal</option>
+                <option value="other">Other</option>
+              </select>
+                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground transition-transform group-hover:translate-y-[-45%] group-focus-within:text-foreground" />
+            </div>
+            <div className="inline-flex h-10 items-center rounded-xl border border-border/70 bg-background/80 p-1 shadow-sm">
+              <Button variant="outline" size="sm" className="h-8 gap-1 px-2.5 text-[11px]" onClick={() => setDownloadConfirmOpen(true)} disabled={!report?.hasData}>
+                <Download className="h-3 w-3" />
+                Export PDF
+              </Button>
+            </div>
+          </div>
+        </div>
       </div>
-
-      {/* MTD / YTD */}
-      <div className="inline-flex h-11 items-center rounded-xl border border-border/70 bg-background/80 p-1 shadow-sm">
-        {(["MTD", "YTD"] as const).map((type) => (
-          <Button
-            key={type}
-            variant={periodType === type ? "secondary" : "ghost"}
-            className={`h-8 rounded-lg border px-3 text-[11px] transition ${
-              periodType === type
-                ? type === "MTD"
-                  ? "border-amber-300 bg-amber-100 text-amber-700 hover:bg-amber-200"
-                  : "border-emerald-300 bg-emerald-100 text-emerald-700 hover:bg-emerald-200"
-                : "border-transparent text-muted-foreground hover:bg-accent/80 hover:text-foreground"
-            }`}
-            onClick={() =>
-              setPeriodType((current) => (current === type ? null : type))
-            }
-          >
-            {type}
-          </Button>
-        ))}
-      </div>
-
-      {/* Export PDF */}
-      <div className="inline-flex h-11 items-center rounded-xl border border-border/70 bg-background/80 p-1 shadow-sm">
-        <Button
-          variant="outline"
-          size="sm"
-          className="h-8 gap-1 px-2.5 text-[11px]"
-          onClick={() => setDownloadConfirmOpen(true)}
-          disabled={!report?.hasData}
-        >
-          <Download className="h-3 w-3" />
-          Export PDF
-        </Button>
-      </div>
-    </div>
-  </div>
-</div>
 
       <AlertDialog open={downloadConfirmOpen} onOpenChange={setDownloadConfirmOpen}>
         <AlertDialogContent>
@@ -921,7 +853,12 @@ const overviewParams = new URLSearchParams({
             <div className="grid gap-6 lg:grid-cols-2">
             <Card className="border-border bg-card shadow-sm">
               <CardHeader>
-                <CardTitleTooltip title="Executive Summary" tooltip="AI-generated overview combining occupancy, revenue, and segmentation insights for the selected period. Presentation-ready summary for management review" />
+                <CardTitle className="flex items-center gap-2">
+                  <Sparkles className="h-4 w-4 text-primary" />
+                  Executive Summary
+                  <InfoTooltip content="Presentation-ready summary for management review." />
+                </CardTitle>
+                <CardDescription>Presentation-ready summary for management review</CardDescription>
               </CardHeader>
               <CardContent className="space-y-3 text-sm text-muted-foreground">
                 <div className="rounded-2xl border border-border bg-gradient-to-br from-background to-secondary/20 p-4 text-foreground shadow-sm">
@@ -946,7 +883,12 @@ const overviewParams = new URLSearchParams({
 
             <Card className="border-border bg-card shadow-sm">
               <CardHeader>
-                <CardTitleTooltip title="Recommendations / Notes" tooltip="Actionable follow-up suggestions derived from the period's data analysis. Business-friendly follow-up suggestions based on the selected period" />
+                <CardTitle className="flex items-center gap-2">
+                  <CheckCircle2 className="h-4 w-4 text-primary" />
+                  Recommendations / Notes
+                  <InfoTooltip content="Business-friendly follow-up suggestions based on the selected period." />
+                </CardTitle>
+                <CardDescription>Business-friendly follow-up suggestions based on the selected period</CardDescription>
               </CardHeader>
               <CardContent className="space-y-3 text-sm text-muted-foreground">
                 {report.insights.recommendations.map((recommendation) => (
@@ -1119,46 +1061,104 @@ const overviewParams = new URLSearchParams({
         <>
           {/* ⬅️ NEW: on-screen KPI cards (mirrors Overview) */}
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <KpiCard
-              label="Occupancy Rate"
-              tooltip="Percentage of court hours booked out of total available hours in the selected period."
-              value={overviewKpi ? `${overviewKpi.occupancyRate}%` : `${report.summary.occupancyRate}%`}
-              change={overviewKpi?.occupancyChange}
-              icon={Users}
-            />
-            <KpiCard
-              label="Revenue by Play Date"
-              tooltip="Total booking revenue from transactions grouped by play date in the selected period."
-              value={formatCurrency(overviewKpi?.totalRevenue ?? report.summary.totalRevenue)}
-              change={overviewKpi?.revenueChange}
-              icon={BarChart3}
-            />
-            <KpiCard
-              label="Lowest-Demand Session"
-              tooltip="The time slot with the fewest bookings — a candidate for promotional pricing."
-              value={overviewKpi?.lowSessionLabel || "No data"}
-              valueClassName="text-xl"
-              changeLabel="Lowest booking volume among all sessions"
-              icon={Clock}
-              iconClassName="text-muted-foreground"
-            />
-            <KpiCard
-              label="Peak Session Revenue"
-              tooltip="The time slot generating the highest total revenue — your most valuable session."
-              value={overviewKpi?.peakSessionLabel || "-"}
-              valueClassName="text-xl"
-              changeLabel={
-                (overviewKpi?.peakSessionRevenue || 0) > 0
-                  ? formatCurrency(overviewKpi?.peakSessionRevenue || 0)
-                  : "No revenue data available"
-              }
-              icon={Zap}
-            />
+            <Card className="border-border bg-card shadow-sm">
+              <CardHeader className="pb-3">
+                <CardTitleTooltip
+                  title="Occupancy Rate"
+                  tooltip="Percentage of court hours booked out of total available hours in the selected period."
+                  className="text-sm font-medium text-muted-foreground"
+                />
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-end justify-between">
+                  <div>
+                    <p className="text-3xl font-bold">{overviewKpi ? `${overviewKpi.occupancyRate}%` : `${report.summary.occupancyRate}%`}</p>
+                    {overviewKpi ? (
+                      <p className={`mt-2 flex items-center gap-1 text-xs ${overviewKpi.occupancyChange < 0 ? "text-destructive" : "text-primary"}`}>
+                        {overviewKpi.occupancyChange < 0 ? <TrendingDown className="h-3 w-3" /> : <TrendingUp className="h-3 w-3" />}
+                        {`${overviewKpi.occupancyChange >= 0 ? "+" : ""}${overviewKpi.occupancyChange}% vs previous period`}
+                      </p>
+                    ) : (
+                      <p className="mt-2 text-xs text-muted-foreground">No comparison available</p>
+                    )}
+                  </div>
+                  <Users className="h-6 w-6 text-primary" />
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="border-border bg-card shadow-sm">
+              <CardHeader>
+                <CardTitleTooltip
+                  title="Revenue by Play Date"
+                  tooltip="Total booking revenue from transactions in the selected period."
+                  className="text-sm font-medium text-muted-foreground"
+                />
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-end justify-between">
+                  <div>
+                    <p className="text-3xl font-bold">{formatCurrency(overviewKpi?.totalRevenue ?? report.summary.totalRevenue)}</p>
+                    {overviewKpi ? (
+                      <p className={`mt-2 flex items-center gap-1 text-xs ${overviewKpi.revenueChange < 0 ? "text-destructive" : "text-primary"}`}>
+                        {overviewKpi.revenueChange < 0 ? <TrendingDown className="h-3 w-3" /> : <TrendingUp className="h-3 w-3" />}
+                        {`${overviewKpi.revenueChange >= 0 ? "+" : ""}${overviewKpi.revenueChange}% vs previous period`}
+                      </p>
+                    ) : (
+                      <p className="mt-2 text-xs text-muted-foreground">No comparison available</p>
+                    )}
+                  </div>
+                  <BarChart3 className="h-6 w-6 text-primary" />
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="border-border bg-card shadow-sm">
+              <CardHeader>
+                <CardTitleTooltip
+                  title="Lowest-Demand Session"
+                  tooltip="The time slot with the fewest bookings — a candidate for promotional pricing."
+                  className="text-sm font-medium text-muted-foreground"
+                />
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-end justify-between">
+                  <div>
+                    <p className="text-xl font-bold">{overviewKpi?.lowSessionLabel || "No data"}</p>
+                    <p className="mt-2 text-xs text-muted-foreground">Lowest booking volume among all sessions</p>
+                  </div>
+                  <Clock className="h-5 w-5 text-muted-foreground" />
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="border-border bg-card shadow-sm">
+              <CardHeader>
+                <CardTitleTooltip
+                  title="Peak Session Revenue"
+                  tooltip="The time slot generating the highest total revenue — your most valuable session."
+                  className="text-sm font-medium text-muted-foreground"
+                />
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-end justify-between">
+                  <div>
+                    <p className="text-xl font-bold">{overviewKpi?.peakSessionLabel || "-"}</p>
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      {(overviewKpi?.peakSessionRevenue || 0) > 0 ? formatCurrency(overviewKpi?.peakSessionRevenue || 0) : "No revenue data available"}
+                    </p>
+                  </div>
+                  <Zap className="h-5 w-5 text-primary" />
+                </div>
+              </CardContent>
+            </Card>
           </div>
 
           <Card className="border-border bg-gradient-to-br from-emerald-50 via-background to-sky-50 shadow-sm">
             <CardHeader>
-              <CardTitleTooltip title="Meta Signal" tooltip="Reach and audience demographics pulled from synced Meta advertising data. Reach and audience profile from synced Meta data" />
+                <CardTitle className="flex items-center gap-2">
+                <Sparkles className="h-4 w-4 text-primary" />
+                Meta Signal
+                <InfoTooltip content="Reach and audience profile from synced Meta data." />
+              </CardTitle>
+              <CardDescription>Reach and audience profile from synced Meta data</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3 text-sm text-muted-foreground">
               {metaInsightSummary ? (
@@ -1179,7 +1179,13 @@ const overviewParams = new URLSearchParams({
           <div className="grid gap-6 lg:grid-cols-2">
             <Card className="border-border bg-card shadow-sm">
               <CardHeader>
-                <CardTitleTooltip title="Revenue Trend" tooltip="Shows booking revenue grouped by play date over time. Revenue progression across the selected reporting period" />
+                <CardTitle>
+                  <span className="flex items-center gap-2">
+                    Revenue Trend
+                    <InfoTooltip content="Revenue progression across the selected reporting period." />
+                  </span>
+                </CardTitle>
+                <CardDescription>Revenue progression across the selected reporting period</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="h-[320px]">
@@ -1205,9 +1211,13 @@ const overviewParams = new URLSearchParams({
             {/* ⬅️ NEW: Occupancy Trend (on-screen, ResponsiveContainer since it's always visible) */}
             <Card className="border-border bg-card shadow-sm">
               <CardHeader>
-                <CardTitle>Occupancy Trend (per date)</CardTitle>
+                <CardTitle>
+                  <span className="flex items-center gap-2">
+                    Occupancy Trend (per date)
+                    <InfoTooltip content="Court hours booked per day across the selected reporting period." />
+                  </span>
+                </CardTitle>
                 <CardDescription>Court hours booked per day across the selected reporting period</CardDescription>
-                <CardTitleTooltip title="Occupancy Trend" tooltip="Shows how court occupancy rates changed over the selected period. Court hours booked across the selected reporting period" />
               </CardHeader>
               <CardContent>
                 <div className="h-[320px]">
@@ -1240,7 +1250,13 @@ const overviewParams = new URLSearchParams({
           <div className="grid gap-6 lg:grid-cols-2">
             <Card className="border-border bg-card shadow-sm">
               <CardHeader>
-                <CardTitleTooltip title="Booking Mix" tooltip="Shows the distribution of bookings between members and non-members. Booking type distribution for the selected reporting period" />
+                <CardTitle>
+                  <span className="flex items-center gap-2">
+                    Booking Mix
+                    <InfoTooltip content="Booking type distribution for the selected reporting period." />
+                  </span>
+                </CardTitle>
+                <CardDescription>Booking type distribution for the selected reporting period</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="h-[320px]">
@@ -1261,7 +1277,13 @@ const overviewParams = new URLSearchParams({
             {/* ⬅️ NEW: Play-Time Preference Mix (on-screen) */}
             <Card className="border-border bg-card shadow-sm">
               <CardHeader>
-                <CardTitleTooltip title="Play-Time Preference Mix" tooltip={`Shows which time of day is most popular for bookings. ${playtimeBehaviorInsight}`} />
+                <CardTitle>
+                  <span className="flex items-center gap-2">
+                    Play-Time Preference Mix
+                    <InfoTooltip content="Booking time distribution (morning / afternoon / evening / night) for the selected period." />
+                  </span>
+                </CardTitle>
+                <CardDescription>{playtimeBehaviorInsight}</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="h-[320px]">
@@ -1295,7 +1317,17 @@ const overviewParams = new URLSearchParams({
           {/* ⬅️ NEW: Customer Value Segments (on-screen) */}
           <Card className="border-border bg-card shadow-sm">
             <CardHeader>
-              <CardTitleTooltip title="Customer Value Segments" tooltip={`Groups customers by their booking frequency, recency, and spending patterns. ${segmentChartTotal > 0 ? `${segmentChartTotal.toLocaleString("en-US")} customers across ${segmentChart.length} segments` : "No segmentation result yet. Run Machine Learning from Data Center to generate customer segments."}`} />
+                <CardTitle>
+                  <span className="flex items-center gap-2">
+                    Customer Value Segments
+                    <InfoTooltip content="Customer distribution across High / Mid / Low value tiers based on visit frequency." />
+                  </span>
+                </CardTitle>
+              <CardDescription>
+                {segmentChartTotal > 0
+                  ? `${segmentChartTotal.toLocaleString("en-US")} customers across ${segmentChart.length} segments`
+                  : "No segmentation result yet. Run Machine Learning from Data Center to generate customer segments."}
+              </CardDescription>
             </CardHeader>
             <CardContent>
               <div className="h-[280px]">

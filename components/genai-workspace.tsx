@@ -20,7 +20,6 @@ import {
 } from "@/components/ui/select"
 
 import { BusinessErrorAlert } from "@/components/business-error-alert"
-import { PageSkeleton } from "@/components/page-skeleton"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle, CardTitleTooltip, StateCard } from "@/components/ui/card"
@@ -467,7 +466,6 @@ export function GenAIWorkspace({ userRole: userRoleFromProps }: GenAIWorkspacePr
       ) : null}
 
       {isLoadingStatus ? (
-        <PageSkeleton cards={2} lines={2} />
         <StateCard state="loading" title="Loading AI assistant status..." minHeight="min-h-[180px]" />
       ) : !aiStatus?.configured ? (
         <StateCard

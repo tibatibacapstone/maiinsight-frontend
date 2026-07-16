@@ -6,18 +6,14 @@ import {
   BarChart3,
   ChevronDown,
   Clock,
+  Info,
   Loader2,
   Sparkles,
+  TrendingDown,
+  TrendingUp,
   Users,
   Zap,
 } from "lucide-react"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
 import {
   Area,
   AreaChart,
@@ -41,14 +37,7 @@ import { HeatmapGrid } from "@/components/segment-visualization"
 import { PageSkeleton } from "@/components/page-skeleton"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  KpiCard,
-  CardTitleTooltip,
-} from "@/components/ui/card"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardTitleTooltip } from "@/components/ui/card"
 import {
   Tooltip,
   TooltipContent,
@@ -104,10 +93,6 @@ interface DashboardStatus {
   } | null
   latestMetaSync: {
     startedAt: string
-    status: string
-  } | null
-  latestMlRun: {
-    createdAt: string
     status: string
   } | null
   latestSegmentationRun: {
@@ -213,7 +198,7 @@ const venues = [
   { value: "Mini Soccer", label: "Mini Soccer" },
   { value: "Basketball", label: "Basketball" },
 ]
-const customerTypes = ["All Type", "Membership", "Non Membership", "Internal"]
+const customerTypes = ["All Type", "Membership", "Non Membership"]
 const chartColors = ["var(--chart-1)", "var(--chart-2)", "var(--chart-3)", "var(--chart-4)"]
 const playtimeOrder: Record<string, number> = {
   Morning: 0,
@@ -232,7 +217,6 @@ const playtimeLabelMap: Record<string, string> = {
 const bookingTypeLabelMap: Record<string, string> = {
   regular_booking: "Membership",
   member_internal_booking: "Non Membership",
-  internal: "Internal",
   other: "Other",
 }
 
@@ -542,6 +526,34 @@ const pieLabelRenderer = ({
   )
 }
 
+function InfoTooltip({ content }: { content: string }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          className="inline-flex h-5 w-5 items-center justify-center rounded-full text-muted-foreground transition hover:bg-accent hover:text-foreground"
+          aria-label="More information"
+        >
+          <Info className="h-3.5 w-3.5" />
+        </button>
+      </TooltipTrigger>
+      <TooltipContent side="top" sideOffset={8} className="max-w-xs text-left leading-relaxed">
+        {content}
+      </TooltipContent>
+    </Tooltip>
+  )
+}
+
+function TitleWithTooltip({ title, tooltip }: { title: string; tooltip: string }) {
+  return (
+    <div className="flex items-center gap-2">
+      <span>{title}</span>
+      <InfoTooltip content={tooltip} />
+    </div>
+  )
+}
+
 export function AnalyticsDashboard() {
   const defaultSelection = getDefaultMonthSelection()
   const [selectedMonth, setSelectedMonth] = useState(defaultSelection.month)
@@ -566,7 +578,7 @@ export function AnalyticsDashboard() {
   const canGenerateBusinessInsight = currentRole === "operational" || currentRole === "it_support"
   const availableMonthValues = useMemo(() => status?.transactionAvailableMonths || [], [status?.transactionAvailableMonths])
   const businessInsightCacheRef = useRef<Map<string, BusinessInsightState>>(new Map())
-  const dashboardCacheRef = useRef<Map<string, { timestamp: number; payload: { statusData: DashboardStatus; overviewKpi: OverviewKpiData | null; occupancyTrend: OccupancyTrendPoint[]; reportData: RevenueReportData | null; playtimeMlData: PlaytimeMlData | null; segmentation: ClusterProfile[]; metaDashboard: MetaDashboardData | null } }>>(new Map())
+  const dashboardCacheRef = useRef<Map<string, { timestamp: number; payload: { statusData: DashboardStatus; overviewKpi: OverviewKpiData | null; occupancyTrend: OccupancyTrendPoint[]; reportData: RevenueReportData | null; playtimeData: PlaytimeData | null; segmentation: ClusterProfile[]; metaDashboard: MetaDashboardData | null } }>>(new Map())
   const lastRefreshAtRef = useRef(0)
 
   const yearOptions = useMemo(() => {
@@ -657,7 +669,7 @@ export function AnalyticsDashboard() {
         setOverviewKpi(payload.overviewKpi)
         setOccupancyTrend(payload.occupancyTrend)
         setReportData(payload.reportData)
-        setPlaytimeMlData(payload.playtimeMlData)
+        setPlaytimeData(payload.playtimeData)
         setSegmentation(payload.segmentation)
         setMetaDashboard(payload.metaDashboard)
         if (!isBackgroundLoad) {
@@ -714,22 +726,11 @@ export function AnalyticsDashboard() {
         ? await metaResponse.json().catch(() => null).then((result) => (result?.success ? result.data as MetaDashboardData : null))
         : null
 
-      const nextPlaytimeMlData = playtimeResult?.success ? playtimeResult.data : null
+      const nextPlaytimeData = playtimeResult?.success ? playtimeResult.data : null
       const nextSegmentation = segmentationData ? sortClusterProfiles(segmentationData.clusters || []) : []
 
-      setPlaytimeMlData(nextPlaytimeMlData)
+      setPlaytimeData(nextPlaytimeData)
       setSegmentation(nextSegmentation)
-      const kpiResult = await kpiResponse.json().catch(() => null)
-      const occupancyResult = await occupancyResponse.json().catch(() => null)
-      const reportResult = await reportResponse.json().catch(() => null)
-      const playtimeResult = await playtimeResponse.json().catch(() => null)
-
-      setStatus(statusData)
-      setOverviewKpi(kpiResult?.success ? kpiResult.data : null)
-      setOccupancyTrend(occupancyResult?.success && Array.isArray(occupancyResult.data) ? occupancyResult.data : [])
-      setReportData(reportResult?.success ? reportResult.data : null)
-      setPlaytimeData(playtimeResult?.success ? playtimeResult.data : null)
-      setSegmentation(segmentationResponse.success && segmentationResponse.data ? sortClusterProfiles(segmentationResponse.data.clusters || []) : [])
       setMetaDashboard(metaResult)
 
       dashboardCacheRef.current.set(cacheKey, {
@@ -739,7 +740,7 @@ export function AnalyticsDashboard() {
           overviewKpi: nextOverviewKpi,
           occupancyTrend: nextOccupancyTrend,
           reportData: nextReportData,
-          playtimeMlData: nextPlaytimeMlData,
+          playtimeData: nextPlaytimeData,
           segmentation: nextSegmentation,
           metaDashboard: metaResult,
         },
@@ -1111,163 +1112,74 @@ export function AnalyticsDashboard() {
           </div>
         </div>
         <div className="rounded-2xl border border-border/70 bg-card/80 p-3 shadow-sm backdrop-blur">
-  <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
-    <p className="shrink-0 text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
-      Dashboard filters
-    </p>
-
-    <div className="flex flex-wrap items-center justify-end gap-2">
-      {/* Month Filter */}
-      <div className="w-[176px]">
-        <Select
-          value={selectedMonth}
-          onValueChange={setSelectedMonth}
-          disabled={!status?.hasTransactionData && !isLoading}
-        >
-          <SelectTrigger className="h-11 w-full rounded-xl border border-border/70 bg-background/90 px-3 shadow-sm outline-none transition hover:border-primary/35 hover:bg-background focus:ring-2 focus:ring-primary/15">
-            <div className="flex min-w-0 items-center gap-3">
-              <span className="shrink-0 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                Month
-              </span>
-              <SelectValue placeholder="Month" />
-            </div>
-          </SelectTrigger>
-
-          <SelectContent
-            position="popper"
-            className="w-[var(--radix-select-trigger-width)] rounded-xl border bg-background shadow-lg"
-          >
-            <SelectItem value={DEFAULT_MONTH_OPTION}>
-              {DEFAULT_MONTH_OPTION}
-            </SelectItem>
-
-            {months.map((month) => {
-              const option = monthOptions.find((item) => item.value === month)
-
-              return (
-                <SelectItem
-                  key={month}
-                  value={month}
-                  disabled={option?.disabled}
+          <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+            <p className="shrink-0 text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">Dashboard filters</p>
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <div className="group relative min-w-[148px]">
+                <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground transition-colors group-focus-within:text-foreground">Month</span>
+                <select
+                  value={selectedMonth}
+                  onChange={(event) => setSelectedMonth(event.target.value)}
+                  disabled={!status?.hasTransactionData && !isLoading}
+                  className="h-11 w-full appearance-none rounded-xl border border-border/70 bg-background/90 pl-[4.4rem] pr-10 text-sm font-medium text-foreground shadow-sm outline-none transition hover:border-primary/35 hover:bg-background focus:border-primary focus:ring-2 focus:ring-primary/15 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  {month}
-                </SelectItem>
-              )
-            })}
-          </SelectContent>
-        </Select>
-      </div>
-
-      {/* Year Filter */}
-      <div className="w-[140px]">
-        <Select
-          value={selectedYear}
-          onValueChange={setSelectedYear}
-          disabled={!status?.hasTransactionData && !isLoading}
-        >
-          <SelectTrigger className="h-11 w-full rounded-xl border border-border/70 bg-background/90 px-3 shadow-sm outline-none transition hover:border-primary/35 hover:bg-background focus:ring-2 focus:ring-primary/15">
-            <div className="flex min-w-0 items-center gap-3">
-              <span className="shrink-0 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                Year
-              </span>
-              <SelectValue placeholder="Year" />
+                  <option value={DEFAULT_MONTH_OPTION}>{DEFAULT_MONTH_OPTION}</option>
+                  {months.map((month) => {
+                    const option = monthOptions.find((item) => item.value === month)
+                    return <option key={month} value={month} disabled={option?.disabled}>{month}</option>
+                  })}
+                </select>
+                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground transition-transform group-hover:translate-y-[-45%] group-focus-within:text-foreground" />
+              </div>
+              <div className="group relative min-w-[124px]">
+                <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground transition-colors group-focus-within:text-foreground">Year</span>
+                <select
+                  value={selectedYear}
+                  onChange={(event) => {
+                    setSelectedYear(event.target.value)
+                  }}
+                  disabled={!status?.hasTransactionData && !isLoading}
+                  className="h-11 w-full appearance-none rounded-xl border border-border/70 bg-background/90 pl-[3.6rem] pr-10 text-sm font-medium text-foreground shadow-sm outline-none transition hover:border-primary/35 hover:bg-background focus:border-primary focus:ring-2 focus:ring-primary/15 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {yearOptions.map((year) => (
+                    <option key={year.value} value={year.value} disabled={year.disabled}>{year.value}</option>
+                  ))}
+                </select>
+                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground transition-transform group-hover:translate-y-[-45%] group-focus-within:text-foreground" />
+              </div>
+              <div className="group relative min-w-[150px]">
+                <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground transition-colors group-focus-within:text-foreground">Venue</span>
+                <select value={selectedVenue} onChange={(event) => setSelectedVenue(event.target.value)} className="h-11 w-full appearance-none rounded-xl border border-border/70 bg-background/90 pl-[4rem] pr-10 text-sm font-medium text-foreground shadow-sm outline-none transition hover:border-primary/35 hover:bg-background focus:border-primary focus:ring-2 focus:ring-primary/15">
+                  {venues.map((venue) => <option key={venue.value} value={venue.value}>{venue.label}</option>)}
+                </select>
+                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground transition-transform group-hover:translate-y-[-45%] group-focus-within:text-foreground" />
+              </div>
+              <div className="group relative min-w-[172px]">
+                <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground transition-colors group-focus-within:text-foreground">Customer</span>
+                <select value={selectedCustomerType} onChange={(event) => setSelectedCustomerType(event.target.value)} className="h-11 w-full appearance-none rounded-xl border border-border/70 bg-background/90 pl-[5.6rem] pr-10 text-sm font-medium text-foreground shadow-sm outline-none transition hover:border-primary/35 hover:bg-background focus:border-primary focus:ring-2 focus:ring-primary/15">
+                  {customerTypes.map((customerType) => <option key={customerType} value={customerType}>{customerType}</option>)}
+                </select>
+                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground transition-transform group-hover:translate-y-[-45%] group-focus-within:text-foreground" />
+              </div>
+              <div className="inline-flex h-11 items-center rounded-xl border border-border/70 bg-background/80 p-1 shadow-sm">
+                {(["MTD", "YTD"] as const).map((type) => (
+                  <Button
+                    key={type}
+                    variant={periodType === type ? "secondary" : "ghost"}
+                    className={`h-8 rounded-lg border px-3 text-[11px] transition ${periodType === type
+                      ? type === "MTD"
+                        ? "border-amber-300 bg-amber-100 text-amber-700 hover:bg-amber-200"
+                        : "border-emerald-300 bg-emerald-100 text-emerald-700 hover:bg-emerald-200"
+                      : "border-transparent text-muted-foreground hover:bg-accent/80 hover:text-foreground"}`}
+                    onClick={() => setPeriodType((current) => (current === type ? null : type))}
+                  >
+                    {type}
+                  </Button>
+                ))}
+              </div>
             </div>
-          </SelectTrigger>
-
-          <SelectContent
-            position="popper"
-            className="w-[var(--radix-select-trigger-width)] rounded-xl border bg-background shadow-lg"
-          >
-            {yearOptions.map((year) => (
-              <SelectItem
-                key={year.value}
-                value={year.value}
-                disabled={year.disabled}
-              >
-                {year.value}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-
-      {/* Venue Filter */}
-      <div className="w-[184px]">
-        <Select value={selectedVenue} onValueChange={setSelectedVenue}>
-          <SelectTrigger className="h-11 w-full rounded-xl border border-border/70 bg-background/90 px-3 shadow-sm outline-none transition hover:border-primary/35 hover:bg-background focus:ring-2 focus:ring-primary/15">
-            <div className="flex min-w-0 items-center gap-3">
-              <span className="shrink-0 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                Venue
-              </span>
-              <SelectValue placeholder="Venue" />
-            </div>
-          </SelectTrigger>
-
-          <SelectContent
-            position="popper"
-            className="w-[var(--radix-select-trigger-width)] rounded-xl border bg-background shadow-lg"
-          >
-            {venues.map((venue) => (
-              <SelectItem key={venue.value} value={venue.value}>
-                {venue.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-
-      {/* Customer Filter */}
-      <div className="w-[220px]">
-        <Select
-          value={selectedCustomerType}
-          onValueChange={setSelectedCustomerType}
-        >
-          <SelectTrigger className="h-11 w-full rounded-xl border border-border/70 bg-background/90 px-3 shadow-sm outline-none transition hover:border-primary/35 hover:bg-background focus:ring-2 focus:ring-primary/15">
-            <div className="flex min-w-0 items-center gap-3">
-              <span className="shrink-0 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                Customer
-              </span>
-              <SelectValue placeholder="Customer" />
-            </div>
-          </SelectTrigger>
-
-          <SelectContent
-            position="popper"
-            className="w-[var(--radix-select-trigger-width)] rounded-xl border bg-background shadow-lg"
-          >
-            {customerTypes.map((customerType) => (
-              <SelectItem key={customerType} value={customerType}>
-                {customerType}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-
-      {/* MTD / YTD Filter */}
-      <div className="inline-flex h-11 items-center rounded-xl border border-border/70 bg-background/80 p-1 shadow-sm">
-        {(["MTD", "YTD"] as const).map((type) => (
-          <Button
-            key={type}
-            variant={periodType === type ? "secondary" : "ghost"}
-            className={`h-8 rounded-lg border px-3 text-[11px] transition ${
-              periodType === type
-                ? type === "MTD"
-                  ? "border-amber-300 bg-amber-100 text-amber-700 hover:bg-amber-200"
-                  : "border-emerald-300 bg-emerald-100 text-emerald-700 hover:bg-emerald-200"
-                : "border-transparent text-muted-foreground hover:bg-accent/80 hover:text-foreground"
-            }`}
-            onClick={() =>
-              setPeriodType((current) => (current === type ? null : type))
-            }
-          >
-            {type}
-          </Button>
-        ))}
-      </div>
-    </div>
-  </div>
-</div>
+          </div>
+        </div>
       </div>
 
       {isLoading ? (
@@ -1298,13 +1210,15 @@ export function AnalyticsDashboard() {
             <CardHeader>
               <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                 <div>
-                  <CardTitleTooltip
-                    title="Business Insight"
-                    tooltip={businessInsight?.source === "ai"
-                      ? "AI-generated business recommendations based on your data. AI summary from revenue, bookings, ads reach, and customer groups."
-                      : "AI-generated business recommendations based on your data. Summary from your business metrics."}
-                    className="text-xl"
-                  />
+                  <CardTitle className="flex items-center gap-2 text-xl">
+                    <Sparkles className="h-5 w-5 text-primary" />
+                    <span>Business Insight</span>
+                  </CardTitle>
+                  <CardDescription>
+                    {businessInsight?.source === "ai"
+                      ? "AI summary from revenue, bookings, ads reach, and customer groups."
+                      : "Summary from your business metrics."}
+                  </CardDescription>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   {isLoadingBusinessInsight ? (
@@ -1391,51 +1305,103 @@ export function AnalyticsDashboard() {
           </Card>
 
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <KpiCard
-              label="Occupancy Rate"
-              tooltip="Percentage of court hours booked out of total available hours in the selected period."
-              value={overviewKpi ? `${overviewKpi.occupancyRate}%` : "-"}
-              change={overviewKpi?.occupancyChange}
-              icon={Users}
-            />
-            <KpiCard
-              label="Revenue"
-              tooltip="Total booking revenue from transactions in the selected period."
-              value={formatCurrency(reportData?.summary.totalRevenue ?? overviewKpi?.totalRevenue ?? 0)}
-              change={overviewKpi?.revenueChange}
-              icon={BarChart3}
-            />
-            <KpiCard
-              label="Lowest-Demand Session"
-              tooltip="The time slot with the fewest bookings — a candidate for promotional pricing."
-              value={overviewKpi?.lowSessionLabel || "No data"}
-              valueClassName="text-xl"
-              changeLabel={
-                overviewKpi?.lowSessionLabel && overviewKpi?.lowSessionLabel !== "-"
-                  ? "Lowest booking volume among all sessions"
-                  : "Session data will be available after transactions are imported."
-              }
-              icon={Clock}
-              iconClassName="text-muted-foreground"
-            />
-            <KpiCard
-              label="Peak Session Revenue"
-              tooltip="The time slot generating the highest total revenue — your most valuable session."
-              value={overviewKpi?.peakSessionLabel || "-"}
-              valueClassName="text-xl"
-              changeLabel={
-                (overviewKpi?.peakSessionRevenue || 0) > 0
-                  ? formatCurrency(overviewKpi?.peakSessionRevenue || 0)
-                  : "No revenue data available"
-              }
-              icon={Zap}
-            />
+            <Card className="border-border bg-card shadow-sm">
+              <CardHeader className="pb-3">
+                <CardTitleTooltip
+                    title="Occupancy Rate"
+                    tooltip="Percentage of court hours booked out of total available hours in the selected period."
+                    className="text-sm font-medium text-muted-foreground"
+                  />
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-end justify-between">
+                  <div>
+                    <p className="text-3xl font-bold">{overviewKpi ? `${overviewKpi.occupancyRate}%` : "-"}</p>
+                    <p className={`mt-2 flex items-center gap-1 text-xs ${overviewKpi && overviewKpi.occupancyChange < 0 ? "text-destructive" : "text-primary"}`}>
+                      {overviewKpi && overviewKpi.occupancyChange < 0 ? <TrendingDown className="h-3 w-3" /> : <TrendingUp className="h-3 w-3" />}
+                      {overviewKpi ? `${overviewKpi.occupancyChange >= 0 ? "+" : ""}${overviewKpi.occupancyChange}% vs previous period` : "No comparison available"}
+                    </p>
+                  </div>
+                  <Users className="h-6 w-6 text-primary" />
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="border-border bg-card shadow-sm">
+              <CardHeader>
+                <CardTitleTooltip
+                    title="Revenue by Play Date"
+                    tooltip="Total booking revenue from transactions in the selected period."
+                    className="text-sm font-medium text-muted-foreground"
+                  />
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-end justify-between">
+                  <div>
+                    <p className="text-3xl font-bold">{formatCurrency(reportData?.summary.totalRevenue ?? overviewKpi?.totalRevenue ?? 0)}</p>
+                    <p className={`mt-2 flex items-center gap-1 text-xs ${overviewKpi && overviewKpi.revenueChange < 0 ? "text-destructive" : "text-primary"}`}>
+                      {overviewKpi && overviewKpi.revenueChange < 0 ? <TrendingDown className="h-3 w-3" /> : <TrendingUp className="h-3 w-3" />}
+                      {overviewKpi ? `${overviewKpi.revenueChange >= 0 ? "+" : ""}${overviewKpi.revenueChange}% vs previous period` : "No comparison available"}
+                    </p>
+                  </div>
+                  <BarChart3 className="h-6 w-6 text-primary" />
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="border-border bg-card shadow-sm">
+              <CardHeader className="space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <CardTitleTooltip
+                      title="Lowest-Demand Session"
+                      tooltip="The time slot with the fewest bookings — a candidate for promotional pricing."
+                      className="text-sm font-medium text-muted-foreground"
+                    />
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-end justify-between">
+                  <div>
+                    <p className="text-xl font-bold">{overviewKpi?.lowSessionLabel || "No data"}</p>
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      {overviewKpi?.lowSessionLabel && overviewKpi?.lowSessionLabel !== "-"
+                        ? "Lowest booking volume among all sessions"
+                        : "Session data will be available after transactions are imported."}
+                    </p>
+                  </div>
+                  <Clock className="h-5 w-5 text-muted-foreground" />
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="border-border bg-card shadow-sm">
+              <CardHeader>
+                <CardTitleTooltip
+                    title="Peak Session Revenue"
+                    tooltip="The time slot generating the highest total revenue — your most valuable session."
+                    className="text-sm font-medium text-muted-foreground"
+                  />
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-end justify-between">
+                  <div>
+                    <p className="text-xl font-bold">{overviewKpi?.peakSessionLabel || "-"}</p>
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      {(overviewKpi?.peakSessionRevenue || 0) > 0
+                        ? formatCurrency(overviewKpi?.peakSessionRevenue || 0)
+                        : "No revenue data available"}
+                    </p>
+                  </div>
+                  <Zap className="h-5 w-5 text-primary" />
+                </div>
+              </CardContent>
+            </Card>
           </div>
 
           <div className="grid gap-6 sm:grid-cols-1 lg:grid-cols-2 xl:grid-cols-2">
             <Card className="border-border bg-card shadow-sm">
               <CardHeader>
-                <CardTitleTooltip title="Occupancy Trend" tooltip={reportData?.insights.occupancyInsight || "Court hours booked in this period."} />
+                <CardTitle><TitleWithTooltip title="Occupancy Trend" tooltip="Shows how many court hours were booked during the selected period." /></CardTitle>
+                <CardDescription>
+                  {reportData?.insights.occupancyInsight || "Court hours booked in this period."}
+                </CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="h-[320px]">
@@ -1474,7 +1440,8 @@ export function AnalyticsDashboard() {
 
             <Card className="border-border bg-card shadow-sm">
               <CardHeader>
-                <CardTitleTooltip title="Revenue Trend" tooltip={revenueTrendSubtitle} />
+                <CardTitle><TitleWithTooltip title="Revenue by Play Date Trend" tooltip="Shows booking revenue grouped by play date, using the same filters as the overview card." /></CardTitle>
+                <CardDescription>{revenueTrendSubtitle}</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="h-[320px]">
@@ -1484,7 +1451,7 @@ export function AnalyticsDashboard() {
                         <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
                         <XAxis dataKey="label" stroke="var(--muted-foreground)" tickLine={false} axisLine={false} />
                         <YAxis stroke="var(--muted-foreground)" tickLine={false} axisLine={false} tickFormatter={(value) => `${Math.round(Number(value) / 1000000)}M`} />
-                        <RechartsTooltip formatter={(value: number) => [formatCurrency(value), "Revenue"]} />
+                        <RechartsTooltip formatter={(value: number) => [formatCurrency(value), "Booking revenue by play date"]} />
                         <Bar dataKey="revenue" fill="var(--chart-2)" radius={[6, 6, 0, 0]} />
                       </BarChart>
                     </ResponsiveContainer>
@@ -1504,7 +1471,8 @@ export function AnalyticsDashboard() {
           <div className="grid gap-6 xl:grid-cols-2">
             <Card className="border-border bg-card shadow-sm">
               <CardHeader>
-                <CardTitleTooltip title="Revenue vs Meta Insight" tooltip="Compares booking revenue with Meta reach and engagement rate for this period." />
+                <CardTitle><TitleWithTooltip title="Revenue vs Meta Insight" tooltip="Compares booking revenue with Meta reach and engagement rate to see if marketing is working well." /></CardTitle>
+                <CardDescription>Compare booking revenue with Meta reach and engagement rate for this period.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 {metaDashboard?.hasData && revenueMetaComparisonData.length > 0 ? (
@@ -1515,15 +1483,18 @@ export function AnalyticsDashboard() {
                         <XAxis dataKey="label" stroke="var(--muted-foreground)" tickLine={false} axisLine={false} />
                         <YAxis yAxisId="left" stroke="var(--muted-foreground)" tickLine={false} axisLine={false} tickFormatter={(value) => `${Math.round(Number(value) / 1000000)}M`} />
                         <YAxis yAxisId="right" orientation="right" stroke="var(--muted-foreground)" tickLine={false} axisLine={false} tickFormatter={(value) => formatCompactNumber(Number(value))} />
+                        <YAxis yAxisId="engagement" orientation="right" hide domain={[0, "auto"]} tickFormatter={(value) => `${Number(value).toFixed(0)}%`} />
                         <RechartsTooltip
                           formatter={(value: number, name: string) => {
-                            if (name === "revenue") return [formatCurrency(value), "Revenue"]
+                            if (name === "revenue") return [formatCurrency(value), "Booking revenue by play date"]
                             if (name === "reach") return [formatCompactNumber(value), "Meta Reach"]
+                            if (name === "engagementRate") return [formatPercent(value), "Meta Engagement Rate"]
                             return [formatCompactNumber(value), "Meta Views"]
                           }}
                         />
                         <Bar yAxisId="left" dataKey="revenue" fill="var(--chart-2)" radius={[6, 6, 0, 0]} />
-                        <Line yAxisId="right" type="monotone" dataKey="reach" stroke="var(--chart-1)" strokeWidth={2.5} dot={false} /> 
+                        <Line yAxisId="right" type="monotone" dataKey="reach" stroke="var(--chart-1)" strokeWidth={2.5} dot={false} />
+                        <Line yAxisId="engagement" type="monotone" dataKey="engagementRate" stroke="var(--chart-3)" strokeWidth={2} strokeDasharray="6 4" dot={false} />
                       </ComposedChart>
                     </ResponsiveContainer>
                   </div>
@@ -1537,7 +1508,7 @@ export function AnalyticsDashboard() {
 
                 <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                   <div className="rounded-xl border border-border bg-secondary/20 p-3">
-                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Revenue</p>
+                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Booking revenue by play date</p>
                     <p className="mt-2 text-lg font-semibold text-slate-900">{formatCurrency(reportData?.summary.totalRevenue || 0)}</p>
                   </div>
                   <div className="rounded-xl border border-border bg-secondary/20 p-3">
@@ -1571,7 +1542,8 @@ export function AnalyticsDashboard() {
 
             <Card className="border-border bg-card shadow-sm">
               <CardHeader>
-                <CardTitleTooltip title="Booking Type" tooltip="Mix of member vs guest bookings." />
+                <CardTitle><TitleWithTooltip title="Booking Type Mix" tooltip="Shows how bookings are split between members and guests." /></CardTitle>
+                <CardDescription>Mix of member vs guest bookings.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="h-[280px]">
@@ -1625,7 +1597,6 @@ export function AnalyticsDashboard() {
             <CardHeader>
             <CardTitle><TitleWithTooltip title="Play-Time Preference Mix" tooltip="Shows how bookings are distributed across morning, afternoon, evening, and night." /></CardTitle>
               <CardDescription>{playtimeBehaviorInsight}</CardDescription>
-              <CardTitleTooltip title="Play-Time Distribution" tooltip={playtimeBehaviorInsight} />
             </CardHeader>
             <CardContent>
               <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
@@ -1683,8 +1654,7 @@ export function AnalyticsDashboard() {
                   ))}
                   {playtimeData ? (
                     <div className="rounded-xl border border-border bg-secondary/20 p-4 text-sm text-muted-foreground">
-                      {playtimeMlData.totalSessions.toLocaleString("en-US")} sessions across {playtimeMlData.totalCustomers.toLocaleString("en-US")} customers{playtimeMlData.clusterCount ? ` across ${playtimeMlData.clusterCount} groups` : ""} in the selected period{playtimeMlData.createdAt ? `, updated ${formatExactDateTime(playtimeMlData.createdAt)} (${getRelativeTime(playtimeMlData.createdAt)})` : ""}.
-                      {playtimeData.totalSessions.toLocaleString("en-US")} sessions across {playtimeData.totalCustomers.toLocaleString("en-US")} customers{playtimeData.clusterCount ? ` across ${playtimeData.clusterCount} clusters` : ""} in the latest ML run{playtimeData.createdAt ? `, updated ${formatExactDateTime(playtimeData.createdAt)} (${getRelativeTime(playtimeData.createdAt)})` : ""}.
+                      {playtimeData.totalSessions.toLocaleString("en-US")} sessions across {playtimeData.totalCustomers.toLocaleString("en-US")} customers{playtimeData.clusterCount ? ` across ${playtimeData.clusterCount} groups` : ""} in the selected period{playtimeData.createdAt ? `, updated ${formatExactDateTime(playtimeData.createdAt)} (${getRelativeTime(playtimeData.createdAt)})` : ""}.
                     </div>
                   ) : null}
                 </div>
