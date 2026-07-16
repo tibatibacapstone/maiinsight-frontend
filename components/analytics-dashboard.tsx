@@ -37,7 +37,7 @@ import { HeatmapGrid } from "@/components/segment-visualization"
 import { PageSkeleton } from "@/components/page-skeleton"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardTitleTooltip } from "@/components/ui/card"
 import {
   Tooltip,
   TooltipContent,
@@ -95,10 +95,6 @@ interface DashboardStatus {
     startedAt: string
     status: string
   } | null
-  latestMlRun: {
-    createdAt: string
-    status: string
-  } | null
   latestSegmentationRun: {
     runDate: string
     status: string
@@ -144,7 +140,7 @@ interface PlaytimeCustomerSegment {
   sesiMalam?: number
 }
 
-interface PlaytimeMlData {
+interface PlaytimeData {
   totalCustomers: number
   totalSessions: number
   clusterCount?: number
@@ -424,8 +420,8 @@ const buildFallbackBusinessInsight = ({
   }
 }
 
-const buildPlaytimeChart = (playtimeMlData: PlaytimeMlData | null) => {
-  const directRows = parseJsonArray<PlaytimeSessionPoint>(playtimeMlData?.sessionByTime)
+const buildPlaytimeChart = (playtimeData: PlaytimeData | null) => {
+  const directRows = parseJsonArray<PlaytimeSessionPoint>(playtimeData?.sessionByTime)
 
   if (directRows.length > 0) {
     return directRows
@@ -444,11 +440,11 @@ const buildPlaytimeChart = (playtimeMlData: PlaytimeMlData | null) => {
       .sort((left, right) => (playtimeOrder[left.rawName] ?? 99) - (playtimeOrder[right.rawName] ?? 99))
   }
 
-  if (!Array.isArray(playtimeMlData?.customerSegments) || playtimeMlData.customerSegments.length === 0) {
+  if (!Array.isArray(playtimeData?.customerSegments) || playtimeData.customerSegments.length === 0) {
     return []
   }
 
-  const derived = playtimeMlData.customerSegments.reduce(
+  const derived = playtimeData.customerSegments.reduce(
     (accumulator, row) => {
       accumulator.Morning += Number(row.sesiPagi || 0)
       accumulator.Afternoon += Number(row.sesiSiang || 0)
@@ -570,7 +566,7 @@ export function AnalyticsDashboard() {
   const [occupancyTrend, setOccupancyTrend] = useState<OccupancyTrendPoint[]>([])
   const [reportData, setReportData] = useState<RevenueReportData | null>(null)
   const [segmentation, setSegmentation] = useState<ClusterProfile[]>([])
-  const [playtimeMlData, setPlaytimeMlData] = useState<PlaytimeMlData | null>(null)
+  const [playtimeData, setPlaytimeData] = useState<PlaytimeData | null>(null)
   const [metaDashboard, setMetaDashboard] = useState<MetaDashboardData | null>(null)
   const [businessInsight, setBusinessInsight] = useState<BusinessInsightState | null>(null)
   const [isLoadingBusinessInsight, setIsLoadingBusinessInsight] = useState(false)
@@ -582,7 +578,7 @@ export function AnalyticsDashboard() {
   const canGenerateBusinessInsight = currentRole === "operational" || currentRole === "it_support"
   const availableMonthValues = useMemo(() => status?.transactionAvailableMonths || [], [status?.transactionAvailableMonths])
   const businessInsightCacheRef = useRef<Map<string, BusinessInsightState>>(new Map())
-  const dashboardCacheRef = useRef<Map<string, { timestamp: number; payload: { statusData: DashboardStatus; overviewKpi: OverviewKpiData | null; occupancyTrend: OccupancyTrendPoint[]; reportData: RevenueReportData | null; playtimeMlData: PlaytimeMlData | null; segmentation: ClusterProfile[]; metaDashboard: MetaDashboardData | null } }>>(new Map())
+  const dashboardCacheRef = useRef<Map<string, { timestamp: number; payload: { statusData: DashboardStatus; overviewKpi: OverviewKpiData | null; occupancyTrend: OccupancyTrendPoint[]; reportData: RevenueReportData | null; playtimeData: PlaytimeData | null; segmentation: ClusterProfile[]; metaDashboard: MetaDashboardData | null } }>>(new Map())
   const lastRefreshAtRef = useRef(0)
 
   const yearOptions = useMemo(() => {
@@ -673,7 +669,7 @@ export function AnalyticsDashboard() {
         setOverviewKpi(payload.overviewKpi)
         setOccupancyTrend(payload.occupancyTrend)
         setReportData(payload.reportData)
-        setPlaytimeMlData(payload.playtimeMlData)
+        setPlaytimeData(payload.playtimeData)
         setSegmentation(payload.segmentation)
         setMetaDashboard(payload.metaDashboard)
         if (!isBackgroundLoad) {
@@ -730,10 +726,10 @@ export function AnalyticsDashboard() {
         ? await metaResponse.json().catch(() => null).then((result) => (result?.success ? result.data as MetaDashboardData : null))
         : null
 
-      const nextPlaytimeMlData = playtimeResult?.success ? playtimeResult.data : null
+      const nextPlaytimeData = playtimeResult?.success ? playtimeResult.data : null
       const nextSegmentation = segmentationData ? sortClusterProfiles(segmentationData.clusters || []) : []
 
-      setPlaytimeMlData(nextPlaytimeMlData)
+      setPlaytimeData(nextPlaytimeData)
       setSegmentation(nextSegmentation)
       setMetaDashboard(metaResult)
 
@@ -744,7 +740,7 @@ export function AnalyticsDashboard() {
           overviewKpi: nextOverviewKpi,
           occupancyTrend: nextOccupancyTrend,
           reportData: nextReportData,
-          playtimeMlData: nextPlaytimeMlData,
+          playtimeData: nextPlaytimeData,
           segmentation: nextSegmentation,
           metaDashboard: metaResult,
         },
@@ -755,7 +751,7 @@ export function AnalyticsDashboard() {
       setOverviewKpi(null)
       setOccupancyTrend([])
       setReportData(null)
-      setPlaytimeMlData(null)
+      setPlaytimeData(null)
       setSegmentation([])
       setMetaDashboard(null)
     } finally {
@@ -785,7 +781,7 @@ export function AnalyticsDashboard() {
     }
   }, [loadDashboard])
 
-  const playtimeChart = useMemo(() => buildPlaytimeChart(playtimeMlData), [playtimeMlData])
+  const playtimeChart = useMemo(() => buildPlaytimeChart(playtimeData), [playtimeData])
 
   const playtimeChartTotal = useMemo(
     () => playtimeChart.reduce((sum, item) => sum + item.value, 0),
@@ -810,12 +806,12 @@ export function AnalyticsDashboard() {
   )
 
   const playtimeBehaviorInsight = useMemo(() => {
-    if (!dominantPlaytime || !playtimeMlData) {
+    if (!dominantPlaytime || !playtimeData) {
       return "No historical play-time preference insight is available yet."
     }
 
     return `Most bookings are in the ${dominantPlaytime.name} slot with ${formatPercent(dominantPlaytime.percentage)} of all bookings.`
-  }, [dominantPlaytime, playtimeMlData])
+  }, [dominantPlaytime, playtimeData])
 
   const segmentChart = useMemo(
     () =>
@@ -1311,7 +1307,11 @@ export function AnalyticsDashboard() {
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <Card className="border-border bg-card shadow-sm">
               <CardHeader className="pb-3">
-                <CardTitle className="text-sm font-medium text-muted-foreground">Occupancy Rate</CardTitle>
+                <CardTitleTooltip
+                    title="Occupancy Rate"
+                    tooltip="Percentage of court hours booked out of total available hours in the selected period."
+                    className="text-sm font-medium text-muted-foreground"
+                  />
               </CardHeader>
               <CardContent>
                 <div className="flex items-end justify-between">
@@ -1328,7 +1328,11 @@ export function AnalyticsDashboard() {
             </Card>
             <Card className="border-border bg-card shadow-sm">
               <CardHeader>
-                <CardTitle className="text-sm font-medium text-muted-foreground">Revenue by Play Date</CardTitle>
+                <CardTitleTooltip
+                    title="Revenue by Play Date"
+                    tooltip="Total booking revenue from transactions in the selected period."
+                    className="text-sm font-medium text-muted-foreground"
+                  />
               </CardHeader>
               <CardContent>
                 <div className="flex items-end justify-between">
@@ -1346,7 +1350,11 @@ export function AnalyticsDashboard() {
             <Card className="border-border bg-card shadow-sm">
               <CardHeader className="space-y-3">
                 <div className="flex items-center justify-between gap-3">
-                  <CardTitle className="text-sm font-medium text-muted-foreground">Lowest-Demand Session</CardTitle>
+                  <CardTitleTooltip
+                      title="Lowest-Demand Session"
+                      tooltip="The time slot with the fewest bookings — a candidate for promotional pricing."
+                      className="text-sm font-medium text-muted-foreground"
+                    />
                 </div>
               </CardHeader>
               <CardContent>
@@ -1365,7 +1373,11 @@ export function AnalyticsDashboard() {
             </Card>
             <Card className="border-border bg-card shadow-sm">
               <CardHeader>
-                <CardTitle className="text-sm font-medium text-muted-foreground">Peak Session Revenue</CardTitle>
+                <CardTitleTooltip
+                    title="Peak Session Revenue"
+                    tooltip="The time slot generating the highest total revenue — your most valuable session."
+                    className="text-sm font-medium text-muted-foreground"
+                  />
               </CardHeader>
               <CardContent>
                 <div className="flex items-end justify-between">
@@ -1640,9 +1652,9 @@ export function AnalyticsDashboard() {
                       </div>
                     </div>
                   ))}
-                  {playtimeMlData ? (
+                  {playtimeData ? (
                     <div className="rounded-xl border border-border bg-secondary/20 p-4 text-sm text-muted-foreground">
-                      {playtimeMlData.totalSessions.toLocaleString("en-US")} sessions across {playtimeMlData.totalCustomers.toLocaleString("en-US")} customers{playtimeMlData.clusterCount ? ` across ${playtimeMlData.clusterCount} groups` : ""} in the selected period{playtimeMlData.createdAt ? `, updated ${formatExactDateTime(playtimeMlData.createdAt)} (${getRelativeTime(playtimeMlData.createdAt)})` : ""}.
+                      {playtimeData.totalSessions.toLocaleString("en-US")} sessions across {playtimeData.totalCustomers.toLocaleString("en-US")} customers{playtimeData.clusterCount ? ` across ${playtimeData.clusterCount} groups` : ""} in the selected period{playtimeData.createdAt ? `, updated ${formatExactDateTime(playtimeData.createdAt)} (${getRelativeTime(playtimeData.createdAt)})` : ""}.
                     </div>
                   ) : null}
                 </div>

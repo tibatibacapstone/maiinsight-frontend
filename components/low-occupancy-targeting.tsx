@@ -20,6 +20,7 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
+  CardTitleTooltip,
 } from "@/components/ui/card"
 import {
   Tooltip,
@@ -213,6 +214,29 @@ function FilterLabel({ label, tooltip }: { label: string; tooltip: string }) {
         </TooltipContent>
       </Tooltip>
     </div>
+  )
+}
+
+function InfoTooltip({ content }: { content: string }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-muted-foreground transition hover:bg-accent hover:text-foreground"
+          aria-label="More information"
+        >
+          <Info className="h-3.5 w-3.5" />
+        </button>
+      </TooltipTrigger>
+      <TooltipContent
+        side="top"
+        sideOffset={8}
+        className="max-w-xs text-left leading-relaxed"
+      >
+        {content}
+      </TooltipContent>
+    </Tooltip>
   )
 }
 
@@ -536,19 +560,7 @@ const playtimeBehaviorInsight = !dominantPlaytime || !playtimeMixData
 
 <Card className="border-border bg-card shadow-sm">
   <CardHeader>
-    <CardTitle className="flex items-center gap-2">
-      <span>Play-Time Preference Mix</span>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <button type="button" className="inline-flex h-5 w-5 items-center justify-center rounded-full text-muted-foreground transition hover:bg-accent hover:text-foreground" aria-label="More information">
-            <Info className="h-3.5 w-3.5" />
-          </button>
-        </TooltipTrigger>
-        <TooltipContent side="top" sideOffset={8} className="max-w-xs text-left leading-relaxed">
-          Shows how bookings are distributed across morning, afternoon, evening, and night.
-        </TooltipContent>
-      </Tooltip>
-    </CardTitle>
+    <CardTitleTooltip title="Play-Time Preference Mix" tooltip="Shows how bookings are distributed across morning, afternoon, evening, and night." />
     <CardDescription>{playtimeBehaviorInsight}</CardDescription>
   </CardHeader>
   <CardContent>
@@ -624,6 +636,7 @@ const playtimeBehaviorInsight = !dominantPlaytime || !playtimeMixData
     <CardTitle className="flex items-center gap-2 text-xl">
       <Target className="h-5 w-5 text-primary" />
       Campaign Targeting
+      <InfoTooltip content="Choose the historical demand lens, then narrow the audience most worth targeting." />
     </CardTitle>
           <CardDescription>
             Choose the historical demand lens, then narrow the audience most worth targeting.
@@ -760,7 +773,7 @@ const playtimeBehaviorInsight = !dominantPlaytime || !playtimeMixData
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-xl">Historically Low-Demand Sessions</CardTitle>
+          <CardTitleTooltip title="Historically Low-Demand Sessions" tooltip="Time slots with the weakest historical booking demand — strong candidates for promotions." />
           <CardDescription>
             Use these session buckets as promo opportunities for the selected campaign date, then click a card to target the matching audience.
           </CardDescription>
@@ -840,7 +853,7 @@ const playtimeBehaviorInsight = !dominantPlaytime || !playtimeMixData
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-xl">Recommended Customers</CardTitle>
+          <CardTitleTooltip title="Recommended Customers" tooltip="Customers whose historical behavior best matches the selected session and campaign filters." />
           <CardDescription>
             Customers whose historical behavior best matches the selected session and campaign filters.
           </CardDescription>

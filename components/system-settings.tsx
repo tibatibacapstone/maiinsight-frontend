@@ -24,7 +24,6 @@ interface SummaryResponse {
   data?: {
     currentUser: { userId: number; email: string; role: string }
     database: { name: string; status: string; subtitle: string } | null
-    latestMlRun: { id: number; status: string; createdAt: string; totalSessions: number; lastRunningAt?: string | null; lastRunningLabel?: string | null } | null
     latestSegmentationRun: { id: number; status: string; runDate: string; totalCustomers: number } | null
     latestImport: { id: number; fileName: string; status: string; updatedAt: string; rowCount: number } | null
     integrations: {
@@ -73,7 +72,6 @@ export function SystemSettings() {
   const hasGeminiSecret = Boolean(geminiApiKeyValue)
   const hasMetaSecret = Boolean(metaAccessTokenValue)
   const isDatabaseConnected = summary?.database?.status === "connected"
-  const latestMlLabel = summary?.latestMlRun?.lastRunningLabel || "No recent run"
 
   const readOnlyNotice = useMemo(
     () => (isItSupport ? null : "Settings are restricted to IT Support only."),
@@ -226,6 +224,7 @@ export function SystemSettings() {
               label="Gemini"
               value={summary?.integrations.aiConfigured ? "Connected" : "Offline"}
               changeLabel={summary?.integrations.geminiModel || "No model configured"}
+              tooltip="Gemini AI integration status and configured model."
             >
               <Badge variant={summary?.integrations.aiConfigured ? "default" : "secondary"} className="rounded-full px-3">
                 AI
@@ -236,6 +235,7 @@ export function SystemSettings() {
               label="Meta"
               value={summary?.integrations.metaConfigured ? "Connected" : "Offline"}
               changeLabel={summary?.integrations.metaGraphVersion || "No graph version"}
+              tooltip="Meta Graph API connection status and version."
             >
               <Badge variant={summary?.integrations.metaConfigured ? "default" : "secondary"} className="rounded-full px-3">
                 API
@@ -246,19 +246,10 @@ export function SystemSettings() {
               label="Database"
               value={isDatabaseConnected ? "Connected" : "Error"}
               changeLabel={summary?.database?.subtitle || "Error establishing database connection"}
+              tooltip="MySQL database connection status."
             >
               <Badge variant={isDatabaseConnected ? "default" : "secondary"} className="rounded-full px-3">
                 DB
-              </Badge>
-            </KpiCard>
-
-            <KpiCard
-              label="Machine Learning"
-              value={summary?.latestMlRun ? "Last running" : "Idle"}
-              changeLabel={latestMlLabel}
-            >
-              <Badge variant={summary?.latestMlRun ? "default" : "secondary"} className="rounded-full px-3">
-                ML
               </Badge>
             </KpiCard>
           </div>

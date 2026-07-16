@@ -15,7 +15,7 @@ import { BusinessErrorAlert } from "@/components/business-error-alert"
 import { HeatmapGrid } from "@/components/segment-visualization" // ⬅️ NEW: reused for Empty Slot Heatmap
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardTitleTooltip } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { getApiUrl } from "@/lib/api"
 import { getAuthHeaders } from "@/lib/roles"
@@ -34,6 +34,7 @@ import {
   Clock, // ⬅️ NEW
   Download,
   FileText,
+  Info,
   Loader2,
   Sparkles,
   Target,
@@ -44,6 +45,11 @@ import {
   Zap, // ⬅️ NEW
   ChevronDown,
 } from "lucide-react"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 import {
   Area,
   AreaChart,
@@ -58,6 +64,29 @@ import {
   XAxis,
   YAxis,
 } from "recharts"
+
+function InfoTooltip({ content }: { content: string }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-muted-foreground transition hover:bg-accent hover:text-foreground"
+          aria-label="More information"
+        >
+          <Info className="h-3.5 w-3.5" />
+        </button>
+      </TooltipTrigger>
+      <TooltipContent
+        side="top"
+        sideOffset={8}
+        className="max-w-xs text-left leading-relaxed"
+      >
+        {content}
+      </TooltipContent>
+    </Tooltip>
+  )
+}
 
 interface ComparisonMetric {
   current: number
@@ -827,6 +856,7 @@ export function ManagementReport() {
                 <CardTitle className="flex items-center gap-2">
                   <Sparkles className="h-4 w-4 text-primary" />
                   Executive Summary
+                  <InfoTooltip content="Presentation-ready summary for management review." />
                 </CardTitle>
                 <CardDescription>Presentation-ready summary for management review</CardDescription>
               </CardHeader>
@@ -856,6 +886,7 @@ export function ManagementReport() {
                 <CardTitle className="flex items-center gap-2">
                   <CheckCircle2 className="h-4 w-4 text-primary" />
                   Recommendations / Notes
+                  <InfoTooltip content="Business-friendly follow-up suggestions based on the selected period." />
                 </CardTitle>
                 <CardDescription>Business-friendly follow-up suggestions based on the selected period</CardDescription>
               </CardHeader>
@@ -1032,7 +1063,11 @@ export function ManagementReport() {
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <Card className="border-border bg-card shadow-sm">
               <CardHeader className="pb-3">
-                <CardTitle className="text-sm font-medium text-muted-foreground">Occupancy Rate</CardTitle>
+                <CardTitleTooltip
+                  title="Occupancy Rate"
+                  tooltip="Percentage of court hours booked out of total available hours in the selected period."
+                  className="text-sm font-medium text-muted-foreground"
+                />
               </CardHeader>
               <CardContent>
                 <div className="flex items-end justify-between">
@@ -1053,7 +1088,11 @@ export function ManagementReport() {
             </Card>
             <Card className="border-border bg-card shadow-sm">
               <CardHeader>
-                <CardTitle className="text-sm font-medium text-muted-foreground">Revenue by Play Date</CardTitle>
+                <CardTitleTooltip
+                  title="Revenue by Play Date"
+                  tooltip="Total booking revenue from transactions in the selected period."
+                  className="text-sm font-medium text-muted-foreground"
+                />
               </CardHeader>
               <CardContent>
                 <div className="flex items-end justify-between">
@@ -1074,7 +1113,11 @@ export function ManagementReport() {
             </Card>
             <Card className="border-border bg-card shadow-sm">
               <CardHeader>
-                <CardTitle className="text-sm font-medium text-muted-foreground">Lowest-Demand Session</CardTitle>
+                <CardTitleTooltip
+                  title="Lowest-Demand Session"
+                  tooltip="The time slot with the fewest bookings — a candidate for promotional pricing."
+                  className="text-sm font-medium text-muted-foreground"
+                />
               </CardHeader>
               <CardContent>
                 <div className="flex items-end justify-between">
@@ -1088,7 +1131,11 @@ export function ManagementReport() {
             </Card>
             <Card className="border-border bg-card shadow-sm">
               <CardHeader>
-                <CardTitle className="text-sm font-medium text-muted-foreground">Peak Session Revenue</CardTitle>
+                <CardTitleTooltip
+                  title="Peak Session Revenue"
+                  tooltip="The time slot generating the highest total revenue — your most valuable session."
+                  className="text-sm font-medium text-muted-foreground"
+                />
               </CardHeader>
               <CardContent>
                 <div className="flex items-end justify-between">
@@ -1106,9 +1153,10 @@ export function ManagementReport() {
 
           <Card className="border-border bg-gradient-to-br from-emerald-50 via-background to-sky-50 shadow-sm">
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
+                <CardTitle className="flex items-center gap-2">
                 <Sparkles className="h-4 w-4 text-primary" />
                 Meta Signal
+                <InfoTooltip content="Reach and audience profile from synced Meta data." />
               </CardTitle>
               <CardDescription>Reach and audience profile from synced Meta data</CardDescription>
             </CardHeader>
@@ -1131,7 +1179,12 @@ export function ManagementReport() {
           <div className="grid gap-6 lg:grid-cols-2">
             <Card className="border-border bg-card shadow-sm">
               <CardHeader>
-                <CardTitle>Revenue Trend</CardTitle>
+                <CardTitle>
+                  <span className="flex items-center gap-2">
+                    Revenue Trend
+                    <InfoTooltip content="Revenue progression across the selected reporting period." />
+                  </span>
+                </CardTitle>
                 <CardDescription>Revenue progression across the selected reporting period</CardDescription>
               </CardHeader>
               <CardContent>
@@ -1158,7 +1211,12 @@ export function ManagementReport() {
             {/* ⬅️ NEW: Occupancy Trend (on-screen, ResponsiveContainer since it's always visible) */}
             <Card className="border-border bg-card shadow-sm">
               <CardHeader>
-                <CardTitle>Occupancy Trend (per date)</CardTitle>
+                <CardTitle>
+                  <span className="flex items-center gap-2">
+                    Occupancy Trend (per date)
+                    <InfoTooltip content="Court hours booked per day across the selected reporting period." />
+                  </span>
+                </CardTitle>
                 <CardDescription>Court hours booked per day across the selected reporting period</CardDescription>
               </CardHeader>
               <CardContent>
@@ -1192,7 +1250,12 @@ export function ManagementReport() {
           <div className="grid gap-6 lg:grid-cols-2">
             <Card className="border-border bg-card shadow-sm">
               <CardHeader>
-                <CardTitle>Booking Mix</CardTitle>
+                <CardTitle>
+                  <span className="flex items-center gap-2">
+                    Booking Mix
+                    <InfoTooltip content="Booking type distribution for the selected reporting period." />
+                  </span>
+                </CardTitle>
                 <CardDescription>Booking type distribution for the selected reporting period</CardDescription>
               </CardHeader>
               <CardContent>
@@ -1214,7 +1277,12 @@ export function ManagementReport() {
             {/* ⬅️ NEW: Play-Time Preference Mix (on-screen) */}
             <Card className="border-border bg-card shadow-sm">
               <CardHeader>
-                <CardTitle>Play-Time Preference Mix</CardTitle>
+                <CardTitle>
+                  <span className="flex items-center gap-2">
+                    Play-Time Preference Mix
+                    <InfoTooltip content="Booking time distribution (morning / afternoon / evening / night) for the selected period." />
+                  </span>
+                </CardTitle>
                 <CardDescription>{playtimeBehaviorInsight}</CardDescription>
               </CardHeader>
               <CardContent>
@@ -1249,7 +1317,12 @@ export function ManagementReport() {
           {/* ⬅️ NEW: Customer Value Segments (on-screen) */}
           <Card className="border-border bg-card shadow-sm">
             <CardHeader>
-              <CardTitle>Customer Value Segments</CardTitle>
+                <CardTitle>
+                  <span className="flex items-center gap-2">
+                    Customer Value Segments
+                    <InfoTooltip content="Customer distribution across High / Mid / Low value tiers based on visit frequency." />
+                  </span>
+                </CardTitle>
               <CardDescription>
                 {segmentChartTotal > 0
                   ? `${segmentChartTotal.toLocaleString("en-US")} customers across ${segmentChart.length} segments`

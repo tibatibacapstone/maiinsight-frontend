@@ -215,7 +215,7 @@ export const HeatmapGrid = ({ heatmapSummary }: { heatmapSummary: HeatmapSummary
         </CardHeader>
         <CardContent>
           <div className="rounded-2xl border border-orange-200 bg-gradient-to-br from-orange-50 via-amber-50 to-white p-4 text-sm text-orange-900/80">
-            Waiting for playtime ML output.
+            Waiting for playtime data.
           </div>
         </CardContent>
       </Card>
@@ -367,7 +367,7 @@ export function SegmentVisualization() {
           headers: getAuthHeaders(),
           cache: "no-store",
         }),
-        fetch(getApiUrl("/ml/playtime/latest"), {
+        fetch(getApiUrl(`/dashboard/playtime-mix?${overviewParams.toString()}`), {
           headers: getAuthHeaders(),
           cache: "no-store",
         }),
