@@ -527,11 +527,10 @@ const playtimeBehaviorInsight = !dominantPlaytime || !playtimeMixData
         </p>
       </div>
 
-      <Card className="border-amber-200 bg-amber-50/70 shadow-sm">
-        <CardContent className="py-4 text-sm text-amber-900">
-          Insights on this page are based on uploaded historical transaction data and do not reflect real-time slot availability.
-        </CardContent>
-      </Card>
+      <div className="flex items-center gap-2 rounded-lg border-l-4 border-amber-400 bg-amber-50/50 px-3 py-2 text-xs text-amber-800 animate-pulse-subtle">
+        <Info className="h-3.5 w-3.5 shrink-0" />
+        <span>Insights on this page are based on uploaded historical transaction data and do not reflect real-time slot availability.</span>
+      </div>
 
       {statusMessage && (
         <Card className="border-primary/20 bg-primary/5">
