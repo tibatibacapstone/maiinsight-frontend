@@ -43,8 +43,14 @@ import {
   Users,
   Wallet,
   Zap, // ⬅️ NEW
-  ChevronDown,
 } from "lucide-react"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import {
   Tooltip,
   TooltipContent,
@@ -733,38 +739,38 @@ export function ManagementReport() {
                 className="h-10 w-full rounded-lg border border-border/70 bg-background/90 pl-[3.2rem] pr-2.5 text-xs shadow-sm outline-none transition hover:border-primary/35 hover:bg-background focus:border-primary focus:ring-2 focus:ring-primary/15"
               />
             </div>
-            <div className="group relative min-w-[128px]">
-              <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[9px] font-semibold uppercase tracking-[0.12em] text-muted-foreground transition-colors group-focus-within:text-foreground">
-                Court
-              </span>
-              <select
-                value={courtType}
-                onChange={(event) => setCourtType(event.target.value)}
-                className="h-10 w-full appearance-none rounded-lg border border-border/70 bg-background/90 pl-[3.2rem] pr-8 text-xs font-medium text-foreground shadow-sm outline-none transition hover:border-primary/35 hover:bg-background focus:border-primary focus:ring-2 focus:ring-primary/15"
-              >
-                <option value="all">All courts</option>
-                <option value="mini_soccer">Mini Soccer</option>
-                <option value="basketball">Basketball</option>
-              </select>
-                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground transition-transform group-hover:translate-y-[-45%] group-focus-within:text-foreground" />
-            </div>
-            <div className="group relative min-w-[150px]">
-              <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[9px] font-semibold uppercase tracking-[0.12em] text-muted-foreground transition-colors group-focus-within:text-foreground">
-                Booking
-              </span>
-              <select
-                value={bookingType}
-                onChange={(event) => setBookingType(event.target.value)}
-                className="h-10 w-full appearance-none rounded-lg border border-border/70 bg-background/90 pl-[4.2rem] pr-8 text-xs font-medium text-foreground shadow-sm outline-none transition hover:border-primary/35 hover:bg-background focus:border-primary focus:ring-2 focus:ring-primary/15"
-              >
-                <option value="all">All booking types</option>
-                <option value="regular_booking">Regular booking</option>
-                <option value="member_internal_booking">Member / internal</option>
-                <option value="other">Other</option>
-              </select>
-                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground transition-transform group-hover:translate-y-[-45%] group-focus-within:text-foreground" />
-            </div>
-            <div className="inline-flex h-10 items-center rounded-xl border border-border/70 bg-background/80 p-1 shadow-sm">
+            <Select value={courtType} onValueChange={setCourtType}>
+              <SelectTrigger className="h-10 w-[150px] rounded-lg border border-border/70 bg-background/90 px-3 text-xs shadow-sm outline-none transition hover:border-primary/35 hover:bg-background focus:border-primary focus:ring-2 focus:ring-primary/15">
+                <div className="flex min-w-0 items-center gap-2">
+                  <span className="shrink-0 text-[9px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                    Court
+                  </span>
+                  <SelectValue placeholder="Court" />
+                </div>
+              </SelectTrigger>
+              <SelectContent position="popper" className="w-[var(--radix-select-trigger-width)] rounded-xl border bg-background shadow-lg">
+                <SelectItem value="all">All courts</SelectItem>
+                <SelectItem value="mini_soccer">Mini Soccer</SelectItem>
+                <SelectItem value="basketball">Basketball</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={bookingType} onValueChange={setBookingType}>
+              <SelectTrigger className="h-10 w-[170px] rounded-lg border border-border/70 bg-background/90 px-3 text-xs shadow-sm outline-none transition hover:border-primary/35 hover:bg-background focus:border-primary focus:ring-2 focus:ring-primary/15">
+                <div className="flex min-w-0 items-center gap-2">
+                  <span className="shrink-0 text-[9px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                    Booking
+                  </span>
+                  <SelectValue placeholder="Booking" />
+                </div>
+              </SelectTrigger>
+              <SelectContent position="popper" className="w-[var(--radix-select-trigger-width)] rounded-xl border bg-background shadow-lg">
+                <SelectItem value="all">All booking types</SelectItem>
+                <SelectItem value="regular_booking">Regular booking</SelectItem>
+                <SelectItem value="member_internal_booking">Member / internal</SelectItem>
+                <SelectItem value="other">Other</SelectItem>
+              </SelectContent>
+            </Select>
+            <div className="inline-flex h-10 items-center rounded-lg border border-border/70 bg-background/80 p-1 shadow-sm">
               <Button variant="outline" size="sm" className="h-8 gap-1 px-2.5 text-[11px]" onClick={() => setDownloadConfirmOpen(true)} disabled={!report?.hasData}>
                 <Download className="h-3 w-3" />
                 Export PDF

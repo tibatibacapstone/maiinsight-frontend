@@ -397,7 +397,7 @@ export function LoginPage({ onSubmit, onGoogleCredential, isLoading, error }: Lo
               </CardDescription>
             </CardHeader>
 
-            <CardContent className="space-y-6">
+            <CardContent className="space-y-4">
 
               {/* Google Login */}
               <GoogleLoginButton
@@ -474,6 +474,12 @@ export function LoginPage({ onSubmit, onGoogleCredential, isLoading, error }: Lo
                   </div>
                 </div>
 
+                <div className="text-right">
+                  <Link href="/forgot-password" className="text-xs text-muted-foreground hover:text-primary transition-colors">
+                    Forgot password?
+                  </Link>
+                </div>
+
                 {/* Submit Button */}
                 <Button
                   type="submit"
@@ -486,8 +492,10 @@ export function LoginPage({ onSubmit, onGoogleCredential, isLoading, error }: Lo
               </form>
               {/* Footer */}
               <p className="text-center text-xs text-muted-foreground">
-                By continuing, you agree to our Terms of Service
-                and Privacy Policy
+                By continuing, you agree to our{" "}
+                <Link href="/terms" className="underline hover:text-foreground transition-colors">Terms of Service</Link>
+                {" "}and{" "}
+                <Link href="/privacy" className="underline hover:text-foreground transition-colors">Privacy Policy</Link>
               </p>
             </CardContent>
           </Card>

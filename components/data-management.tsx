@@ -90,11 +90,19 @@ interface DataSource {
   records: number
 }
 
+interface ValidationRowError {
+  rowNumber: number
+  column: string
+  value: unknown
+  message: string
+}
+
 interface FriendlyErrorResponse {
   errorCode?: string
   message?: string
   suggestion?: string
   technicalMessage?: string
+  validationErrors?: ValidationRowError[]
 }
 
 interface UploadImportResponse {
@@ -103,6 +111,7 @@ interface UploadImportResponse {
   message: string
   suggestion?: string
   technicalMessage?: string
+  batchId?: number
   data?: {
     batchId: number
     fileName: string
@@ -161,6 +170,7 @@ interface BusinessErrorState {
   suggestion?: string | null
   errorCode?: string | null
   technicalDetails?: string | null
+  validationErrors?: ValidationRowError[]
 }
 interface DataCenterResponse {
   dataCenter: {
@@ -297,6 +307,9 @@ const createFriendlyImportError = (
     "Please make sure the file follows the required MaiinSight transaction template, then try again. Contact IT Support if the issue continues.",
   errorCode: response?.errorCode || "IMPORT_FAILED",
   technicalDetails: response?.technicalMessage || null,
+  validationErrors: Array.isArray(response?.validationErrors)
+    ? response.validationErrors
+    : [],
 })
 
 const createBusinessErrorState = ({
@@ -312,12 +325,7 @@ const createBusinessErrorState = ({
   errorCode,
   technicalDetails,
 })
-const getCurrentTime = () => {
-  return new Date().toLocaleTimeString([], {
-    hour: "2-digit",
-    minute: "2-digit",
-  })
-}
+const getCurrentTime = () => new Date().toISOString()
 
 const getCurrentSyncTimestamp = () => new Date().toISOString()
 
@@ -375,10 +383,27 @@ const formatBackendTime = (dateValue?: string) => {
 
   if (Number.isNaN(date.getTime())) return "-"
 
-  return date.toLocaleTimeString([], {
+  const today = new Date()
+
+  const isSameDay =
+    date.getFullYear() === today.getFullYear() &&
+    date.getMonth() === today.getMonth() &&
+    date.getDate() === today.getDate()
+
+  if (isSameDay) {
+    return date.toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+    })
+  }
+
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
     hour: "2-digit",
     minute: "2-digit",
-  })
+  }).format(date)
 }
 
 const normalizeSyncStatus = (status: string): SyncStatus => {
@@ -1084,7 +1109,9 @@ if (!response.ok) {
       )
 
       if (!result?.success || !result.data) {
-        throw createFriendlyImportError(result, "Import Failed")
+        const err = createFriendlyImportError(result, "Import Failed")
+        if (result?.batchId) (err as unknown as Record<string, unknown>).batchId = result.batchId
+        throw err
       }
 
       setUploadProgress(100)
@@ -1114,11 +1141,16 @@ if (!response.ok) {
         description: friendlyError.message,
       })
 
+      const failedBatchId = (error && typeof error === "object" && "batchId" in error)
+        ? String((error as Record<string, unknown>).batchId)
+        : undefined
+
       setSyncJobs((prev) =>
         prev.map((job) =>
           job.id === jobId
             ? {
                 ...job,
+                id: failedBatchId || job.id,
                 status: "failed",
                 progress: 0,
                 error: friendlyError.message,
@@ -1487,14 +1519,68 @@ if (!canAccessDataCenter) {
                 )}
 
                 {uploadError && (
-                  <BusinessErrorAlert
-                    title={uploadError.title}
-                    message={uploadError.message}
-                    suggestion={uploadError.suggestion}
-                    errorCode={uploadError.errorCode}
-                    technicalDetails={uploadError.technicalDetails}
-                    showTechnicalDetails={canViewTechnicalDetails}
-                  />
+                  <div className="space-y-3">
+                    <BusinessErrorAlert
+                      title={uploadError.title}
+                      message={uploadError.message}
+                      suggestion={uploadError.suggestion}
+                      errorCode={uploadError.errorCode}
+                      technicalDetails={uploadError.technicalDetails}
+                      showTechnicalDetails={canViewTechnicalDetails}
+                    />
+
+                    {uploadError.validationErrors && uploadError.validationErrors.length > 0 && (
+                      <div className="rounded-xl border border-destructive/20 bg-destructive/5 p-4">
+                        <div className="mb-3">
+                          <p className="text-sm font-semibold text-destructive">
+                            Invalid rows found
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            Please fix these rows in your CSV or Excel file, then upload again.
+                          </p>
+                        </div>
+
+                        <div className="max-h-64 overflow-auto rounded-lg border bg-background">
+                          <table className="w-full text-sm">
+                            <thead className="sticky top-0 bg-background">
+                              <tr className="border-b">
+                                <th className="px-3 py-2 text-left font-semibold">Row</th>
+                                <th className="px-3 py-2 text-left font-semibold">Column</th>
+                                <th className="px-3 py-2 text-left font-semibold">Value</th>
+                                <th className="px-3 py-2 text-left font-semibold">Reason</th>
+                              </tr>
+                            </thead>
+
+                            <tbody>
+                              {uploadError.validationErrors.map((item, index) => (
+                                <tr
+                                  key={`${item.rowNumber}-${item.column}-${index}`}
+                                  className="border-b last:border-b-0"
+                                >
+                                  <td className="px-3 py-2 align-top font-medium">
+                                    {item.rowNumber}
+                                  </td>
+                                  <td className="px-3 py-2 align-top">
+                                    {item.column}
+                                  </td>
+                                  <td className="max-w-[180px] break-words px-3 py-2 align-top text-muted-foreground">
+                                    {item.value === null ||
+                                    item.value === undefined ||
+                                    item.value === ""
+                                      ? "-"
+                                      : String(item.value)}
+                                  </td>
+                                  <td className="px-3 py-2 align-top">
+                                    {item.message}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 )}
                 <Button
                   className="w-full shrink-0"
@@ -1611,7 +1697,7 @@ if (!canAccessDataCenter) {
         </Badge>
       </div>
 
-      <h3 className="mb-1 font-semibold">Customer Segmentation Engine</h3>
+      <h3 className="mb-1 font-semibold">K-Means++ ML Segmentation Engine</h3>
 
       <p className="mb-1 text-sm text-muted-foreground">
         {mlSummary.records.toLocaleString()} customers - Last run:{" "}

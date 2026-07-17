@@ -2,13 +2,16 @@
 
 import { useEffect, useMemo, useState } from "react"
 import { toast } from "sonner"
-import { Copy, Eye, EyeOff, Key, Link as LinkIcon, Loader2, Save, Shield, Users, Check, CircleDashed } from "lucide-react"
+import {
+  Copy, Eye, EyeOff, Key, Link as LinkIcon, Loader2, Save, Shield, Users,
+  Check, CircleDashed, Pencil, Trash2, ChevronLeft, ChevronRight, X, CheckCircle,
+} from "lucide-react"
 
 import { AccessDenied } from "@/components/access-denied"
 import { BusinessErrorAlert } from "@/components/business-error-alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle, CardTitleTooltip, StateCard, KpiCard } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitleTooltip, KpiCard } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { getApiUrl } from "@/lib/api"
@@ -17,6 +20,14 @@ import { getAuthHeaders, getStoredRole, USER_ROLES } from "@/lib/roles"
 type Role = "operational" | "management" | "it_support"
 
 type UserRow = { id: number; name: string; email: string; role: Role; updatedAt: string }
+
+const USERS_PER_PAGE = 4
+
+const ROLE_LABELS: Record<Role, string> = {
+  operational: "Marketing Operational",
+  management: "Management",
+  it_support: "IT Support",
+}
 
 interface SummaryResponse {
   success: boolean
@@ -66,12 +77,25 @@ export function SystemSettings() {
   const [hasCopiedActivationUrl, setHasCopiedActivationUrl] = useState(false)
   const [isResendingInvite, setIsResendingInvite] = useState(false)
   const [users, setUsers] = useState<UserRow[]>([])
+  const [userPage, setUserPage] = useState(1)
+
+  // Edit user state
+  const [editingUser, setEditingUser] = useState<UserRow | null>(null)
+  const [editForm, setEditForm] = useState({ name: "", role: "operational" as Role })
+  const [isSavingUser, setIsSavingUser] = useState(false)
+
+  // Delete user state
+  const [deletingUser, setDeletingUser] = useState<UserRow | null>(null)
+  const [isDeletingUser, setIsDeletingUser] = useState(false)
 
   const geminiApiKeyValue = summary?.integrations.geminiApiKey || ""
   const metaAccessTokenValue = summary?.integrations.metaAccessToken || ""
   const hasGeminiSecret = Boolean(geminiApiKeyValue)
   const hasMetaSecret = Boolean(metaAccessTokenValue)
   const isDatabaseConnected = summary?.database?.status === "connected"
+
+  const totalPages = Math.max(1, Math.ceil(users.length / USERS_PER_PAGE))
+  const paginatedUsers = users.slice((userPage - 1) * USERS_PER_PAGE, userPage * USERS_PER_PAGE)
 
   const readOnlyNotice = useMemo(
     () => (isItSupport ? null : "Settings are restricted to IT Support only."),
@@ -110,6 +134,10 @@ export function SystemSettings() {
   useEffect(() => {
     if (isItSupport) void loadSettings()
   }, [isItSupport])
+
+  useEffect(() => {
+    if (userPage > totalPages) setUserPage(totalPages)
+  }, [userPage, totalPages])
 
   if (!isItSupport) {
     return (
@@ -205,6 +233,51 @@ export function SystemSettings() {
     }
   }
 
+  const saveUser = async () => {
+    if (!editingUser) return
+    try {
+      setIsSavingUser(true)
+      const response = await fetch(getApiUrl(`/system/users/${editingUser.id}`), {
+        method: "PATCH",
+        headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({ name: editForm.name, role: editForm.role }),
+      })
+      const result = await response.json().catch(() => null)
+      if (!response.ok || !result?.success) {
+        throw new Error(result?.message || "User could not be updated.")
+      }
+      setEditingUser(null)
+      await loadSettings()
+      toast.success("User updated successfully.")
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "User could not be updated.")
+    } finally {
+      setIsSavingUser(false)
+    }
+  }
+
+  const deleteUser = async () => {
+    if (!deletingUser) return
+    try {
+      setIsDeletingUser(true)
+      const response = await fetch(getApiUrl(`/system/users/${deletingUser.id}`), {
+        method: "DELETE",
+        headers: getAuthHeaders(),
+      })
+      const result = await response.json().catch(() => null)
+      if (!response.ok || !result?.success) {
+        throw new Error(result?.message || "User could not be deleted.")
+      }
+      setDeletingUser(null)
+      await loadSettings()
+      toast.success("User deleted successfully.")
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "User could not be deleted.")
+    } finally {
+      setIsDeletingUser(false)
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div>
@@ -216,7 +289,9 @@ export function SystemSettings() {
       {error ? <BusinessErrorAlert title="Action Failed" message={error} suggestion="Please try again." /> : null}
 
       {isLoading ? (
-        <StateCard state="loading" title="Loading system settings..." minHeight="min-h-[200px]" />
+        <div className="flex items-center justify-center min-h-[200px]">
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        </div>
       ) : (
         <>
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -254,7 +329,8 @@ export function SystemSettings() {
             </KpiCard>
           </div>
 
-          <div className="grid gap-6 xl:grid-cols-2">
+          <div className="grid gap-6 xl:grid-cols-2 items-start">
+            {/* Integration Configuration */}
             <Card className="border-border/60 bg-card/90 shadow-sm">
               <CardHeader>
                 <CardTitleTooltip title="Integration Configuration" tooltip="Manage API keys and credentials for Gemini AI and Meta integrations. Editable secrets for IT Support only." />
@@ -290,10 +366,10 @@ export function SystemSettings() {
                           onChange={(e) => setIntegrationForm((p) => ({ ...p, geminiApiKey: e.target.value }))}
                           placeholder="Paste Gemini API key"
                         />
-                        <Button type="button" variant="outline" size="icon" onClick={() => setShowGeminiKey((v) => !v)} title={showGeminiKey ? "Hide Gemini API key" : "Show Gemini API key"}>
+                        <Button type="button" variant="outline" size="icon" onClick={() => setShowGeminiKey((v) => !v)}>
                           {showGeminiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                         </Button>
-                        <Button type="button" variant="secondary" size="icon" onClick={() => void copyText(integrationForm.geminiApiKey, "Gemini API key")} disabled={!hasGeminiSecret} title="Copy Gemini API key">
+                        <Button type="button" variant="secondary" size="icon" onClick={() => void copyText(integrationForm.geminiApiKey, "Gemini API key")} disabled={!hasGeminiSecret}>
                           <Copy className="h-4 w-4" />
                         </Button>
                       </div>
@@ -331,10 +407,10 @@ export function SystemSettings() {
                           onChange={(e) => setIntegrationForm((p) => ({ ...p, metaAccessToken: e.target.value }))}
                           placeholder="Paste Meta access token"
                         />
-                        <Button type="button" variant="outline" size="icon" onClick={() => setShowMetaToken((v) => !v)} title={showMetaToken ? "Hide Meta access token" : "Show Meta access token"}>
+                        <Button type="button" variant="outline" size="icon" onClick={() => setShowMetaToken((v) => !v)}>
                           {showMetaToken ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                         </Button>
-                        <Button type="button" variant="secondary" size="icon" onClick={() => void copyText(integrationForm.metaAccessToken, "Meta access token")} disabled={!hasMetaSecret} title="Copy Meta access token">
+                        <Button type="button" variant="secondary" size="icon" onClick={() => void copyText(integrationForm.metaAccessToken, "Meta access token")} disabled={!hasMetaSecret}>
                           <Copy className="h-4 w-4" />
                         </Button>
                       </div>
@@ -360,9 +436,10 @@ export function SystemSettings() {
               </CardContent>
             </Card>
 
+            {/* User Accounts */}
             <Card className="border-border/60 bg-card/90 shadow-sm">
               <CardHeader>
-                <CardTitleTooltip title="User Accounts" tooltip="Invite new users and manage existing accounts. Invite users and let them set their own password." />
+                <CardTitleTooltip title="User Accounts" tooltip="Invite new users, edit roles/names, or delete accounts. Invited users set their own password." />
               </CardHeader>
               <CardContent className="space-y-3">
                 <div className="grid gap-3 sm:grid-cols-2">
@@ -402,34 +479,174 @@ export function SystemSettings() {
                       <Badge variant="secondary" className="rounded-full px-3 py-1">Sent</Badge>
                     </div>
                     <div className="mt-4 flex flex-wrap gap-2">
-                      <Button type="button" variant="outline" size="sm" className="gap-2" onClick={() => void copyActivationUrl()} title="Copy activation link">
+                      <Button type="button" variant="outline" size="sm" className="gap-2" onClick={() => void copyActivationUrl()}>
                         {hasCopiedActivationUrl ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
                         {hasCopiedActivationUrl ? "Copied" : "Copy link"}
                       </Button>
-                      <Button type="button" variant="secondary" size="sm" className="gap-2" onClick={() => void resendActivationEmail()} disabled={isResendingInvite} title="Send email again">
+                      <Button type="button" variant="secondary" size="sm" className="gap-2" onClick={() => void resendActivationEmail()} disabled={isResendingInvite}>
                         {isResendingInvite ? <Loader2 className="h-4 w-4 animate-spin" /> : <LinkIcon className="h-4 w-4" />}
                         {isResendingInvite ? "Sending..." : "Resend email"}
                       </Button>
                     </div>
                   </div>
                 ) : null}
+
+                {/* User List with Pagination */}
                 <div className="space-y-2">
-                  {users.map((user) => (
+                  {paginatedUsers.map((user) => (
                     <div key={user.id} className="rounded-xl border bg-secondary/20 p-3">
                       <div className="flex items-center justify-between gap-2">
-                        <div>
-                          <p className="font-medium">{user.name}</p>
-                          <p className="text-sm text-muted-foreground">{user.email}</p>
+                        <div className="min-w-0 flex-1">
+                          <p className="font-medium truncate">{user.name}</p>
+                          <p className="text-sm text-muted-foreground truncate">{user.email}</p>
                         </div>
-                        <Badge variant="outline">{user.role}</Badge>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <Badge variant="outline" className="text-xs">{ROLE_LABELS[user.role] || user.role}</Badge>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                            title="Edit user"
+                            onClick={() => {
+                              setEditingUser(user)
+                              setEditForm({ name: user.name, role: user.role })
+                            }}
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-destructive hover:text-destructive"
+                            title="Delete user"
+                            onClick={() => setDeletingUser(user)}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
                       </div>
                     </div>
                   ))}
                 </div>
+
+                {/* Pagination */}
+                {users.length > USERS_PER_PAGE && (
+                  <div className="flex items-center justify-between pt-2 border-t">
+                    <p className="text-xs text-muted-foreground">
+                      Showing {(userPage - 1) * USERS_PER_PAGE + 1}–{Math.min(userPage * USERS_PER_PAGE, users.length)} of {users.length}
+                    </p>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        className="h-8 w-8"
+                        disabled={userPage <= 1}
+                        onClick={() => setUserPage((p) => Math.max(1, p - 1))}
+                      >
+                        <ChevronLeft className="h-4 w-4" />
+                      </Button>
+                      {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
+                        <Button
+                          key={page}
+                          variant={page === userPage ? "default" : "outline"}
+                          size="icon"
+                          className="h-8 w-8 text-xs"
+                          onClick={() => setUserPage(page)}
+                        >
+                          {page}
+                        </Button>
+                      ))}
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        className="h-8 w-8"
+                        disabled={userPage >= totalPages}
+                        onClick={() => setUserPage((p) => Math.min(totalPages, p + 1))}
+                      >
+                        <ChevronRight className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </div>
         </>
+      )}
+
+      {/* Edit User Dialog */}
+      {editingUser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <Card className="w-full max-w-md mx-4">
+            <CardHeader className="flex flex-row items-center justify-between">
+              <h3 className="text-lg font-semibold">Edit User</h3>
+              <Button variant="ghost" size="icon" onClick={() => setEditingUser(null)}>
+                <X className="h-4 w-4" />
+              </Button>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label>Email</Label>
+                <Input value={editingUser.email} disabled className="opacity-60" />
+                <p className="text-xs text-muted-foreground">Email cannot be changed.</p>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-name">Full Name</Label>
+                <Input
+                  id="edit-name"
+                  value={editForm.name}
+                  onChange={(e) => setEditForm((p) => ({ ...p, name: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-role">Role</Label>
+                <select
+                  id="edit-role"
+                  value={editForm.role}
+                  onChange={(e) => setEditForm((p) => ({ ...p, role: e.target.value as Role }))}
+                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                >
+                  <option value="operational">Marketing Operational</option>
+                  <option value="management">Management</option>
+                  <option value="it_support">IT Support</option>
+                </select>
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <Button variant="outline" onClick={() => setEditingUser(null)}>Cancel</Button>
+                <Button className="gap-2" onClick={() => void saveUser()} disabled={isSavingUser || !editForm.name.trim()}>
+                  {isSavingUser ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
+                  Save Changes
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Delete User Dialog */}
+      {deletingUser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <Card className="w-full max-w-md mx-4">
+            <CardHeader className="flex flex-row items-center justify-between">
+              <h3 className="text-lg font-semibold text-destructive">Delete User</h3>
+              <Button variant="ghost" size="icon" onClick={() => setDeletingUser(null)}>
+                <X className="h-4 w-4" />
+              </Button>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-sm">
+                Are you sure you want to delete <strong>{deletingUser.name}</strong> ({deletingUser.email})? This action cannot be undone.
+              </p>
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" onClick={() => setDeletingUser(null)}>Cancel</Button>
+                <Button variant="destructive" className="gap-2" onClick={() => void deleteUser()} disabled={isDeletingUser}>
+                  {isDeletingUser ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                  Delete Account
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       )}
     </div>
   )

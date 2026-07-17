@@ -28,6 +28,21 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import {
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+  PaginationLink,
+  PaginationPrevious,
+  PaginationNext,
+} from "@/components/ui/pagination"
+import {
   getLowOccupancySessions,
   getRecommendedCustomers,
   type LowOccupancySessionCard,
@@ -80,6 +95,12 @@ interface PlaytimeMixData {
   totalCustomers: number
   totalSessions: number
   sessionByTime?: unknown
+}
+
+interface CustomerPagination {
+  totalCustomers: number
+  returned: number
+  offset: number
 }
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
@@ -180,6 +201,53 @@ const INITIAL_CUSTOMER_TYPE = "all"
 const INITIAL_SEGMENT_NAME = "all"
 const INITIAL_MIN_SESSION_BOOKING_COUNT = 1
 
+const VENUE_OPTIONS = [
+  { value: "All Venue", label: "All Venue" },
+  { value: "Mini Soccer", label: "Mini Soccer" },
+  { value: "Basketball", label: "Basketball" },
+]
+
+const CUSTOMER_TYPE_DISPLAY_OPTIONS = [
+  { value: "All Type", label: "All Type" },
+  { value: "Membership", label: "Membership" },
+  { value: "Non Membership", label: "Non Membership" },
+]
+
+const INITIAL_CUSTOMER_PAGE_SIZE = 10
+
+const getLast30DaysRange = () => {
+  const end = new Date()
+  const start = new Date()
+
+  start.setDate(end.getDate() - 30)
+
+  const formatDate = (value: Date) => {
+    const year = value.getFullYear()
+    const month = String(value.getMonth() + 1).padStart(2, "0")
+    const day = String(value.getDate()).padStart(2, "0")
+    return `${year}-${month}-${day}`
+  }
+
+  return {
+    startDate: formatDate(start),
+    endDate: formatDate(end),
+  }
+}
+
+const INITIAL_DATE_RANGE = getLast30DaysRange()
+
+const mapVenueToCourtType = (venue: string) => {
+  if (venue === "Mini Soccer") return "mini_soccer"
+  if (venue === "Basketball") return "basketball"
+  return "all"
+}
+
+const mapCustomerTypeToApiValue = (displayType: string) => {
+  if (displayType === "Membership") return "membership"
+  if (displayType === "Non Membership") return "non_membership"
+  return "all"
+}
+
 const FILTER_HELP_TEXT = {
   campaignDate:
     "Pick the target play date you want to inspect. The session cards use uploaded historical transactions for that selected day, not live slot availability.",
@@ -264,6 +332,14 @@ const [dataMonthLabel, setDataMonthLabel] = useState<string | null>(null)
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
   const [selectedCardKey, setSelectedCardKey] = useState<string | null>(null)
 
+  const [selectedStartDate, setSelectedStartDate] = useState(INITIAL_DATE_RANGE.startDate)
+  const [selectedEndDate, setSelectedEndDate] = useState(INITIAL_DATE_RANGE.endDate)
+  const [selectedVenue, setSelectedVenue] = useState("All Venue")
+  const [selectedCustomerType, setSelectedCustomerType] = useState("All Type")
+  const [currentCustomerPage, setCurrentCustomerPage] = useState(1)
+  const [customerPageSize] = useState(INITIAL_CUSTOMER_PAGE_SIZE)
+  const [customerPagination, setCustomerPagination] = useState<CustomerPagination | null>(null)
+
   const loadSessions = async (nextDate = date, nextCourtType = courtType) => {
     setIsLoadingSessions(true)
     setSessionError(null)
@@ -293,6 +369,8 @@ const [dataMonthLabel, setDataMonthLabel] = useState<string | null>(null)
     nextCustomerType?: string
     nextSegmentName?: string
     nextMinSessionBookingCount?: number
+    nextCustomerPage?: number
+    nextPageSize?: number
   }) => {
     const nextDate = filters?.nextDate ?? date
     const nextCourtType = filters?.nextCourtType ?? courtType
@@ -301,6 +379,8 @@ const [dataMonthLabel, setDataMonthLabel] = useState<string | null>(null)
     const nextSegmentName = filters?.nextSegmentName ?? segmentName
     const nextMinSessionBookingCount =
       filters?.nextMinSessionBookingCount ?? minSessionBookingCount
+    const nextCustomerPage = filters?.nextCustomerPage ?? currentCustomerPage
+    const nextPageSize = filters?.nextPageSize ?? customerPageSize
 
     setIsLoadingCustomers(true)
     setCustomerError(null)
@@ -313,10 +393,11 @@ const [dataMonthLabel, setDataMonthLabel] = useState<string | null>(null)
         customerType: nextCustomerType,
         segmentName: nextSegmentName === "all" ? undefined : nextSegmentName,
         minSessionBookingCount: nextMinSessionBookingCount,
-        limit: 50,
-        offset: 0,
+        limit: nextPageSize,
+        offset: (nextCustomerPage - 1) * nextPageSize,
       })
       setCustomers(response.customers)
+      setCustomerPagination(response.pagination ?? null)
     } catch (error) {
       setCustomerError(
         error instanceof Error
@@ -324,10 +405,93 @@ const [dataMonthLabel, setDataMonthLabel] = useState<string | null>(null)
           : "Failed to load recommended customers."
       )
       setCustomers([])
+      setCustomerPagination(null)
     } finally {
       setIsLoadingCustomers(false)
     }
   }
+
+  const loadPlaytime = async (filters?: {
+    nextStartDate?: string
+    nextEndDate?: string
+    nextVenue?: string
+    nextCustomerType?: string
+  }) => {
+    setIsLoadingPlaytime(true)
+    setIsLoadingHeatmap(true)
+    try {
+      const hasExplicitDateRange = filters?.nextStartDate && filters?.nextEndDate
+
+      let monthLabel = dataMonthLabel ?? "All Month"
+      let year = String(new Date().getFullYear())
+
+      if (!hasExplicitDateRange) {
+        const statusRes = await fetch(getApiUrl("/operations/status"), {
+          headers: getAuthHeaders(),
+          cache: "no-store",
+        })
+        const statusResult = await statusRes.json().catch(() => null)
+        const availableMonths = statusResult?.success
+          ? (statusResult.data?.transactionAvailableMonths as string[])
+          : null
+
+        if (availableMonths && availableMonths.length > 0) {
+          const latest = availableMonths[availableMonths.length - 1]
+          const parts = latest.split("-")
+          if (parts.length === 2) {
+            year = parts[0]
+            const monthIndex = parseInt(parts[1], 10) - 1
+            if (monthIndex >= 0 && monthIndex < 12) {
+              monthLabel = MONTHS[monthIndex]
+            }
+          }
+        }
+      } else {
+        const start = new Date(filters!.nextStartDate!)
+        monthLabel = MONTHS[start.getMonth()]
+        year = String(start.getFullYear())
+      }
+      setDataMonthLabel(monthLabel)
+
+      const params = new URLSearchParams({
+        venue: filters?.nextVenue ?? "All Venue",
+        customerType: filters?.nextCustomerType ?? "All Type",
+      })
+
+      if (hasExplicitDateRange) {
+        params.set("startDate", filters!.nextStartDate!)
+        params.set("endDate", filters!.nextEndDate!)
+      } else {
+        params.set("month", monthLabel)
+        params.set("year", year)
+        params.set("periodType", "MTD")
+      }
+
+      const [playtimeRes, heatmapRes] = await Promise.all([
+        fetch(getApiUrl(`/dashboard/playtime-mix?${params.toString()}`), {
+          headers: getAuthHeaders(),
+          cache: "no-store",
+        }),
+        fetch(getApiUrl(`/dashboard/empty-slot-heatmap?${params.toString()}`), {
+          headers: getAuthHeaders(),
+          cache: "no-store",
+        }),
+      ])
+
+      const playtimeResult = await playtimeRes.json().catch(() => null)
+      const heatmapResult = await heatmapRes.json().catch(() => null)
+
+      setPlaytimeMixData(playtimeResult?.success ? playtimeResult.data : null)
+      setHeatmapData(heatmapResult?.success ? heatmapResult.data : null)
+    } catch {
+      setPlaytimeMixData(null)
+      setHeatmapData(null)
+    } finally {
+      setIsLoadingPlaytime(false)
+      setIsLoadingHeatmap(false)
+    }
+  }
+
   useEffect(() => {
   const loadPlaytimeData = async () => {
     setIsLoadingPlaytime(true)
@@ -425,6 +589,7 @@ const [dataMonthLabel, setDataMonthLabel] = useState<string | null>(null)
 
   const handleApply = async () => {
     setStatusMessage(null)
+    setCurrentCustomerPage(1)
     await Promise.all([loadSessions(date, courtType), loadCustomers()])
   }
 
@@ -439,6 +604,37 @@ const [dataMonthLabel, setDataMonthLabel] = useState<string | null>(null)
       nextSessionName: card.sessionName,
     })
   }
+
+  useEffect(() => {
+    const runFilteredPage = async () => {
+      setStatusMessage(null)
+
+      const nextCourtType = mapVenueToCourtType(selectedVenue)
+      const nextCustomerTypeVal = mapCustomerTypeToApiValue(selectedCustomerType)
+
+      setCourtType(nextCourtType)
+      setCustomerType(nextCustomerTypeVal)
+      setCurrentCustomerPage(1)
+
+      await Promise.all([
+        loadPlaytime({
+          nextStartDate: selectedStartDate,
+          nextEndDate: selectedEndDate,
+          nextVenue: selectedVenue,
+          nextCustomerType: selectedCustomerType,
+        }),
+        loadSessions(date, nextCourtType),
+        loadCustomers({
+          nextDate: date,
+          nextCourtType,
+          nextCustomerType: nextCustomerTypeVal,
+        }),
+      ])
+    }
+
+    void runFilteredPage()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedStartDate, selectedEndDate, selectedVenue, selectedCustomerType])
 
   const copyText = async (text: string | null, successMessage: string) => {
     if (!text) {
@@ -540,6 +736,74 @@ const playtimeBehaviorInsight = !dominantPlaytime || !playtimeMixData
         </Card>
       )}
       
+<div className="rounded-2xl border border-border/70 bg-card/80 p-3 shadow-sm backdrop-blur">
+  <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+    <p className="shrink-0 text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
+      Page filters
+    </p>
+    <div className="flex flex-wrap items-center justify-end gap-2">
+      <div className="group relative w-[200px]">
+        <input
+          type="date"
+          value={selectedStartDate}
+          onChange={(event) => {
+            const nextStartDate = event.target.value
+            setSelectedStartDate(nextStartDate)
+            if (selectedEndDate && nextStartDate > selectedEndDate) {
+              setSelectedEndDate(nextStartDate)
+            }
+          }}
+          className="h-11 w-full rounded-xl border border-border/70 bg-background/90 px-3 text-sm font-medium text-foreground shadow-sm outline-none transition hover:border-primary/35 hover:bg-background focus:border-primary focus:ring-2 focus:ring-primary/15"
+        />
+      </div>
+      <div className="group relative w-[200px]">
+        <input
+          type="date"
+          value={selectedEndDate}
+          onChange={(event) => {
+            const nextEndDate = event.target.value
+            setSelectedEndDate(nextEndDate)
+            if (selectedStartDate && nextEndDate < selectedStartDate) {
+              setSelectedStartDate(nextEndDate)
+            }
+          }}
+          className="h-11 w-full rounded-xl border border-border/70 bg-background/90 px-3 text-sm font-medium text-foreground shadow-sm outline-none transition hover:border-primary/35 hover:bg-background focus:border-primary focus:ring-2 focus:ring-primary/15"
+        />
+      </div>
+      <div className="w-[160px]">
+        <Select value={selectedVenue} onValueChange={setSelectedVenue}>
+          <SelectTrigger className="h-11 w-full rounded-xl border border-border/70 bg-background/90 px-3 shadow-sm outline-none transition hover:border-primary/35 hover:bg-background focus:ring-2 focus:ring-primary/15">
+            <div className="flex min-w-0 items-center gap-3">
+              <span className="shrink-0 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Venue</span>
+              <SelectValue placeholder="Venue" />
+            </div>
+          </SelectTrigger>
+          <SelectContent position="popper" className="w-[var(--radix-select-trigger-width)] rounded-xl border bg-background shadow-lg">
+            {VENUE_OPTIONS.map((venue) => (
+              <SelectItem key={venue.value} value={venue.value}>{venue.label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      <div className="w-[180px]">
+        <Select value={selectedCustomerType} onValueChange={setSelectedCustomerType}>
+          <SelectTrigger className="h-11 w-full rounded-xl border border-border/70 bg-background/90 px-3 shadow-sm outline-none transition hover:border-primary/35 hover:bg-background focus:ring-2 focus:ring-primary/15">
+            <div className="flex min-w-0 items-center gap-3">
+              <span className="shrink-0 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Customer</span>
+              <SelectValue placeholder="Customer" />
+            </div>
+          </SelectTrigger>
+          <SelectContent position="popper" className="w-[var(--radix-select-trigger-width)] rounded-xl border bg-background shadow-lg">
+            {CUSTOMER_TYPE_DISPLAY_OPTIONS.map((ct) => (
+              <SelectItem key={ct.value} value={ct.value}>{ct.label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+    </div>
+  </div>
+</div>
+
      {isLoadingHeatmap ? (
   <Card className="border-border bg-card shadow-sm">
     <CardContent className="flex items-center justify-center py-8 text-sm text-muted-foreground">
@@ -850,14 +1114,15 @@ const playtimeBehaviorInsight = !dominantPlaytime || !playtimeMixData
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="overflow-hidden">
         <CardHeader>
           <CardTitleTooltip title="Recommended Customers" tooltip="Customers whose historical behavior best matches the selected session and campaign filters." />
           <CardDescription>
             Customers whose historical behavior best matches the selected session and campaign filters.
           </CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="p-0">
+          <div className="px-6 pb-6">
           {customerError ? (
             <div className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
               <AlertCircle className="h-4 w-4" />
@@ -977,6 +1242,57 @@ const playtimeBehaviorInsight = !dominantPlaytime || !playtimeMixData
               </table>
             </div>
           )}
+          </div>
+          {customerPagination && Math.ceil((customerPagination.totalCustomers || 0) / customerPageSize) > 1 ? (
+            <div className="border-t border-border bg-background/80 px-6 py-3">
+              <Pagination className="justify-between gap-4">
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  Page {currentCustomerPage} of {Math.max(1, Math.ceil((customerPagination.totalCustomers || 0) / customerPageSize))}
+                </div>
+                <PaginationContent>
+                  <PaginationItem>
+                    <PaginationPrevious
+                      href="#"
+                      aria-disabled={currentCustomerPage === 1}
+                      onClick={(event) => {
+                        event.preventDefault()
+                        if (currentCustomerPage === 1) return
+                        const prevPage = currentCustomerPage - 1
+                        setCurrentCustomerPage(prevPage)
+                      }}
+                    />
+                  </PaginationItem>
+                  {Array.from({ length: Math.max(1, Math.ceil((customerPagination.totalCustomers || 0) / customerPageSize)) }, (_, index) => index + 1).map((page) => (
+                    <PaginationItem key={page}>
+                      <PaginationLink
+                        href="#"
+                        isActive={page === currentCustomerPage}
+                        onClick={(event) => {
+                          event.preventDefault()
+                          setCurrentCustomerPage(page)
+                        }}
+                      >
+                        {page}
+                      </PaginationLink>
+                    </PaginationItem>
+                  ))}
+                  <PaginationItem>
+                    <PaginationNext
+                      href="#"
+                      aria-disabled={currentCustomerPage === Math.max(1, Math.ceil((customerPagination.totalCustomers || 0) / customerPageSize))}
+                      onClick={(event) => {
+                        event.preventDefault()
+                        const totalPages = Math.max(1, Math.ceil((customerPagination.totalCustomers || 0) / customerPageSize))
+                        if (currentCustomerPage === totalPages) return
+                        const nextPage = currentCustomerPage + 1
+                        setCurrentCustomerPage(nextPage)
+                      }}
+                    />
+                  </PaginationItem>
+                </PaginationContent>
+              </Pagination>
+            </div>
+          ) : null}
         </CardContent>
       </Card>
     </div>

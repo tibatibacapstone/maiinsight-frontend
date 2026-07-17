@@ -39,6 +39,13 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardTitleTooltip } from "@/components/ui/card"
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
@@ -1050,10 +1057,7 @@ export function AnalyticsDashboard() {
       const aiInsight: BusinessInsightState = {
         source: "ai",
         generatedAt: result?.data?.generatedAt || result?.generatedAt || new Date().toISOString(),
-        providerLabel:
-          result?.data?.provider === "azure" || result?.provider === "azure"
-            ? "Azure OpenAI"
-            : "Gemini",
+        providerLabel: "Gemini",
         strategy: {
           ...defaultStrategyPayload(),
           ...strategy,
@@ -1115,52 +1119,94 @@ export function AnalyticsDashboard() {
           <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
             <p className="shrink-0 text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">Dashboard filters</p>
             <div className="flex flex-wrap items-center justify-end gap-2">
-              <div className="group relative min-w-[148px]">
-                <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground transition-colors group-focus-within:text-foreground">Month</span>
-                <select
-                  value={selectedMonth}
-                  onChange={(event) => setSelectedMonth(event.target.value)}
-                  disabled={!status?.hasTransactionData && !isLoading}
-                  className="h-11 w-full appearance-none rounded-xl border border-border/70 bg-background/90 pl-[4.4rem] pr-10 text-sm font-medium text-foreground shadow-sm outline-none transition hover:border-primary/35 hover:bg-background focus:border-primary focus:ring-2 focus:ring-primary/15 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  <option value={DEFAULT_MONTH_OPTION}>{DEFAULT_MONTH_OPTION}</option>
+              <Select
+                value={selectedMonth}
+                onValueChange={setSelectedMonth}
+                disabled={!status?.hasTransactionData && !isLoading}
+              >
+                <SelectTrigger className="h-11 w-[160px] rounded-xl border border-border/70 bg-background/90 px-3 shadow-sm outline-none transition hover:border-primary/35 hover:bg-background focus:ring-2 focus:ring-primary/15">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <span className="shrink-0 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                      Month
+                    </span>
+                    <SelectValue placeholder="Month" />
+                  </div>
+                </SelectTrigger>
+                <SelectContent position="popper" className="w-[var(--radix-select-trigger-width)] rounded-xl border bg-background shadow-lg">
+                  <SelectItem value={DEFAULT_MONTH_OPTION}>
+                    {DEFAULT_MONTH_OPTION}
+                  </SelectItem>
                   {months.map((month) => {
                     const option = monthOptions.find((item) => item.value === month)
-                    return <option key={month} value={month} disabled={option?.disabled}>{month}</option>
+                    return (
+                      <SelectItem key={month} value={month} disabled={option?.disabled}>
+                        {month}
+                      </SelectItem>
+                    )
                   })}
-                </select>
-                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground transition-transform group-hover:translate-y-[-45%] group-focus-within:text-foreground" />
-              </div>
-              <div className="group relative min-w-[124px]">
-                <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground transition-colors group-focus-within:text-foreground">Year</span>
-                <select
-                  value={selectedYear}
-                  onChange={(event) => {
-                    setSelectedYear(event.target.value)
-                  }}
-                  disabled={!status?.hasTransactionData && !isLoading}
-                  className="h-11 w-full appearance-none rounded-xl border border-border/70 bg-background/90 pl-[3.6rem] pr-10 text-sm font-medium text-foreground shadow-sm outline-none transition hover:border-primary/35 hover:bg-background focus:border-primary focus:ring-2 focus:ring-primary/15 disabled:cursor-not-allowed disabled:opacity-60"
-                >
+                </SelectContent>
+              </Select>
+              <Select
+                value={selectedYear}
+                onValueChange={setSelectedYear}
+                disabled={!status?.hasTransactionData && !isLoading}
+              >
+                <SelectTrigger className="h-11 w-[130px] rounded-xl border border-border/70 bg-background/90 px-3 shadow-sm outline-none transition hover:border-primary/35 hover:bg-background focus:ring-2 focus:ring-primary/15">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <span className="shrink-0 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                      Year
+                    </span>
+                    <SelectValue placeholder="Year" />
+                  </div>
+                </SelectTrigger>
+                <SelectContent position="popper" className="w-[var(--radix-select-trigger-width)] rounded-xl border bg-background shadow-lg">
                   {yearOptions.map((year) => (
-                    <option key={year.value} value={year.value} disabled={year.disabled}>{year.value}</option>
+                    <SelectItem key={year.value} value={year.value} disabled={year.disabled}>
+                      {year.value}
+                    </SelectItem>
                   ))}
-                </select>
-                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground transition-transform group-hover:translate-y-[-45%] group-focus-within:text-foreground" />
-              </div>
-              <div className="group relative min-w-[150px]">
-                <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground transition-colors group-focus-within:text-foreground">Venue</span>
-                <select value={selectedVenue} onChange={(event) => setSelectedVenue(event.target.value)} className="h-11 w-full appearance-none rounded-xl border border-border/70 bg-background/90 pl-[4rem] pr-10 text-sm font-medium text-foreground shadow-sm outline-none transition hover:border-primary/35 hover:bg-background focus:border-primary focus:ring-2 focus:ring-primary/15">
-                  {venues.map((venue) => <option key={venue.value} value={venue.value}>{venue.label}</option>)}
-                </select>
-                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground transition-transform group-hover:translate-y-[-45%] group-focus-within:text-foreground" />
-              </div>
-              <div className="group relative min-w-[172px]">
-                <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground transition-colors group-focus-within:text-foreground">Customer</span>
-                <select value={selectedCustomerType} onChange={(event) => setSelectedCustomerType(event.target.value)} className="h-11 w-full appearance-none rounded-xl border border-border/70 bg-background/90 pl-[5.6rem] pr-10 text-sm font-medium text-foreground shadow-sm outline-none transition hover:border-primary/35 hover:bg-background focus:border-primary focus:ring-2 focus:ring-primary/15">
-                  {customerTypes.map((customerType) => <option key={customerType} value={customerType}>{customerType}</option>)}
-                </select>
-                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground transition-transform group-hover:translate-y-[-45%] group-focus-within:text-foreground" />
-              </div>
+                </SelectContent>
+              </Select>
+              <Select
+                value={selectedVenue}
+                onValueChange={setSelectedVenue}
+              >
+                <SelectTrigger className="h-11 w-[160px] rounded-xl border border-border/70 bg-background/90 px-3 shadow-sm outline-none transition hover:border-primary/35 hover:bg-background focus:ring-2 focus:ring-primary/15">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <span className="shrink-0 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                      Venue
+                    </span>
+                    <SelectValue placeholder="Venue" />
+                  </div>
+                </SelectTrigger>
+                <SelectContent position="popper" className="w-[var(--radix-select-trigger-width)] rounded-xl border bg-background shadow-lg">
+                  {venues.map((venue) => (
+                    <SelectItem key={venue.value} value={venue.value}>
+                      {venue.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select
+                value={selectedCustomerType}
+                onValueChange={setSelectedCustomerType}
+              >
+                <SelectTrigger className="h-11 w-[180px] rounded-xl border border-border/70 bg-background/90 px-3 shadow-sm outline-none transition hover:border-primary/35 hover:bg-background focus:ring-2 focus:ring-primary/15">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <span className="shrink-0 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                      Customer
+                    </span>
+                    <SelectValue placeholder="Customer" />
+                  </div>
+                </SelectTrigger>
+                <SelectContent position="popper" className="w-[var(--radix-select-trigger-width)] rounded-xl border bg-background shadow-lg">
+                  {customerTypes.map((customerType) => (
+                    <SelectItem key={customerType} value={customerType}>
+                      {customerType}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               <div className="inline-flex h-11 items-center rounded-xl border border-border/70 bg-background/80 p-1 shadow-sm">
                 {(["MTD", "YTD"] as const).map((type) => (
                   <Button

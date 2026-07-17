@@ -723,9 +723,7 @@ export function GenAIWorkspace({ userRole: userRoleFromProps }: GenAIWorkspacePr
                     variant="outline"
                     className="w-fit border-primary/20 text-primary"
                   >
-                    {strategy.provider === "azure"
-                      ? "Generated with Azure OpenAI"
-                      : "Generated with Gemini"}
+                    {"Generated with Gemini"}
                   </Badge>
                 </div>
               </CardHeader>
