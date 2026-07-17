@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitleTooltip, KpiCard } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Switch } from "@/components/ui/switch"
 import { getApiUrl } from "@/lib/api"
 import { getAuthHeaders, getStoredRole, USER_ROLES } from "@/lib/roles"
 
@@ -34,12 +35,15 @@ interface SummaryResponse {
   message?: string
   data?: {
     currentUser: { userId: number; email: string; role: string }
-    database: { name: string; status: string; subtitle: string } | null
+    database: { name: string; status: string; lastUpdated: string | null }
     latestSegmentationRun: { id: number; status: string; runDate: string; totalCustomers: number } | null
     latestImport: { id: number; fileName: string; status: string; updatedAt: string; rowCount: number } | null
+    latestMetaSync: { id: number; status: string; startedAt: string; message: string } | null
     integrations: {
       metaConfigured: boolean
+      metaEnabled: boolean
       aiConfigured: boolean
+      aiEnabled: boolean
       aiProvider: string
       aiProviderLabel: string
       aiModel: string | null
@@ -65,9 +69,11 @@ export function SystemSettings() {
   const [integrationForm, setIntegrationForm] = useState({
     geminiApiKey: "",
     geminiModel: "",
+    geminiEnabled: true,
     metaIgUserId: "",
     metaAccessToken: "",
     metaGraphVersion: "",
+    metaEnabled: true,
   })
   const [isSavingIntegrations, setIsSavingIntegrations] = useState(false)
   const [inviteForm, setInviteForm] = useState({ name: "", email: "", role: "operational" as Role })
@@ -120,9 +126,11 @@ export function SystemSettings() {
       setIntegrationForm({
         geminiApiKey: result.data.integrations.geminiApiKey || "",
         geminiModel: result.data.integrations.geminiModel || "",
+        geminiEnabled: result.data.integrations.aiEnabled,
         metaIgUserId: result.data.integrations.metaIgUserId || "",
         metaAccessToken: result.data.integrations.metaAccessToken || "",
         metaGraphVersion: result.data.integrations.metaGraphVersion || "",
+        metaEnabled: result.data.integrations.metaEnabled,
       })
     } catch (err) {
       setError(err instanceof Error ? err.message : "Settings could not be loaded.")
@@ -173,6 +181,25 @@ export function SystemSettings() {
       setError(err instanceof Error ? err.message : "Integration settings could not be saved.")
     } finally {
       setIsSavingIntegrations(false)
+    }
+  }
+
+  const toggleIntegration = async (field: "geminiEnabled" | "metaEnabled", value: boolean) => {
+    setIntegrationForm((p) => ({ ...p, [field]: value }))
+    try {
+      const updatedForm = { ...integrationForm, [field]: value }
+      const response = await fetch(getApiUrl("/system/integrations"), {
+        method: "PUT",
+        headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify(updatedForm),
+      })
+      const result = await response.json().catch(() => null)
+      if (!response.ok || !result?.success) throw new Error(result?.message || "Toggle could not be saved.")
+      await loadSettings()
+      toast.success(`${field === "geminiEnabled" ? "Gemini" : "Meta"} ${value ? "enabled" : "disabled"}.`)
+    } catch (err) {
+      setIntegrationForm((p) => ({ ...p, [field]: !value }))
+      setError(err instanceof Error ? err.message : "Toggle could not be saved.")
     }
   }
 
@@ -297,34 +324,51 @@ export function SystemSettings() {
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <KpiCard
               label="Gemini"
-              value={summary?.integrations.aiConfigured ? "Connected" : "Offline"}
+              value={summary?.integrations.aiEnabled ? (summary?.integrations.aiConfigured ? "Connected" : "No API Key") : "Disabled"}
               changeLabel={summary?.integrations.geminiModel || "No model configured"}
               tooltip="Gemini AI integration status and configured model."
             >
-              <Badge variant={summary?.integrations.aiConfigured ? "default" : "secondary"} className="rounded-full px-3">
-                AI
+              <Badge variant={summary?.integrations.aiConfigured && summary?.integrations.aiEnabled ? "default" : "destructive"} className="rounded-full px-3">
+                {summary?.integrations.aiConfigured && summary?.integrations.aiEnabled ? "Active" : "Inactive"}
               </Badge>
             </KpiCard>
 
             <KpiCard
               label="Meta"
-              value={summary?.integrations.metaConfigured ? "Connected" : "Offline"}
-              changeLabel={summary?.integrations.metaGraphVersion || "No graph version"}
-              tooltip="Meta Graph API connection status and version."
+              value={summary?.integrations.metaEnabled ? (summary?.integrations.metaConfigured ? "Connected" : "No Credentials") : "Disabled"}
+              changeLabel={summary?.latestMetaSync
+                ? `Last sync: ${new Date(summary.latestMetaSync.startedAt).toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}`
+                : "No sync yet"}
+              tooltip="Meta Graph API connection status and last sync time."
             >
-              <Badge variant={summary?.integrations.metaConfigured ? "default" : "secondary"} className="rounded-full px-3">
-                API
+              <Badge variant={summary?.integrations.metaConfigured && summary?.integrations.metaEnabled ? "default" : "destructive"} className="rounded-full px-3">
+                {summary?.integrations.metaConfigured && summary?.integrations.metaEnabled ? "Active" : "Inactive"}
               </Badge>
             </KpiCard>
 
             <KpiCard
               label="Database"
-              value={isDatabaseConnected ? "Connected" : "Error"}
-              changeLabel={summary?.database?.subtitle || "Error establishing database connection"}
-              tooltip="MySQL database connection status."
+              value={isDatabaseConnected ? summary?.database?.name || "Connected" : "Error"}
+              changeLabel={summary?.database?.lastUpdated
+                ? `Last updated: ${new Date(summary.database.lastUpdated).toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}`
+                : "No data imported yet"}
+              tooltip="MySQL database connection status and name."
             >
-              <Badge variant={isDatabaseConnected ? "default" : "secondary"} className="rounded-full px-3">
-                DB
+              <Badge variant={isDatabaseConnected ? "default" : "destructive"} className="rounded-full px-3">
+                {isDatabaseConnected ? "Active" : "Inactive"}
+              </Badge>
+            </KpiCard>
+
+            <KpiCard
+              label="K-Means++ ML"
+              value={summary?.latestSegmentationRun ? "Ready" : "No runs yet"}
+              changeLabel={summary?.latestSegmentationRun
+                ? `Last run: ${new Date(summary.latestSegmentationRun.runDate).toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}`
+                : "Run segmentation from Data Center"}
+              tooltip="K-Means++ ML Segmentation Engine status."
+            >
+              <Badge variant={summary?.latestSegmentationRun?.status === "success" ? "default" : "secondary"} className="rounded-full px-3">
+                {summary?.latestSegmentationRun?.status === "success" ? "Active" : "No Runs"}
               </Badge>
             </KpiCard>
           </div>
@@ -342,9 +386,20 @@ export function SystemSettings() {
                       <p className="text-sm font-medium">Gemini API Key</p>
                       <p className="text-xs text-muted-foreground">Editable without env changes.</p>
                     </div>
-                    <Badge variant={summary?.integrations.aiConfigured ? "default" : "secondary"} className="rounded-full px-3 py-1">
-                      {summary?.integrations.aiConfigured ? "Active" : "Inactive"}
-                    </Badge>
+                    <div className="flex items-center gap-2.5">
+                      <Badge
+                        variant={integrationForm.geminiEnabled ? "default" : "destructive"}
+                        className="rounded-full px-3 py-1 transition-colors duration-200"
+                      >
+                        {integrationForm.geminiEnabled ? "Active" : "Inactive"}
+                      </Badge>
+                      <Switch
+                        checked={integrationForm.geminiEnabled}
+                        onCheckedChange={(checked) => setIntegrationForm((p) => ({ ...p, geminiEnabled: checked }))}
+                        disabled={!isItSupport}
+                        className="data-[state=checked]:bg-green-500 data-[unchecked]:bg-red-400 transition-colors duration-200 hover:ring-2 hover:ring-offset-2 hover:ring-green-300"
+                      />
+                    </div>
                   </div>
                   <div className="mt-4 grid gap-3 text-sm">
                     <div className="space-y-2">
@@ -383,9 +438,20 @@ export function SystemSettings() {
                       <p className="text-sm font-medium">Meta Credentials</p>
                       <p className="text-xs text-muted-foreground">IG user id and access token.</p>
                     </div>
-                    <Badge variant={summary?.integrations.metaConfigured ? "default" : "secondary"} className="rounded-full px-3 py-1">
-                      {summary?.integrations.metaConfigured ? "Active" : "Inactive"}
-                    </Badge>
+                    <div className="flex items-center gap-2.5">
+                      <Badge
+                        variant={integrationForm.metaEnabled ? "default" : "destructive"}
+                        className="rounded-full px-3 py-1 transition-colors duration-200"
+                      >
+                        {integrationForm.metaEnabled ? "Active" : "Inactive"}
+                      </Badge>
+                      <Switch
+                        checked={integrationForm.metaEnabled}
+                        onCheckedChange={(checked) => setIntegrationForm((p) => ({ ...p, metaEnabled: checked }))}
+                        disabled={!isItSupport}
+                        className="data-[state=checked]:bg-green-500 data-[unchecked]:bg-red-400 transition-colors duration-200 hover:ring-2 hover:ring-offset-2 hover:ring-green-300"
+                      />
+                    </div>
                   </div>
                   <div className="mt-4 grid gap-3 text-sm">
                     <div className="space-y-2">
