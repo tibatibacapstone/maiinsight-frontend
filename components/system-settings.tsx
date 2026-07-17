@@ -324,25 +324,25 @@ export function SystemSettings() {
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <KpiCard
               label="Gemini"
-              value={summary?.integrations.aiEnabled ? (summary?.integrations.aiConfigured ? "Connected" : "No API Key") : "Disabled"}
+              value={integrationForm.geminiEnabled ? (summary?.integrations.aiConfigured ? "Connected" : "No API Key") : "Disabled"}
               changeLabel={summary?.integrations.geminiModel || "No model configured"}
               tooltip="Gemini AI integration status and configured model."
             >
-              <Badge variant={summary?.integrations.aiConfigured && summary?.integrations.aiEnabled ? "default" : "destructive"} className="rounded-full px-3">
-                {summary?.integrations.aiConfigured && summary?.integrations.aiEnabled ? "Active" : "Inactive"}
+              <Badge variant={summary?.integrations.aiConfigured && integrationForm.geminiEnabled ? "default" : "destructive"} className="rounded-full px-3">
+                {summary?.integrations.aiConfigured && integrationForm.geminiEnabled ? "Active" : "Inactive"}
               </Badge>
             </KpiCard>
 
             <KpiCard
               label="Meta"
-              value={summary?.integrations.metaEnabled ? (summary?.integrations.metaConfigured ? "Connected" : "No Credentials") : "Disabled"}
+              value={integrationForm.metaEnabled ? (summary?.integrations.metaConfigured ? "Connected" : "No Credentials") : "Disabled"}
               changeLabel={summary?.latestMetaSync
                 ? `Last sync: ${new Date(summary.latestMetaSync.startedAt).toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}`
                 : "No sync yet"}
               tooltip="Meta Graph API connection status and last sync time."
             >
-              <Badge variant={summary?.integrations.metaConfigured && summary?.integrations.metaEnabled ? "default" : "destructive"} className="rounded-full px-3">
-                {summary?.integrations.metaConfigured && summary?.integrations.metaEnabled ? "Active" : "Inactive"}
+              <Badge variant={summary?.integrations.metaConfigured && integrationForm.metaEnabled ? "default" : "destructive"} className="rounded-full px-3">
+                {summary?.integrations.metaConfigured && integrationForm.metaEnabled ? "Active" : "Inactive"}
               </Badge>
             </KpiCard>
 
@@ -395,9 +395,9 @@ export function SystemSettings() {
                       </Badge>
                       <Switch
                         checked={integrationForm.geminiEnabled}
-                        onCheckedChange={(checked) => setIntegrationForm((p) => ({ ...p, geminiEnabled: checked }))}
+                        onCheckedChange={(checked) => void toggleIntegration("geminiEnabled", checked)}
                         disabled={!isItSupport}
-                        className="data-[state=checked]:bg-green-500 data-[unchecked]:bg-red-400 transition-colors duration-200 hover:ring-2 hover:ring-offset-2 hover:ring-green-300"
+                        className="data-[state=checked]:bg-green-500 data-[state=unchecked]:bg-red-400 transition-colors duration-200 hover:ring-2 hover:ring-offset-2 hover:ring-green-300"
                       />
                     </div>
                   </div>
@@ -447,9 +447,9 @@ export function SystemSettings() {
                       </Badge>
                       <Switch
                         checked={integrationForm.metaEnabled}
-                        onCheckedChange={(checked) => setIntegrationForm((p) => ({ ...p, metaEnabled: checked }))}
+                        onCheckedChange={(checked) => void toggleIntegration("metaEnabled", checked)}
                         disabled={!isItSupport}
-                        className="data-[state=checked]:bg-green-500 data-[unchecked]:bg-red-400 transition-colors duration-200 hover:ring-2 hover:ring-offset-2 hover:ring-green-300"
+                        className="data-[state=checked]:bg-green-500 data-[state=unchecked]:bg-red-400 transition-colors duration-200 hover:ring-2 hover:ring-offset-2 hover:ring-green-300"
                       />
                     </div>
                   </div>
