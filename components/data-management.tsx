@@ -186,6 +186,7 @@ interface MetaSyncResponse {
   data?: {
     configured: boolean
     connectionState: "not_configured" | "ready" | "connected" | "syncing" | "error"
+    tokenStatus?: "valid" | "expired" | "error" | "unknown"
     latestSync: {
       status: string
       message?: string | null
@@ -1643,17 +1644,31 @@ if (!canAccessDataCenter) {
             )}
           </div>
 
-          <Badge
-            variant={
-              source.status === "connected"
-                ? "default"
-                : source.status === "error"
-                  ? "destructive"
-                  : "secondary"
-            }
-          >
-            {source.status}
-          </Badge>
+          <div className="flex items-center gap-1.5">
+            <Badge
+              variant={
+                source.status === "connected"
+                  ? "default"
+                  : source.status === "error"
+                    ? "destructive"
+                    : "secondary"
+              }
+            >
+              {source.status}
+            </Badge>
+            {source.id === "2" && source.status === "error" && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Info className="h-3.5 w-3.5 cursor-help text-yellow-500" />
+                </TooltipTrigger>
+              <TooltipContent className="bg-yellow-500 text-black border-yellow-600 [&>svg]:fill-yellow-500 [&>svg]:stroke-yellow-600">
+                <p className="max-w-[280px] text-xs text-black">
+                  The Meta API might need to change the access token. Please try to contact IT Support and check your internet connection regularly.
+                </p>
+              </TooltipContent>
+              </Tooltip>
+            )}
+          </div>
         </div>
 
         <h3 className="mb-1 font-semibold">{source.name}</h3>
