@@ -88,6 +88,7 @@ interface DataSource {
   status: "connected" | "disconnected" | "error"
   lastSync: string
   records: number
+  tokenStatus?: string
 }
 
 interface ValidationRowError {
@@ -186,6 +187,7 @@ interface MetaSyncResponse {
   data?: {
     configured: boolean
     connectionState: "not_configured" | "ready" | "connected" | "syncing" | "error"
+    tokenStatus?: "valid" | "expired" | "error" | "unknown"
     latestSync: {
       status: string
       message?: string | null
@@ -609,6 +611,7 @@ const [mlSummary, setMlSummary] = useState<MlSummary>({
         status: metaSourceStatus,
         lastSync: metaConfigured ? formatDisplaySyncTime(latestMetaSync) : "Not connected",
         records: Number(summaryResult.data.metaMediaCount || 0),
+        tokenStatus: metaStatusResult?.data?.tokenStatus,
       },
       {
         id: "3",
@@ -1643,17 +1646,29 @@ if (!canAccessDataCenter) {
             )}
           </div>
 
-          <Badge
-            variant={
-              source.status === "connected"
-                ? "default"
-                : source.status === "error"
-                  ? "destructive"
-                  : "secondary"
-            }
-          >
-            {source.status}
-          </Badge>
+          <div className="flex items-center gap-1.5">
+            <Badge
+              variant={
+                source.status === "connected"
+                  ? "default"
+                  : source.status === "error"
+                    ? "destructive"
+                    : "secondary"
+              }
+            >
+              {source.status}
+            </Badge>
+            {source.id === "2" && source.tokenStatus === "expired" && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Info className="h-4 w-4 cursor-help text-yellow-500" />
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>The Meta API might need to change the access token. Please try to contact IT Support and check your internet connection regularly.</p>
+                </TooltipContent>
+              </Tooltip>
+            )}
+          </div>
         </div>
 
         <h3 className="mb-1 font-semibold">{source.name}</h3>

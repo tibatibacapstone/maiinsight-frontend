@@ -732,7 +732,6 @@ return (
         <>
          
   <div className="grid gap-4 xl:grid-cols-4">
-  {/* KPI Cards: Total Content - Followers - Total Views - Total Reach - Interactions */}
 
   <Card className="border-border bg-card shadow-sm">
   <CardHeader>

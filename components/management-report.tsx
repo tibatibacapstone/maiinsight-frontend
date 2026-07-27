@@ -184,6 +184,13 @@ interface HeatmapSummary {
     startHour: string
     session_count: number
     session_label?: string
+    totalCapacity?: number
+    totalPossibleSessions?: number
+    occupiedCustomerSessions?: number
+    internalSessions?: number
+    emptySessions?: number
+    emptyRate?: number
+    internalRate?: number
   }>
   mostEmptySlot: {
     dayLabel: string

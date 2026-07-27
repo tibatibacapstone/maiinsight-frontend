@@ -82,6 +82,13 @@ interface HeatmapSummary {
     startHour: string
     session_count: number
     session_label?: string
+    totalCapacity?: number
+    totalPossibleSessions?: number
+    occupiedCustomerSessions?: number
+    internalSessions?: number
+    emptySessions?: number
+    emptyRate?: number
+    internalRate?: number
   }>
   mostEmptySlot: {
     dayLabel: string
@@ -211,6 +218,7 @@ const CUSTOMER_TYPE_DISPLAY_OPTIONS = [
   { value: "All Type", label: "All Type" },
   { value: "Membership", label: "Membership" },
   { value: "Non Membership", label: "Non Membership" },
+  { value: "internal", label: "Internal" },
 ]
 
 const INITIAL_CUSTOMER_PAGE_SIZE = 10
