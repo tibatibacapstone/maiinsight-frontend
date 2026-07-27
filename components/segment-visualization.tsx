@@ -28,6 +28,7 @@ import {
 } from "recharts"
 
 import { getApiUrl } from "@/lib/api"
+import { getHeatmapCellVisual, getHeatmapTooltipLines } from "@/lib/heatmap-cell"
 import { getAuthHeaders } from "@/lib/roles"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -96,6 +97,13 @@ interface HeatmapSummary {
     startHour: string
     session_count: number
     session_label?: string
+    totalCapacity?: number
+    totalPossibleSessions?: number
+    occupiedCustomerSessions?: number
+    internalSessions?: number
+    emptySessions?: number
+    emptyRate?: number
+    internalRate?: number
   }>
   mostEmptySlot: {
     dayLabel: string
@@ -247,31 +255,49 @@ export const HeatmapGrid = ({ heatmapSummary }: { heatmapSummary: HeatmapSummary
                   <div className="text-xs font-medium text-orange-900">{day}</div>
                   {hours.map((hour) => {
                     const slot = slots.find((item) => item.day_short === day && item.startHour === hour)
-                    const count = slot?.session_count || 0
-                    // Compute alpha based on relative booked sessions so that emptier slots render thinner.
-                    const maxCount = Math.max(1, ...slots.map((s) => s.session_count || 0))
-                    const normalizedBooked = count / maxCount
-                    const minAlpha = 0.08
-                    const maxAlpha = 0.95
-                    const alpha = Math.max(minAlpha, Math.min(maxAlpha, minAlpha + normalizedBooked * (maxAlpha - minAlpha)))
+                    const emptySessions = slot?.emptySessions ?? slot?.session_count ?? 0
+                    const emptyRate = slot?.emptyRate ?? 0
+                    const internalSessions = slot?.internalSessions ?? 0
+                    const internalRate = slot?.internalRate ?? 0
+                    const visual = getHeatmapCellVisual({ emptyRate, internalRate })
+                    const tooltipLines = getHeatmapTooltipLines({
+                      ...slot,
+                      emptySessions,
+                      emptyRate,
+                      internalSessions,
+                      internalRate,
+                    })
 
                     return (
                       <Tooltip key={`${day}-${hour}`}>
                         <TooltipTrigger asChild>
                           <div
-                            className="h-4 rounded-sm border border-orange-200"
+                            className="relative h-4 overflow-hidden rounded-sm border border-orange-200"
                             style={{
-                              backgroundColor: `rgba(249, 115, 22, ${alpha})`,
+                              backgroundColor: `rgba(249, 115, 22, ${visual.orangeAlpha})`,
                             }}
-                          />
+                          >
+                            {internalSessions > 0 && (
+                              <span
+                                aria-hidden="true"
+                                className="absolute inset-y-0 left-0 bg-slate-600"
+                                style={{
+                                  width: visual.internalWidth,
+                                  opacity: visual.internalOpacity,
+                                }}
+                              />
+                            )}
+                          </div>
                         </TooltipTrigger>
                         <TooltipContent>
                           <p className="text-xs">
-                            {day} {hour}:00
+                            {day} {hour}
                           </p>
-                          <p className="text-xs text-muted-foreground">
-                            Empty sessions: {count}
-                          </p>
+                          {tooltipLines.map((line) => (
+                            <p key={line} className="text-xs text-muted-foreground">
+                              {line}
+                            </p>
+                          ))}
                         </TooltipContent>
                       </Tooltip>
                     )
@@ -294,7 +320,14 @@ export const HeatmapGrid = ({ heatmapSummary }: { heatmapSummary: HeatmapSummary
             <span className="h-3 w-3 rounded-sm bg-orange-600" />
             High empty rate
           </span>
-          <span className="text-xs text-muted-foreground">| The thinner the color, the emptier it is</span>
+          <span className="text-xs text-muted-foreground">Darker orange = higher empty rate</span>
+          <span className="inline-flex items-center gap-2">
+            <span className="h-3 w-6 overflow-hidden rounded-sm border border-slate-300 bg-orange-200">
+              <span className="block h-full w-2/3 bg-slate-600/70" />
+            </span>
+            Gray coverage: Internal / blocked sessions
+          </span>
+          <span className="text-xs text-muted-foreground">More gray = more Internal sessions</span>
         </div>
       </CardContent>
     </Card>

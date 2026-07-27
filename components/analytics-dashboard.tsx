@@ -205,7 +205,12 @@ const venues = [
   { value: "Mini Soccer", label: "Mini Soccer" },
   { value: "Basketball", label: "Basketball" },
 ]
-const customerTypes = ["All Type", "Membership", "Non Membership"]
+const customerTypes = [
+  { value: "all", label: "All" },
+  { value: "membership", label: "Membership" },
+  { value: "non_membership", label: "Non-Membership" },
+  { value: "internal", label: "Internal" },
+] as const
 const chartColors = ["var(--chart-1)", "var(--chart-2)", "var(--chart-3)", "var(--chart-4)"]
 const playtimeOrder: Record<string, number> = {
   Morning: 0,
@@ -222,6 +227,10 @@ const playtimeLabelMap: Record<string, string> = {
   Malam: "Night",
 }
 const bookingTypeLabelMap: Record<string, string> = {
+  membership: "Membership",
+  non_membership: "Non-Membership",
+  internal: "Internal",
+  blocked: "Internal",
   regular_booking: "Membership",
   member_internal_booking: "Non Membership",
   other: "Other",
@@ -566,7 +575,7 @@ export function AnalyticsDashboard() {
   const [selectedMonth, setSelectedMonth] = useState(defaultSelection.month)
   const [selectedYear, setSelectedYear] = useState(defaultSelection.year)
   const [selectedVenue, setSelectedVenue] = useState("All Venue")
-  const [selectedCustomerType, setSelectedCustomerType] = useState("All Type")
+  const [selectedCustomerType, setSelectedCustomerType] = useState("all")
   const [periodType, setPeriodType] = useState<"MTD" | "YTD" | null>("MTD")
   const [status, setStatus] = useState<DashboardStatus | null>(null)
   const [overviewKpi, setOverviewKpi] = useState<OverviewKpiData | null>(null)
@@ -734,7 +743,10 @@ export function AnalyticsDashboard() {
         : null
 
       const nextPlaytimeData = playtimeResult?.success ? playtimeResult.data : null
-      const nextSegmentation = segmentationData ? sortClusterProfiles(segmentationData.clusters || []) : []
+      const nextSegmentation =
+        selectedCustomerType === "internal" || !segmentationData
+          ? []
+          : sortClusterProfiles(segmentationData.clusters || [])
 
       setPlaytimeData(nextPlaytimeData)
       setSegmentation(nextSegmentation)
@@ -996,7 +1008,7 @@ export function AnalyticsDashboard() {
         metaEngagementRate: metaDashboard?.summary.engagementRate || 0,
         metaInsight: metaComparisonInsight,
         historicalOnly: true,
-        revenueDefinition: "Revenue is based on when the booking was made.",
+        revenueDefinition: "Revenue is based on the facility play date.",
       },
     }
   }, [bookingTypeMixLegend, dominantPlaytime, metaComparisonInsight, metaDashboard?.summary.engagementRate, metaDashboard?.summary.totalReach, metaDashboard?.summary.totalViews, overviewKpi, periodType, playtimeBehaviorInsight, playtimeLegend, reportData, segmentChartTotal, selectedCustomerType, selectedMonth, selectedVenue, selectedYear, topSegment])
@@ -1201,8 +1213,8 @@ export function AnalyticsDashboard() {
                 </SelectTrigger>
                 <SelectContent position="popper" className="w-[var(--radix-select-trigger-width)] rounded-xl border bg-background shadow-lg">
                   {customerTypes.map((customerType) => (
-                    <SelectItem key={customerType} value={customerType}>
-                      {customerType}
+                    <SelectItem key={customerType.value} value={customerType.value}>
+                      {customerType.label}
                     </SelectItem>
                   ))}
                 </SelectContent>
