@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useCallback } from "react"
 import { LoginPage } from "@/components/login-page"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import type { PageId } from "@/components/dashboard-sidebar"
@@ -47,67 +47,103 @@ const syncPageToUrl = (page: PageId) => {
   window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`)
 }
 
+const cleanUrl = () => {
+  if (typeof window === "undefined") return
+  const url = new URL(window.location.href)
+  if (url.searchParams.toString()) {
+    url.search = ""
+    window.history.replaceState(null, "", `${url.pathname}${url.hash}`)
+  }
+}
+
+const validateToken = async (token: string): Promise<boolean> => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/auth/me`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    return response.ok
+  } catch {
+    return false
+  }
+}
+
 export default function Home() {
   const [isAuthenticated, setIsAuthenticated] = useState(false)
+  const [isAuthChecked, setIsAuthChecked] = useState(false)
   const [userRole, setUserRole] = useState<UserRole>("operational")
   const [currentPage, setCurrentPage] = useState<PageId>(DEFAULT_PAGE)
   const [isLoading, setIsLoading] = useState(false)
   const [authError, setAuthError] = useState<string | null>(null)
 
   useEffect(() => {
-    const storedToken = localStorage.getItem("maiinToken")
-    const storedRole = localStorage.getItem("maiinRole") as UserRole | null
+    const init = async () => {
+      const storedToken = localStorage.getItem("maiinToken")
+      const storedRole = localStorage.getItem("maiinRole") as UserRole | null
 
-    if (storedToken && storedRole) {
-      setUserRole(storedRole)
-      setCurrentPage(getRequestedPage())
-      setIsAuthenticated(true)
-    } else {
-      localStorage.removeItem("maiinToken")
-      localStorage.removeItem("maiinRole")
-      localStorage.removeItem("maiinUser")
+      if (storedToken && storedRole) {
+        const isValid = await validateToken(storedToken)
+        if (isValid) {
+          setUserRole(storedRole)
+          setCurrentPage(DEFAULT_PAGE)
+          setIsAuthenticated(true)
+          cleanUrl()
+        } else {
+          localStorage.removeItem("maiinToken")
+          localStorage.removeItem("maiinRole")
+          localStorage.removeItem("maiinUser")
+          cleanUrl()
+        }
+      } else {
+        localStorage.removeItem("maiinToken")
+        localStorage.removeItem("maiinRole")
+        localStorage.removeItem("maiinUser")
+        cleanUrl()
+      }
+      setIsAuthChecked(true)
     }
+    void init()
   }, [])
 
-  const handleLogin = (token: string, user: LoginResponse["user"]) => {
-  setIsAuthenticated(true)
-  setUserRole(user.role)
-  setCurrentPage(getRequestedPage())
+  const handleLogin = useCallback((token: string, user: LoginResponse["user"]) => {
+    setIsAuthenticated(true)
+    setUserRole(user.role)
+    setCurrentPage(DEFAULT_PAGE)
 
-  localStorage.setItem("maiinToken", token)
-  localStorage.setItem("maiinRole", user.role)
-  localStorage.setItem("maiinUser", JSON.stringify(user))
+    localStorage.setItem("maiinToken", token)
+    localStorage.setItem("maiinRole", user.role)
+    localStorage.setItem("maiinUser", JSON.stringify(user))
 
-  // bersihkan key lama agar tidak bentrok
-  localStorage.removeItem("token")
-  localStorage.removeItem("authToken")
-  localStorage.removeItem("accessToken")
-  localStorage.removeItem("maiinsight_token")
-  localStorage.removeItem("user")
-  localStorage.removeItem("maiinsight_user")
-}
+    localStorage.removeItem("token")
+    localStorage.removeItem("authToken")
+    localStorage.removeItem("accessToken")
+    localStorage.removeItem("maiinsight_token")
+    localStorage.removeItem("user")
+    localStorage.removeItem("maiinsight_user")
 
-  const handleLogout = () => {
-  setIsAuthenticated(false)
-  setCurrentPage(DEFAULT_PAGE)
-  setAuthError(null)
+    cleanUrl()
+  }, [])
 
-  localStorage.removeItem("maiinToken")
-  localStorage.removeItem("maiinRole")
-  localStorage.removeItem("maiinUser")
+  const handleLogout = useCallback(() => {
+    setIsAuthenticated(false)
+    setCurrentPage(DEFAULT_PAGE)
+    setAuthError(null)
 
-  localStorage.removeItem("token")
-  localStorage.removeItem("authToken")
-  localStorage.removeItem("accessToken")
-  localStorage.removeItem("maiinsight_token")
-  localStorage.removeItem("user")
-  localStorage.removeItem("maiinsight_user")
-}
+    localStorage.removeItem("maiinToken")
+    localStorage.removeItem("maiinRole")
+    localStorage.removeItem("maiinUser")
 
-  const handleNavigate = (page: PageId) => {
+    localStorage.removeItem("token")
+    localStorage.removeItem("authToken")
+    localStorage.removeItem("accessToken")
+    localStorage.removeItem("maiinsight_token")
+    localStorage.removeItem("user")
+    localStorage.removeItem("maiinsight_user")
+  }, [])
+
+  const handleNavigate = useCallback((page: PageId) => {
     setCurrentPage(page)
     syncPageToUrl(page)
-  }
+  }, [])
 
   const handleLoginSubmit = async (email: string, password: string) => {
     setIsLoading(true)
@@ -116,9 +152,7 @@ export default function Home() {
     try {
       const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),
       })
 
@@ -132,7 +166,7 @@ export default function Home() {
 
       const loginData = data as LoginResponse
       handleLogin(loginData.token, loginData.user)
-    } catch (error) {
+    } catch {
       setAuthError("Unable to connect to the API. Please try again.")
     } finally {
       setIsLoading(false)
@@ -146,9 +180,7 @@ export default function Home() {
     try {
       const response = await fetch(`${API_BASE_URL}/api/auth/google`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ credential }),
       })
 
@@ -162,11 +194,19 @@ export default function Home() {
 
       const loginData = data as LoginResponse
       handleLogin(loginData.token, loginData.user)
-    } catch (error) {
+    } catch {
       setAuthError("Unable to connect to the API. Please try again.")
     } finally {
       setIsLoading(false)
     }
+  }
+
+  if (!isAuthChecked) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+      </div>
+    )
   }
 
   if (!isAuthenticated) {

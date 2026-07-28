@@ -53,6 +53,7 @@ interface SummaryResponse {
       metaAccessToken: string
       metaGraphVersion: string
     }
+    metaTokenExpiry: string | null
     users: UserRow[]
   }
 }
@@ -345,6 +346,12 @@ export function SystemSettings() {
                 {summary?.integrations.metaConfigured && integrationForm.metaEnabled ? "Active" : "Inactive"}
               </Badge>
             </KpiCard>
+            {summary?.metaTokenExpiry && integrationForm.metaEnabled && (
+              <p className="text-xs text-muted-foreground -mt-2 px-1">
+                Meta Token Access will be expired at{" "}
+                {new Date(summary.metaTokenExpiry).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })}
+              </p>
+            )}
 
             <KpiCard
               label="Database"

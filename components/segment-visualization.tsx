@@ -385,10 +385,11 @@ export function SegmentVisualization() {
           : sortedClusters[0]?.segmentName || null
       )
 
+      const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
       const referenceRunDate = normalizedLatest.run?.runDate || new Date().toISOString()
       const runDate = new Date(referenceRunDate)
       const overviewParams = new URLSearchParams({
-        month: String(runDate.getMonth() + 1),
+        month: MONTHS[runDate.getMonth()] || "Jul",
         year: String(runDate.getFullYear()),
         periodType: "MTD",
         venue: "All Venue",
