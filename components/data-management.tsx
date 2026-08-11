@@ -33,7 +33,15 @@ import {
   canAccessFeature,
   USER_ROLES,
 } from "@/lib/roles"
+import {
+  getSourceSyncLabel,
+  isSourceSyncDisabled,
+} from "@/lib/data-source-sync-state.mjs"
 import { getApiUrl } from "@/lib/api"
+import {
+  formatDatabaseLastSyncDateTime,
+  formatLatestTransactionDate,
+} from "@/lib/transaction-date"
 import { notifySegmentationUpdated, runCustomerSegmentation } from "@/lib/segmentation"
 import {
   Dialog,
@@ -70,6 +78,7 @@ type SyncStatus = "queued" | "processing" | "completed" | "failed"
 
 interface SyncJob {
   id: string
+  sourceRecordId?: number | string
   name: string
   type: "api" | "file"
   status: SyncStatus
@@ -79,15 +88,17 @@ interface SyncJob {
   completedAt?: string
   error?: string
   businessError?: BusinessErrorState | null
+  performedByName?: string
 }
 
 interface DataSource {
   id: string
   name: string
   type: "api" | "database" | "file"
-  status: "connected" | "disconnected" | "error"
+  status: "connected" | "disconnected" | "syncing" | "error"
   lastSync: string
   records: number
+  latestTransaction?: string
 }
 
 interface ValidationRowError {
@@ -122,12 +133,20 @@ interface UploadImportResponse {
 }
 
 interface ImportJobResponse {
-  id: number
-  fileName: string
-  rowCount: number
+  id: string
+  sourceRecordId: number | string
+  name: string
+  type: "api" | "file"
+  records: number
   status: string
-  createdAt: string
-  updatedAt?: string
+  startedAt: string
+  completedAt?: string | null
+  error?: string | null
+  performedBy?: {
+    id: number
+    name?: string | null
+    email: string
+  } | null
 }
 
 interface ImportJobsResponse {
@@ -160,6 +179,7 @@ interface RawRowsResponse {
       fileName: string
       rowCount: number
     }
+    columns?: string[]
     rows?: RawTransactionRow[]
   }
 }
@@ -220,6 +240,7 @@ const defaultDataSources: DataSource[] = [
     status: "disconnected",
     lastSync: "Not synced yet",
     records: 0,
+    latestTransaction: "No data",
   },
   {
     id: "2",
@@ -361,6 +382,10 @@ const getMetaSourceStatus = (metaStatusResult: MetaSyncResponse | null): DataSou
     return "error"
   }
 
+  if (metaStatusResult.data.connectionState === "syncing") {
+    return "syncing"
+  }
+
   return "connected"
 }
 
@@ -432,33 +457,21 @@ const mapImportJobToSyncJob = (job: ImportJobResponse): SyncJob => {
   const status = normalizeSyncStatus(job.status)
 
   return {
-    id: String(job.id),
-    name: job.fileName,
-    type: "file",
+    id: job.id,
+    sourceRecordId: job.sourceRecordId,
+    name: job.name,
+    type: job.type,
     status,
     progress: status === "completed" ? 100 : status === "processing" ? 60 : 0,
-    records: job.rowCount || 0,
-    startedAt: formatBackendTime(job.createdAt),
+    records: job.records || 0,
+    startedAt: formatBackendTime(job.startedAt),
     completedAt:
-      status === "completed"
-        ? formatBackendTime(job.updatedAt || job.createdAt)
+      job.completedAt
+        ? formatBackendTime(job.completedAt)
         : undefined,
+    error: job.error || undefined,
+    performedByName: job.performedBy?.name?.trim() || job.performedBy?.email || "Unknown user",
   }
-}
-
-const getRawCellValue = (value: unknown) => {
-  if (value === null || value === undefined || value === "") return "-"
-
-  if (typeof value === "object") {
-    return JSON.stringify(value)
-  }
-
-  return String(value)
-}
-
-const escapeCsvCell = (value: unknown) => {
-  const text = value === null || value === undefined ? "" : String(value)
-  return `"${text.replace(/"/g, '""')}"`
 }
 
 const parseCsvLine = (line: string) => {
@@ -536,6 +549,7 @@ const [mlSummary, setMlSummary] = useState<MlSummary>({
   const [isLoadingRawRows, setIsLoadingRawRows] = useState(false)
   const [rawRowsError, setRawRowsError] = useState<BusinessErrorState | null>(null)
   const [syncingSourceId, setSyncingSourceId] = useState<string | null>(null)
+  const [metaConfigured, setMetaConfigured] = useState(false)
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [downloadConfirmOpen, setDownloadConfirmOpen] = useState(false)
   const [pendingJob, setPendingJob] = useState<SyncJob | null>(null)
@@ -554,6 +568,7 @@ const [mlSummary, setMlSummary] = useState<MlSummary>({
 
     if (!token) {
       setDataSources(defaultDataSources)
+      setMetaConfigured(false)
       return
     }
 
@@ -584,12 +599,14 @@ const [mlSummary, setMlSummary] = useState<MlSummary>({
       })
 
       setDataSources(defaultDataSources)
+      setMetaConfigured(false)
       return
     }
 
     const latestBatch = summaryResult.data.latestBatch
     const latestBatchTime = latestBatch?.updatedAt || latestBatch?.createdAt || null
     const metaConfigured = Boolean(metaStatusResult?.success && metaStatusResult?.data?.configured)
+    setMetaConfigured(metaConfigured)
     const latestMetaSync = getMetaSyncTimestamp(metaStatusResult)
     const metaSourceStatus = getMetaSourceStatus(metaStatusResult)
 
@@ -599,8 +616,9 @@ const [mlSummary, setMlSummary] = useState<MlSummary>({
         name: "MaiinSight Database",
         type: "database",
         status: summaryResult.data.totalFacilityTransactions > 0 ? "connected" : "disconnected",
-        lastSync: formatDisplaySyncTime(latestBatchTime),
+        lastSync: formatDatabaseLastSyncDateTime(latestBatchTime),
         records: Number(summaryResult.data.totalFacilityTransactions || 0),
+        latestTransaction: formatLatestTransactionDate(summaryResult.data.latestTransactionDate),
       },
       {
         id: "2",
@@ -622,6 +640,7 @@ const [mlSummary, setMlSummary] = useState<MlSummary>({
   } catch (error) {
     console.warn("Failed to fetch data center summary:", error)
     setDataSources(defaultDataSources)
+    setMetaConfigured(false)
   }
 }, [])
 
@@ -710,9 +729,8 @@ if (!response.ok) {
         setSyncJobs((prev) => [job, ...prev])
 
         if (sourceId === "1") {
-          const response = await fetch(getApiUrl("/imports/jobs"), {
-            method: "GET",
-            cache: "no-store",
+          const response = await fetch(getApiUrl("/imports/manual-sync"), {
+            method: "POST",
             headers: getAuthHeaders(),
           })
 
@@ -861,7 +879,7 @@ if (!response.ok) {
 
     setMlSummary({
       lastRun: latestSegmentationRun?.runDate ? formatDisplaySyncTime(latestSegmentationRun.runDate) : "Not run yet",
-      records: latestSegmentationRun?.totalCustomers || 0,
+      records: result.data.eligibleCustomerCount || 0,
       totalCustomers: latestSegmentationRun?.totalCustomers || 0,
     })
   } catch (error) {
@@ -1158,6 +1176,9 @@ if (!response.ok) {
             : job
         )
       )
+
+      // Replace the optimistic card with the persisted job and its original actor.
+      await fetchSyncJobs()
     } finally {
       setIsUploading(false)
     }
@@ -1228,7 +1249,7 @@ const handleViewRawRows= async (job: SyncJob) => {
     setRawRows([])
     setRawHeaders([])
 
-    const response = await fetch(getApiUrl(`/imports/batches/${job.id}/rows`), {
+    const response = await fetch(getApiUrl(`/imports/batches/${job.sourceRecordId}/rows`), {
       method: "GET",
       cache: "no-store",
       headers: getAuthHeaders(),
@@ -1239,7 +1260,7 @@ const handleViewRawRows= async (job: SyncJob) => {
       throw createFriendlyImportError(result, "Raw Data Preview Failed")
     }
 
-    const rows = Array.isArray(result.data)
+    const rows: RawTransactionRow[] = Array.isArray(result.data)
       ? result.data
       : Array.isArray(result.data?.rows)
         ? result.data.rows
@@ -1247,10 +1268,12 @@ const handleViewRawRows= async (job: SyncJob) => {
 
     setRawRows(rows)
 
-    if (rows.length > 0) {
-      const firstRowData = rows[0]?.data || {}
-      setRawHeaders(Object.keys(firstRowData))
-    }
+    const columns = Array.isArray(result.data?.columns) ? result.data.columns : []
+    setRawHeaders(
+      columns.length
+        ? columns
+        : Array.from(new Set(rows.flatMap((row) => Object.keys(row.data || {})))),
+    )
   } catch (error) {
     const friendlyError =
       error && typeof error === "object" && "title" in error
@@ -1288,7 +1311,7 @@ const handleViewRawRows= async (job: SyncJob) => {
   try {
     setRemovingJobId(job.id)
 
-    const response = await fetch(getApiUrl(`/imports/jobs/${job.id}`), {
+    const response = await fetch(getApiUrl(`/imports/jobs/${job.sourceRecordId}`), {
   method: "DELETE",
   headers: getAuthHeaders(),
 })
@@ -1333,38 +1356,26 @@ const handleViewRawRows= async (job: SyncJob) => {
     const toastId = toast.loading(`Preparing export for "${job.name}"...`)
 
     try {
-      const response = await fetch(getApiUrl(`/imports/batches/${job.id}/rows`), {
+      const response = await fetch(getApiUrl(`/imports/batches/${job.id}/export`), {
         method: "GET",
         cache: "no-store",
         headers: getAuthHeaders(),
       })
 
-      const result: RawRowsResponse = await response.json()
-
-      const rows = result.data?.rows ?? []
-
-      if (!response.ok || !Array.isArray(rows)) {
-        throw new Error(result.message || "Failed to prepare download.")
+      if (!response.ok) {
+        const result = await response.json().catch(() => null)
+        throw new Error(result?.message || "Failed to prepare download.")
       }
 
-      const headers = Array.from(
-        new Set(rows.flatMap((row) => Object.keys(row.data || {}))),
-      )
-
-      const csvLines = [
-        ["Row", ...headers].map(escapeCsvCell).join(","),
-        ...rows.map((row) =>
-          [row.rowNumber, ...headers.map((header) => getRawCellValue(row.data?.[header]))]
-            .map(escapeCsvCell)
-            .join(","),
-        ),
-      ]
-
-      const csvBlob = new Blob([csvLines.join("\n")], { type: "text/csv;charset=utf-8;" })
-      const url = URL.createObjectURL(csvBlob)
+      const exportBlob = await response.blob()
+      const url = URL.createObjectURL(exportBlob)
       const link = document.createElement("a")
       link.href = url
-      link.download = `${job.name.replace(/\.csv$/i, "")}_raw_export.csv`
+      const disposition = response.headers.get("Content-Disposition") || ""
+      const fileNameMatch = disposition.match(/filename="([^"]+)"/i)
+      link.download =
+        fileNameMatch?.[1] ||
+        `${job.name.replace(/\.(?:csv|xlsx|xls)$/i, "")}_transformed.csv`
       document.body.appendChild(link)
       link.click()
       link.remove()
@@ -1375,8 +1386,8 @@ const handleViewRawRows= async (job: SyncJob) => {
         duration: 4000,
       })
       await new Promise((resolve) => window.setTimeout(resolve, 1500))
-      toast.success(`Raw export ready`, {
-        description: `${job.name}_raw_export.csv has been downloaded.`,
+      toast.success(`Transformed export ready`, {
+        description: `${link.download} has been downloaded.`,
         duration: 8000,
       })
     } catch (error) {
@@ -1602,8 +1613,8 @@ if (!canAccessDataCenter) {
         </div>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
   {dataSources.map((source) => (
-    <Card key={source.id} className="border-border bg-card shadow-sm">
-      <CardContent className="pt-6">
+    <Card key={source.id} className="h-full border-border bg-card shadow-sm">
+      <CardContent className="flex h-full flex-col pt-6">
         <div className="mb-4 flex items-start justify-between">
           <div
             className={`flex h-10 w-10 items-center justify-center rounded-lg ${
@@ -1658,31 +1669,46 @@ if (!canAccessDataCenter) {
 
         <h3 className="mb-1 font-semibold">{source.name}</h3>
 
-        <p className="mb-3 text-sm text-muted-foreground">
-          {source.records.toLocaleString()} {source.id === "3" ? "suggestions" : "records"} - Last sync:{" "}
-          {source.lastSync}
-        </p>
+        <div className="mb-3 flex-1 space-y-1 text-sm text-muted-foreground">
+          <p>
+            {source.records.toLocaleString()} {source.id === "3" ? "suggestions" : "records"}
+          </p>
+          <p>Last sync: {source.lastSync}</p>
+          {source.id === "1" && (
+            <p>Latest transaction: {source.latestTransaction || "No data"}</p>
+          )}
+        </div>
 
         <Button
           variant="outline"
           size="sm"
           className="w-full gap-2"
           onClick={() => triggerSync(source.id)}
-          disabled={source.status === "error" || syncingSourceId === source.id}
+          disabled={isSourceSyncDisabled({
+            sourceId: source.id,
+            sourceStatus: source.status,
+            syncingSourceId,
+            metaConfigured,
+            canSync: canAccessDataCenter,
+          })}
         >
           <RefreshCw
             className={`h-4 w-4 ${
-              syncingSourceId === source.id ? "animate-spin" : ""
+              syncingSourceId === source.id || source.status === "syncing" ? "animate-spin" : ""
             }`}
           />
-          {syncingSourceId === source.id ? "Syncing..." : "Sync Now"}
+          {getSourceSyncLabel({
+            sourceId: source.id,
+            sourceStatus: source.status,
+            syncingSourceId,
+          })}
         </Button>
       </CardContent>
     </Card>
   ))}
 
-  <Card className="border-border bg-card shadow-sm">
-    <CardContent className="pt-6">
+  <Card className="h-full border-border bg-card shadow-sm">
+    <CardContent className="flex h-full flex-col pt-6">
       <div className="mb-4 flex items-start justify-between">
         <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
           {isRunningMl ? (
@@ -1699,14 +1725,10 @@ if (!canAccessDataCenter) {
 
       <h3 className="mb-1 font-semibold">K-Means++ ML Segmentation Engine</h3>
 
-      <p className="mb-1 text-sm text-muted-foreground">
-        {mlSummary.records.toLocaleString()} customers - Last run:{" "}
-        {mlSummary.lastRun}
-      </p>
-
-      <p className="mb-3 text-xs text-muted-foreground">
-        {mlSummary.totalCustomers.toLocaleString()} customers processed
-      </p>
+      <div className="mb-3 flex-1 space-y-1 text-sm text-muted-foreground">
+        <p>{mlSummary.records.toLocaleString()} customers</p>
+        <p>Last run: {mlSummary.lastRun}</p>
+      </div>
 
       <Button
         variant="outline"
@@ -1819,7 +1841,10 @@ if (!canAccessDataCenter) {
                 {syncJobs.map((job) => {
                   const config = statusConfig[job.status]
                   const StatusIcon = config.icon
-                  const isFileJob = job.type === "file" && job.id !== "ready"
+                  const isFileJob =
+                    job.type === "file" &&
+                    job.id !== "ready" &&
+                    job.sourceRecordId !== undefined
 
                   return (
                     <div
@@ -1850,6 +1875,7 @@ if (!canAccessDataCenter) {
                           {job.completedAt && (
                             <span>Completed: {job.completedAt}</span>
                           )}
+                          <span>Action by: {job.performedByName || "Unknown user"}</span>
                         </div>
 
                         {job.businessError && (

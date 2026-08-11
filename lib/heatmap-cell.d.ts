@@ -1,8 +1,14 @@
 export interface HeatmapCellInput {
   session_count?: number
   emptySessions?: number
-  emptyRate?: number
+  emptySlots?: number
+  totalPossibleSessions?: number
+  totalPossibleSlots?: number
+  occupiedCustomerSessions?: number
+  occupiedSlots?: number
+  occupancyRate?: number | null
   internalSessions?: number
+  blockedSlots?: number
   internalRate?: number
 }
 

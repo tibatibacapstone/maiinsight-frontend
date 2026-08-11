@@ -21,11 +21,13 @@ export const PAGE_PERMISSIONS: Record<UserRole, string[]> = {
     "instasight",
     "reports",
     "history",
+    "settings",
   ],
   management: [
     "dashboard",
     "reports",
     "segments",
+    "genai",
     "instasight",
   ],
   it_support: [
@@ -72,7 +74,7 @@ export const FEATURE_PERMISSIONS: Record<UserRole, Record<string, boolean>> = {
     viewImportJobs: false,
     downloadExports: false,
     generateAiStrategy: false,
-    viewAiStrategy: false,
+    viewAiStrategy: true,
     modifyAiStrategy: false,
     approveAiStrategy: false,
     manageUsers: false,

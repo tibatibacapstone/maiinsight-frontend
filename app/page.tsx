@@ -5,6 +5,7 @@ import { LoginPage } from "@/components/login-page"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import type { PageId } from "@/components/dashboard-sidebar"
 import type { UserRole } from "@/lib/roles"
+import { getApiUrl } from "@/lib/api"
 
 type LoginResponse = {
   token: string
@@ -13,7 +14,6 @@ type LoginResponse = {
   }
 }
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:5000"
 const DEFAULT_PAGE: PageId = "dashboard"
 const VALID_PAGES = new Set<PageId>([
   "dashboard",
@@ -114,7 +114,7 @@ export default function Home() {
     setAuthError(null)
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
+      const response = await fetch(getApiUrl("/auth/login"), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -144,7 +144,7 @@ export default function Home() {
     setAuthError(null)
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/auth/google`, {
+      const response = await fetch(getApiUrl("/auth/google"), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

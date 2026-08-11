@@ -19,12 +19,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardTitleToo
 import { Input } from "@/components/ui/input"
 import { getApiUrl } from "@/lib/api"
 import { getAuthHeaders } from "@/lib/roles"
-import {
-  CUSTOMER_SEGMENT_COLORS, // ⬅️ NEW
-  fetchSegmentationSummary, // ⬅️ NEW
-  sortClusterProfiles, // ⬅️ NEW
-  type ClusterProfile, // ⬅️ NEW
-} from "@/lib/segmentation"
+import { CUSTOMER_SEGMENT_COLORS } from "@/lib/segmentation"
 import {
   AlertTriangle,
   ArrowRight,
@@ -120,6 +115,7 @@ interface SessionOccupancyRow {
 
 interface SegmentContributionRow {
   segmentName: string
+  customerCount: number
   revenue: number
   bookings: number
   revenueShare: number
@@ -130,12 +126,12 @@ interface MetaDashboardData {
   hasData: boolean
   lastSyncedAt: string | null
   summary: {
-    totalViews: number
-    totalReach: number
+    totalViews: number | null
+    totalReach: number | null
     totalInteractions: number
     totalShares: number
-    engagementRate: number
-    shareRate: number
+    engagementRate: number | null
+    shareRate: number | null
   }
 }
 
@@ -187,8 +183,13 @@ interface HeatmapSummary {
     totalCapacity?: number
     totalPossibleSessions?: number
     occupiedCustomerSessions?: number
+    occupiedSlots?: number
     internalSessions?: number
+    blockedSlots?: number
     emptySessions?: number
+    emptySlots?: number
+    totalPossibleSlots?: number
+    occupancyRate?: number | null
     emptyRate?: number
     internalRate?: number
   }>
@@ -331,7 +332,12 @@ const formatCurrency = (value: number) => `IDR ${Math.round(value).toLocaleStrin
 
 const formatPercent = (value: number | null | undefined) => (value === null || value === undefined ? "-" : `${value >= 0 ? "+" : ""}${value.toFixed(1)}%`)
 
-const formatDateInput = (value: Date) => value.toISOString().slice(0, 10)
+const formatDateInput = (value: Date) => {
+  const year = value.getFullYear()
+  const month = String(value.getMonth() + 1).padStart(2, "0")
+  const day = String(value.getDate()).padStart(2, "0")
+  return `${year}-${month}-${day}`
+}
 
 const getLastMonthRange = () => {
   const end = new Date()
@@ -364,7 +370,6 @@ export function ManagementReport() {
   // ⬅️ NEW: playtime + heatmap now come from actual-data endpoints, not ML
   const [playtimeMix, setPlaytimeMix] = useState<{ sessionByTime: PlaytimeSessionPoint[]; totalSessions: number; totalCustomers: number } | null>(null)
   const [heatmapSummary, setHeatmapSummary] = useState<HeatmapSummary | null>(null)
-  const [segmentation, setSegmentation] = useState<ClusterProfile[]>([])
 
   useEffect(() => {
     const applyDefaultRange = async () => {
@@ -420,11 +425,10 @@ export function ManagementReport() {
       })
 
       // ⬅️ NEW: params for overview-kpis, derived from the current report filters
-      const { month, year, venue } = deriveOverviewParams(endDate, courtType)
-      const overviewParams = new URLSearchParams({
-        month,
-        year,
-        periodType: "YTD",
+      const { venue } = deriveOverviewParams(endDate, courtType)
+      const exactRangeParams = new URLSearchParams({
+        startDate,
+        endDate,
         venue,
         customerType: "All Type",
         bookingType,
@@ -448,7 +452,6 @@ export function ManagementReport() {
         occupancyTrendResponse, // ⬅️ NEW
         playtimeMixResponse, // ⬅️ NEW: actual data, replaces /ml/playtime/latest
         heatmapResponse, // ⬅️ NEW: actual data, replaces /ml/playtime/latest heatmap
-        segmentationResult, // ⬅️ NEW
       ] = await Promise.all([
         fetch(getApiUrl(`/operations/management-report?${params.toString()}`), {
           method: "GET",
@@ -465,7 +468,7 @@ export function ManagementReport() {
           cache: "no-store",
           headers: getAuthHeaders(),
         }).catch(() => null),
-        fetch(getApiUrl(`/dashboard/overview-kpis?${overviewParams.toString()}`), {
+        fetch(getApiUrl(`/dashboard/overview-kpis?${exactRangeParams.toString()}`), {
           method: "GET",
           cache: "no-store",
           headers: getAuthHeaders(),
@@ -475,19 +478,16 @@ export function ManagementReport() {
           cache: "no-store",
           headers: getAuthHeaders(),
         }).catch(() => null),
-        fetch(getApiUrl(`/dashboard/playtime-mix?${overviewParams.toString()}`), {
+        fetch(getApiUrl(`/dashboard/playtime-mix?${exactRangeParams.toString()}`), {
           method: "GET",
           cache: "no-store",
           headers: getAuthHeaders(),
         }).catch(() => null),
-        fetch(getApiUrl(`/dashboard/empty-slot-heatmap?${overviewParams.toString()}`), {
+        fetch(getApiUrl(`/dashboard/empty-slot-heatmap?${exactRangeParams.toString()}`), {
           method: "GET",
           cache: "no-store",
           headers: getAuthHeaders(),
         }).catch(() => null),
-        fetchSegmentationSummary()
-          .then((data) => ({ success: true, data }))
-          .catch(() => ({ success: false, data: null })),
       ])
 
       const result: ReportResponse | null = await reportResponse.json().catch(() => null)
@@ -524,11 +524,6 @@ export function ManagementReport() {
           : null
       )
       setHeatmapSummary(heatmapResult?.success ? (heatmapResult.data as HeatmapSummary) : null)
-      setSegmentation(
-        segmentationResult.success && segmentationResult.data
-          ? sortClusterProfiles(segmentationResult.data.clusters || [])
-          : []
-      )
 
       setLastRefreshedAt(new Date().toISOString())
     } catch (loadError) {
@@ -539,7 +534,6 @@ export function ManagementReport() {
       setOccupancyTrend([]) // ⬅️ NEW
       setPlaytimeMix(null) // ⬅️ NEW
       setHeatmapSummary(null) // ⬅️ NEW
-      setSegmentation([]) // ⬅️ NEW
       setError(loadError instanceof Error ? loadError.message : "Management report could not be loaded.")
     } finally {
       setIsLoading(false)
@@ -587,7 +581,10 @@ export function ManagementReport() {
 
   const courtPerformanceRows = report?.courtTypePerformance ?? []
   const sessionOccupancyRows = report?.sessionOccupancy ?? []
-  const segmentContributionRows = report?.segmentContribution ?? []
+  const segmentContributionRows = useMemo(
+    () => report?.segmentContribution ?? [],
+    [report?.segmentContribution]
+  )
   const comparisonCards = (() => {
     if (!report?.comparison) return []
 
@@ -633,8 +630,11 @@ export function ManagementReport() {
     const lines = []
 
     if (metaDashboard?.hasData) {
+      const { totalReach, engagementRate, shareRate } = metaDashboard.summary
       lines.push(
-        `Meta reach is ${metaDashboard.summary.totalReach.toLocaleString("en-US")} with ${metaDashboard.summary.engagementRate.toFixed(1)}% engagement and ${metaDashboard.summary.shareRate.toFixed(1)}% share rate.`
+        totalReach != null && engagementRate != null && shareRate != null
+          ? `Meta reach is ${totalReach.toLocaleString("en-US")} with ${engagementRate.toFixed(1)}% engagement and ${shareRate.toFixed(1)}% share rate.`
+          : "Stored Meta performance data is available, but reach or rate metrics are unavailable for this reporting period."
       )
     }
 
@@ -677,12 +677,12 @@ export function ManagementReport() {
   // ⬅️ NEW: derived chart data for Customer Value Segments
   const segmentChart = useMemo(
     () =>
-      segmentation.map((item, index) => ({
+      segmentContributionRows.map((item, index) => ({
         name: item.segmentName,
         value: item.customerCount,
         color: CUSTOMER_SEGMENT_COLORS[item.segmentName] || chartColors[index % chartColors.length],
       })),
-    [segmentation]
+    [segmentContributionRows]
   )
   const segmentChartTotal = useMemo(() => segmentChart.reduce((sum, item) => sum + Number(item.value || 0), 0), [segmentChart])
   const segmentLegend = useMemo(

@@ -29,6 +29,11 @@ import {
 
 import { getApiUrl } from "@/lib/api"
 import { getHeatmapCellVisual, getHeatmapTooltipLines } from "@/lib/heatmap-cell"
+import {
+  buildPeriodSearchParams,
+  normalizeMonthNumber,
+  type PeriodType,
+} from "@/lib/period-filter"
 import { getAuthHeaders } from "@/lib/roles"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -100,8 +105,13 @@ interface HeatmapSummary {
     totalCapacity?: number
     totalPossibleSessions?: number
     occupiedCustomerSessions?: number
+    occupiedSlots?: number
     internalSessions?: number
+    blockedSlots?: number
     emptySessions?: number
+    emptySlots?: number
+    totalPossibleSlots?: number
+    occupancyRate?: number | null
     emptyRate?: number
     internalRate?: number
   }>
@@ -234,7 +244,7 @@ export const HeatmapGrid = ({ heatmapSummary }: { heatmapSummary: HeatmapSummary
     <Card className="border-border bg-card shadow-sm">
       <CardHeader>
         <CardTitleTooltip title="Empty Slot Heatmap" tooltip={mostEmptySlot
-              ? `${mostEmptySlot.dayLabel} ${mostEmptySlot.hourLabel} is usually the emptiest slot this month.`
+              ? `${mostEmptySlot.dayLabel} ${mostEmptySlot.hourLabel} has the most empty bookable slots in the selected period.`
               : "No empty slot pattern available yet."} />
       </CardHeader>
       <CardContent>
@@ -255,16 +265,18 @@ export const HeatmapGrid = ({ heatmapSummary }: { heatmapSummary: HeatmapSummary
                   <div className="text-xs font-medium text-orange-900">{day}</div>
                   {hours.map((hour) => {
                     const slot = slots.find((item) => item.day_short === day && item.startHour === hour)
-                    const emptySessions = slot?.emptySessions ?? slot?.session_count ?? 0
-                    const emptyRate = slot?.emptyRate ?? 0
+                    const emptySlots = slot?.emptySlots ?? slot?.emptySessions ?? slot?.session_count ?? 0
+                    const occupancyRate = slot?.occupancyRate ?? null
                     const internalSessions = slot?.internalSessions ?? 0
+                    const blockedSlots = slot?.blockedSlots ?? 0
                     const internalRate = slot?.internalRate ?? 0
-                    const visual = getHeatmapCellVisual({ emptyRate, internalRate })
+                    const visual = getHeatmapCellVisual({ occupancyRate, internalRate })
                     const tooltipLines = getHeatmapTooltipLines({
                       ...slot,
-                      emptySessions,
-                      emptyRate,
+                      emptySlots,
+                      occupancyRate,
                       internalSessions,
+                      blockedSlots,
                       internalRate,
                     })
 
@@ -277,7 +289,7 @@ export const HeatmapGrid = ({ heatmapSummary }: { heatmapSummary: HeatmapSummary
                               backgroundColor: `rgba(249, 115, 22, ${visual.orangeAlpha})`,
                             }}
                           >
-                            {internalSessions > 0 && (
+                            {internalSessions + blockedSlots > 0 && (
                               <span
                                 aria-hidden="true"
                                 className="absolute inset-y-0 left-0 bg-slate-600"
@@ -310,24 +322,24 @@ export const HeatmapGrid = ({ heatmapSummary }: { heatmapSummary: HeatmapSummary
         <div className="mt-4 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
           <span className="inline-flex items-center gap-2">
             <span className="h-3 w-3 rounded-sm bg-orange-200" />
-            Low empty rate
+            Low occupancy
           </span>
           <span className="inline-flex items-center gap-2">
             <span className="h-3 w-3 rounded-sm bg-orange-400" />
-            Moderate
+            Moderate occupancy
           </span>
           <span className="inline-flex items-center gap-2">
             <span className="h-3 w-3 rounded-sm bg-orange-600" />
-            High empty rate
+            High occupancy
           </span>
-          <span className="text-xs text-muted-foreground">Darker orange = higher empty rate</span>
+          <span className="text-xs text-muted-foreground">Darker orange = higher occupancy rate</span>
           <span className="inline-flex items-center gap-2">
             <span className="h-3 w-6 overflow-hidden rounded-sm border border-slate-300 bg-orange-200">
               <span className="block h-full w-2/3 bg-slate-600/70" />
             </span>
-            Gray coverage: Internal / blocked sessions
+            Gray coverage: unavailable Internal / blocked slots
           </span>
-          <span className="text-xs text-muted-foreground">More gray = more Internal sessions</span>
+          <span className="text-xs text-muted-foreground">Gray slots are excluded from bookable capacity</span>
         </div>
       </CardContent>
     </Card>
@@ -385,26 +397,39 @@ export function SegmentVisualization() {
           : sortedClusters[0]?.segmentName || null
       )
 
-      const referenceRunDate = normalizedLatest.run?.runDate || new Date().toISOString()
-      const runDate = new Date(referenceRunDate)
-      const overviewParams = new URLSearchParams({
-        month: String(runDate.getMonth() + 1),
-        year: String(runDate.getFullYear()),
-        periodType: "MTD",
-        venue: "All Venue",
-        customerType: "All Type",
-      })
+      const runScope = normalizedLatest.run
+      const scopeMonth = normalizeMonthNumber(runScope?.filterMonth)
+      const hasPeriodScope = Boolean(
+        runScope?.filterYear && runScope?.filterPeriodType
+      )
+      const overviewParams = hasPeriodScope
+        ? buildPeriodSearchParams({
+            month: scopeMonth,
+            year: Number(runScope?.filterYear),
+            periodType: runScope?.filterPeriodType as PeriodType,
+          }, {
+            venue: runScope?.filterCourtType || "All Venue",
+            customerType: "All Type",
+            bookingType: runScope?.filterBookingType || "all",
+          })
+        : null
+
+      if (!overviewParams) {
+        setOverviewKpi(null)
+        setHeatmapSummary(null)
+        return
+      }
 
       const [kpiResponse, playtimeResponse] = await Promise.all([
-        fetch(getApiUrl(`/dashboard/overview-kpis?${overviewParams.toString()}`), {
-          headers: getAuthHeaders(),
-          cache: "no-store",
-        }),
-        fetch(getApiUrl(`/dashboard/playtime-mix?${overviewParams.toString()}`), {
-          headers: getAuthHeaders(),
-          cache: "no-store",
-        }),
-      ])
+          fetch(getApiUrl(`/dashboard/overview-kpis?${overviewParams.toString()}`), {
+            headers: getAuthHeaders(),
+            cache: "no-store",
+          }),
+          fetch(getApiUrl(`/dashboard/playtime-mix?${overviewParams.toString()}`), {
+            headers: getAuthHeaders(),
+            cache: "no-store",
+          }),
+        ])
 
       const kpiResult = await kpiResponse.json().catch(() => null)
       const playtimeResult = await playtimeResponse.json().catch(() => null)
@@ -978,7 +1003,7 @@ export function SegmentVisualization() {
                         <div>Last Visit</div>
                       </TooltipTrigger>
                       <TooltipContent>
-                        <p>Days since the customer's most recent completed booking.</p>
+                        <p>Days since the customer&apos;s most recent completed booking.</p>
                       </TooltipContent>
                     </Tooltip>
                     <Tooltip>
