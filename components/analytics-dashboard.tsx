@@ -227,12 +227,12 @@ const playtimeLabelMap: Record<string, string> = {
   Malam: "Night",
 }
 const bookingTypeLabelMap: Record<string, string> = {
-  membership: "Membership",
-  non_membership: "Non-Membership",
+  membership: "Payment Completed",
+  non_membership: "Manual/Walk-in",
   internal: "Internal",
   blocked: "Internal",
-  regular_booking: "Membership",
-  member_internal_booking: "Non Membership",
+  regular_booking: "Payment Completed",
+  member_internal_booking: "Manual/Walk-in",
   other: "Other",
 }
 
@@ -598,16 +598,18 @@ export function AnalyticsDashboard() {
   const lastRefreshAtRef = useRef(0)
 
   const yearOptions = useMemo(() => {
-    const startYear = 2023
+    const yearsFromData = new Set(availableMonthValues.map((v) => v.slice(0, 4)))
+    if (yearsFromData.size > 0) {
+      return Array.from(yearsFromData)
+        .sort()
+        .map((year) => ({ value: year, disabled: false }))
+    }
     const endYear = new Date().getFullYear()
-    return Array.from({ length: Math.max(endYear - startYear + 1, 1) }, (_, index) => {
-      const year = String(startYear + index)
-      return {
-        value: year,
-        disabled: false,
-      }
-    })
-  }, [])
+    return Array.from({ length: Math.max(endYear - 2022 + 1, 1) }, (_, index) => ({
+      value: String(2022 + index),
+      disabled: false,
+    }))
+  }, [availableMonthValues])
 
   const monthOptions = useMemo(() => {
     const monthsForYear = availableMonthValues.filter((value) => value.startsWith(`${selectedYear}-`))
@@ -616,6 +618,16 @@ export function AnalyticsDashboard() {
       disabled: !monthsForYear.includes(formatMonthValue(month, selectedYear) || ""),
     }))
   }, [availableMonthValues, selectedYear])
+
+  useEffect(() => {
+    const latestYear = availableMonthValues
+      .map((v) => v.slice(0, 4))
+      .filter((y, i, a) => a.indexOf(y) === i)
+      .sort((a, b) => Number(b) - Number(a))[0]
+    if (latestYear) {
+      setSelectedYear(latestYear)
+    }
+  }, [availableMonthValues])
 
   const loadDashboard = useCallback(async (options?: { background?: boolean }) => {
     try {
@@ -862,6 +874,7 @@ export function AnalyticsDashboard() {
     const breakdown = reportData?.bookingTypeBreakdown || {}
 
     return Object.entries(breakdown)
+      .filter(([key]) => key !== "excluded")
       .map(([key, value], index) => ({
         key,
         name: bookingTypeLabelMap[key] || key,
@@ -1600,8 +1613,8 @@ export function AnalyticsDashboard() {
 
             <Card className="border-border bg-card shadow-sm">
               <CardHeader>
-                <CardTitle><TitleWithTooltip title="Booking Type Mix" tooltip="Shows how bookings are split between members and guests." /></CardTitle>
-                <CardDescription>Mix of member vs guest bookings.</CardDescription>
+                <CardTitle><TitleWithTooltip title="Valid Booking Status" tooltip="Shows the distribution of completed bookings and operational sessions grouped by status type." /></CardTitle>
+                <CardDescription>Breakdown of Payment Completed, Manual/Walk-in, and Internal bookings.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="h-[280px]">
@@ -1644,7 +1657,7 @@ export function AnalyticsDashboard() {
                 )}
                 {bookingTypeMixLegend.length > 0 ? (
                   <p className="text-xs text-muted-foreground">
-                    Shows what percentage of bookings are members vs guests.
+                    Shows the percentage breakdown of valid booking and operational statuses.
                   </p>
                 ) : null}
               </CardContent>

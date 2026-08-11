@@ -86,9 +86,11 @@ interface HeatmapSummary {
     totalPossibleSessions?: number
     occupiedCustomerSessions?: number
     internalSessions?: number
+    tutupSessions?: number
     emptySessions?: number
     emptyRate?: number
     internalRate?: number
+    tutupRate?: number
   }>
   mostEmptySlot: {
     dayLabel: string

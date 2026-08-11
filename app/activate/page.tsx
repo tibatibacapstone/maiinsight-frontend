@@ -1,9 +1,9 @@
 "use client"
 
-import { useMemo, useState, type FormEvent } from "react"
+import { Suspense, useEffect, useMemo, useState, type FormEvent } from "react"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
-import { BarChart3, CheckCircle2, KeyRound, ShieldCheck } from "lucide-react"
+import { Loader2, BarChart3, CheckCircle2, KeyRound, ShieldCheck } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -12,7 +12,7 @@ import { Label } from "@/components/ui/label"
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:5000"
 
-export default function ActivatePage() {
+function ActivateForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const inviteToken = searchParams.get("token") ?? ""
@@ -21,6 +21,10 @@ export default function ActivatePage() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (localStorage.getItem("maiinToken")) router.replace("/")
+  }, [])
 
   const isTokenPresent = useMemo(() => Boolean(inviteToken), [inviteToken])
 
@@ -196,5 +200,13 @@ export default function ActivatePage() {
         </Card>
       </div>
     </div>
+  )
+}
+
+export default function ActivatePage() {
+  return (
+    <Suspense fallback={<div className="flex min-h-screen items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>}>
+      <ActivateForm />
+    </Suspense>
   )
 }

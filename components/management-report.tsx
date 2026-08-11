@@ -2,15 +2,14 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react"
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog"
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { toast } from "sonner"
 import { BusinessErrorAlert } from "@/components/business-error-alert"
 import { HeatmapGrid } from "@/components/segment-visualization" // ⬅️ NEW: reused for Empty Slot Heatmap
 import { Button } from "@/components/ui/button"
@@ -100,6 +99,33 @@ interface ComparisonMetric {
   changePct: number | null
 }
 
+const PRESENTATION_THEMES = [
+  {
+    id: "executive",
+    label: "Executive Navy",
+    description: "Navy gelap + aksen emas — klasik boardroom",
+    swatch: ["#0B1F3A", "#F5C451"],
+  },
+  {
+    id: "emerald",
+    label: "Forest Emerald",
+    description: "Hijau hutan + aksen lime — modern & segar",
+    swatch: ["#0F3D2E", "#D9F99D"],
+  },
+  {
+    id: "slate",
+    label: "Slate Modern",
+    description: "Slate gelap + aksen biru langit — bersih",
+    swatch: ["#0F172A", "#38BDF8"],
+  },
+  {
+    id: "burgundy",
+    label: "Burgundy Classic",
+    description: "Merah anggur + aksen krem — premium",
+    swatch: ["#43101F", "#E8C4A0"],
+  },
+]
+
 interface CourtTypePerformanceRow {
   courtType: string
   courtLabel: string
@@ -188,9 +214,11 @@ interface HeatmapSummary {
     totalPossibleSessions?: number
     occupiedCustomerSessions?: number
     internalSessions?: number
+    tutupSessions?: number
     emptySessions?: number
     emptyRate?: number
     internalRate?: number
+    tutupRate?: number
   }>
   mostEmptySlot: {
     dayLabel: string
@@ -354,6 +382,8 @@ export function ManagementReport() {
   const [isApplyingDefaultRange, setIsApplyingDefaultRange] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [downloadConfirmOpen, setDownloadConfirmOpen] = useState(false)
+  const [selectedTheme, setSelectedTheme] = useState("executive")
+  const [isExporting, setIsExporting] = useState(false)
   const [lastRefreshedAt, setLastRefreshedAt] = useState<string | null>(null)
   const [metaDashboard, setMetaDashboard] = useState<MetaDashboardData | null>(null)
   const [metaAudienceSummary, setMetaAudienceSummary] = useState<MetaAudienceSummary | null>(null)
@@ -551,9 +581,72 @@ export function ManagementReport() {
     void loadReport()
   }, [isApplyingDefaultRange, loadReport])
 
-  const handleConfirmDownload = () => {
+  const handleExportPresentation = async () => {
     setDownloadConfirmOpen(false)
-    window.setTimeout(() => window.print(), 50)
+    setIsExporting(true)
+
+    const toastId = toast.loading(
+      "AI sedang menyusun presentasi manajemen dari data nyata...",
+      { description: "Proses ini bisa memakan waktu sekitar 30 detik." },
+    )
+
+    try {
+      const response = await fetch(
+        getApiUrl("/operations/management-report/presentation"),
+        {
+          method: "POST",
+          cache: "no-store",
+          headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+          body: JSON.stringify({
+            startDate,
+            endDate,
+            courtType,
+            bookingType,
+            theme: selectedTheme,
+          }),
+        },
+      )
+
+      if (!response.ok) {
+        let message = "Presentasi gagal dibuat."
+        try {
+          const result = await response.json()
+          message = result.message || message
+        } catch {
+          /* non-JSON error body */
+        }
+        throw new Error(message)
+      }
+
+      const blob = await response.blob()
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement("a")
+      link.href = url
+      const disposition = response.headers.get("Content-Disposition") || ""
+      const filenameMatch = disposition.match(/filename="?([^"]+)"?/)
+      link.download = filenameMatch?.[1] || "MAIIN-Gandaria-Management-Report.pdf"
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      URL.revokeObjectURL(url)
+
+      toast.dismiss(toastId)
+      toast.success("Presentasi manajemen siap", {
+        description: `${link.download} telah diunduh. Management juga menerima notifikasi dengan file yang bisa dilihat.`,
+        duration: 8000,
+      })
+    } catch (error) {
+      toast.dismiss(toastId)
+      toast.error("Gagal membuat presentasi", {
+        description:
+          error instanceof Error
+            ? error.message
+            : "Presentasi tidak dapat dibuat saat ini. Coba lagi.",
+        duration: 6000,
+      })
+    } finally {
+      setIsExporting(false)
+    }
   }
 
   const breakdownRows = report
@@ -787,20 +880,88 @@ export function ManagementReport() {
         </div>
       </div>
 
-      <AlertDialog open={downloadConfirmOpen} onOpenChange={setDownloadConfirmOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Export management report as PDF?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This will open the printable report layout so you can save it as a PDF from the browser print dialog.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleConfirmDownload}>Continue</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <Dialog open={downloadConfirmOpen} onOpenChange={setDownloadConfirmOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Sparkles className="h-4 w-4 text-primary" />
+              Export management report (PDF presentasi)
+            </DialogTitle>
+            <DialogDescription>
+              AI (Gemini) akan menyusun presentasi landscape berisi data nyata periode{" "}
+              <span className="font-medium text-foreground">
+                {startDate ? new Date(`${startDate}T00:00:00`).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" }) : "—"}
+                {" – "}
+                {endDate ? new Date(`${endDate}T00:00:00`).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" }) : "—"}
+              </span>{" "}
+              lengkap dengan insight interpretatif, rencana aksi, dan slide penutup kontak MAIIN Gandaria.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-2.5">
+            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+              Pilih tema presentasi
+            </p>
+            <div className="grid grid-cols-2 gap-2.5">
+              {PRESENTATION_THEMES.map((theme) => {
+                const selected = selectedTheme === theme.id
+                return (
+                  <button
+                    key={theme.id}
+                    type="button"
+                    onClick={() => setSelectedTheme(theme.id)}
+                    className={`flex items-start gap-2.5 rounded-xl border p-3 text-left transition ${
+                      selected
+                        ? "border-primary bg-primary/5 ring-2 ring-primary/20"
+                        : "border-border/70 bg-background/60 hover:border-primary/40"
+                    }`}
+                  >
+                    <span
+                      className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border"
+                      style={{
+                        background: `linear-gradient(135deg, ${theme.swatch[0]} 50%, ${theme.swatch[1]} 50%)`,
+                      }}
+                      aria-hidden
+                    >
+                      <span
+                        className="h-4 w-1 rounded-full"
+                        style={{ backgroundColor: theme.swatch[1] }}
+                      />
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block text-sm font-medium text-foreground">
+                        {theme.label}
+                      </span>
+                      <span className="mt-0.5 block text-xs leading-snug text-muted-foreground">
+                        {theme.description}
+                      </span>
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
+          <DialogFooter className="mt-1">
+            <Button variant="outline" onClick={() => setDownloadConfirmOpen(false)} disabled={isExporting}>
+              Cancel
+            </Button>
+            <Button onClick={handleExportPresentation} disabled={isExporting || !report?.hasData}>
+              {isExporting ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Menyiapkan presentasi...
+                </>
+              ) : (
+                <>
+                  <Download className="h-4 w-4" />
+                  Generate &amp; Download PDF
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* ⬇️ PRINT-ONLY LAYOUT — everything the PDF should contain lives in here */}
       <div className="print-report hidden">

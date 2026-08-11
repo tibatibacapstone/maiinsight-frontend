@@ -5,6 +5,7 @@ import { toast } from "sonner"
 import {
   Copy, Eye, EyeOff, Key, Link as LinkIcon, Loader2, Save, Shield, Users,
   Check, CircleDashed, Pencil, Trash2, ChevronLeft, ChevronRight, X, CheckCircle,
+  Activity, AlertTriangle, RefreshCw, Wifi, WifiOff,
 } from "lucide-react"
 
 import { AccessDenied } from "@/components/access-denied"
@@ -94,6 +95,50 @@ export function SystemSettings() {
   // Delete user state
   const [deletingUser, setDeletingUser] = useState<UserRow | null>(null)
   const [isDeletingUser, setIsDeletingUser] = useState(false)
+
+  const [geminiUsage, setGeminiUsage] = useState<{
+    logs: Array<{ id: number; userId: number | null; model: string; feature: string; promptTokens: number; candidatesTokens: number; totalTokens: number; createdAt: string; user: { name: string; email: string } | null }>
+    today: { totalTokens: number; promptTokens: number; candidatesTokens: number; count: number }
+    month: { totalTokens: number; promptTokens: number; candidatesTokens: number; count: number }
+    allTime: { totalTokens: number; count: number }
+  } | null>(null)
+  const [geminiUsageLoading, setGeminiUsageLoading] = useState(false)
+
+  const [tokenCheckResult, setTokenCheckResult] = useState<{
+    meta: { status: string; expiresAt: string | null; daysRemaining: number | null; error?: string }
+    gemini: { status: string; error?: string }
+  } | null>(null)
+  const [tokenCheckLoading, setTokenCheckLoading] = useState(false)
+  const [lastTokenCheck, setLastTokenCheck] = useState<string | null>(null)
+
+  const fetchGeminiUsage = async () => {
+    try {
+      setGeminiUsageLoading(true)
+      const response = await fetch(getApiUrl("/system/gemini-usage?days=30&limit=50"), { headers: getAuthHeaders() })
+      const result = await response.json().catch(() => null)
+      if (result?.success && result.data) setGeminiUsage(result.data)
+    } catch (_) { /* non-critical */ } finally { setGeminiUsageLoading(false) }
+  }
+
+  const checkTokensNow = async () => {
+    try {
+      setTokenCheckLoading(true)
+      const response = await fetch(getApiUrl("/system/check-tokens"), {
+        method: "POST",
+        headers: getAuthHeaders(),
+      })
+      const result = await response.json().catch(() => null)
+      if (result?.success && result.data) {
+        setTokenCheckResult(result.data)
+        setLastTokenCheck(new Date().toISOString())
+        toast.success("Token and integration health check completed.")
+      } else {
+        toast.error(result?.message || "Token check failed.")
+      }
+    } catch (_) {
+      toast.error("Token check failed.")
+    } finally { setTokenCheckLoading(false) }
+  }
 
   const geminiApiKeyValue = summary?.integrations.geminiApiKey || ""
   const metaAccessTokenValue = summary?.integrations.metaAccessToken || ""
@@ -379,6 +424,177 @@ export function SystemSettings() {
               </Badge>
             </KpiCard>
           </div>
+
+          {/* Gemini Usage */}
+          <Card className="border-border/60 bg-card/90 shadow-sm">
+            <CardHeader>
+              <CardTitleTooltip title="Gemini API Usage" tooltip="Token consumption and call history for the AI provider. Logs are captured per Gemini response." />
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {geminiUsageLoading ? (
+                <div className="flex items-center justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
+              ) : geminiUsage ? (
+                <>
+                  <div className="grid grid-cols-3 gap-4">
+                    <div className="rounded-xl border bg-secondary/20 p-3 text-center">
+                      <p className="text-xs text-muted-foreground uppercase tracking-wide">Today</p>
+                      <p className="text-lg font-bold">{geminiUsage.today.totalTokens.toLocaleString()}</p>
+                      <p className="text-xs text-muted-foreground">{geminiUsage.today.count} call{geminiUsage.today.count !== 1 ? "s" : ""}</p>
+                    </div>
+                    <div className="rounded-xl border bg-secondary/20 p-3 text-center">
+                      <p className="text-xs text-muted-foreground uppercase tracking-wide">This Month</p>
+                      <p className="text-lg font-bold">{geminiUsage.month.totalTokens.toLocaleString()}</p>
+                      <p className="text-xs text-muted-foreground">{geminiUsage.month.count} call{geminiUsage.month.count !== 1 ? "s" : ""}</p>
+                    </div>
+                    <div className="rounded-xl border bg-secondary/20 p-3 text-center">
+                      <p className="text-xs text-muted-foreground uppercase tracking-wide">All Time</p>
+                      <p className="text-lg font-bold">{geminiUsage.allTime.totalTokens.toLocaleString()}</p>
+                      <p className="text-xs text-muted-foreground">{geminiUsage.allTime.count} call{geminiUsage.allTime.count !== 1 ? "s" : ""}</p>
+                    </div>
+                  </div>
+                  {/* Recent log table */}
+                  <div className="max-h-48 overflow-y-auto">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="text-left text-muted-foreground border-b">
+                          <th className="pb-1 pr-2">Time</th>
+                          <th className="pb-1 pr-2">User</th>
+                          <th className="pb-1 pr-2">Model</th>
+                          <th className="pb-1 pr-2">Feature</th>
+                          <th className="pb-1 pr-2 text-right">Tokens</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {geminiUsage.logs.length === 0 ? (
+                          <tr><td colSpan={5} className="pt-3 text-center text-muted-foreground">No usage yet</td></tr>
+                        ) : geminiUsage.logs.slice(0, 20).map((log) => (
+                          <tr key={log.id} className="border-b border-border/40">
+                            <td className="py-1.5 pr-2 whitespace-nowrap">{new Date(log.createdAt).toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}</td>
+                            <td className="py-1.5 pr-2 max-w-[100px] truncate">{log.user?.name || "—"}</td>
+                            <td className="py-1.5 pr-2">{log.model}</td>
+                            <td className="py-1.5 pr-2">{log.feature}</td>
+                            <td className="py-1.5 text-right">{log.totalTokens.toLocaleString()}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <Button variant="outline" size="sm" className="gap-2" onClick={() => void fetchGeminiUsage()} disabled={geminiUsageLoading}>
+                    <RefreshCw className="h-3.5 w-3.5" /> Refresh
+                  </Button>
+                </>
+              ) : (
+                <div className="text-center py-6 text-muted-foreground">
+                  <Button variant="outline" size="sm" className="gap-2" onClick={() => void fetchGeminiUsage()} disabled={geminiUsageLoading}>
+                    {geminiUsageLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Activity className="h-3.5 w-3.5" />}
+                    Load Usage Data
+                  </Button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Integration Health */}
+          <Card className="border-border/60 bg-card/90 shadow-sm">
+            <CardHeader>
+              <CardTitleTooltip title="Integration Health" tooltip="Real-time status of external integrations: Meta token validity, Gemini API connectivity, and SMTP configuration." />
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid gap-3">
+                {/* Meta status */}
+                <div className="flex items-center justify-between rounded-xl border bg-secondary/20 p-3">
+                  <div className="flex items-center gap-3">
+                    {tokenCheckResult?.meta.status === "valid" ? <Wifi className="h-4 w-4 text-green-500" />
+                      : tokenCheckResult?.meta.status === "warning" || tokenCheckResult?.meta.status === "critical" ? <AlertTriangle className="h-4 w-4 text-amber-500" />
+                      : tokenCheckResult?.meta.status === "expired" || tokenCheckResult?.meta.status === "error" || tokenCheckResult?.meta.status === "invalid" ? <WifiOff className="h-4 w-4 text-red-500" />
+                      : <CircleDashed className="h-4 w-4 text-muted-foreground" />}
+                    <div>
+                      <p className="text-sm font-medium">Meta Token</p>
+                      {tokenCheckResult ? (
+                        <p className="text-xs text-muted-foreground">
+                          {tokenCheckResult.meta.status === "valid" ? `Valid (${tokenCheckResult.meta.daysRemaining} days remaining)`
+                            : tokenCheckResult.meta.status === "warning" ? `Expires in ${tokenCheckResult.meta.daysRemaining} days`
+                            : tokenCheckResult.meta.status === "critical" ? `Expires in ${tokenCheckResult.meta.daysRemaining} days — action required`
+                            : tokenCheckResult.meta.status === "expired" ? "Expired — token needs renewal"
+                            : tokenCheckResult.meta.status === "not_configured" ? "Not configured"
+                            : tokenCheckResult.meta.error || "Error checking status"}
+                        </p>
+                      ) : (
+                        <p className="text-xs text-muted-foreground">Not checked yet</p>
+                      )}
+                    </div>
+                  </div>
+                  <Badge variant={
+                    tokenCheckResult?.meta.status === "valid" ? "default"
+                    : tokenCheckResult?.meta.status === "warning" ? "secondary"
+                    : tokenCheckResult?.meta.status === "critical" || tokenCheckResult?.meta.status === "expired" ? "destructive"
+                    : "outline"
+                  } className="rounded-full px-3 shrink-0 ml-2">
+                    {tokenCheckResult?.meta.status === "valid" ? "Healthy"
+                      : tokenCheckResult?.meta.status === "warning" ? "Warning"
+                      : tokenCheckResult?.meta.status === "critical" ? "Critical"
+                      : tokenCheckResult?.meta.status === "expired" ? "Expired"
+                      : tokenCheckResult?.meta.status === "error" || tokenCheckResult?.meta.status === "invalid" ? "Error"
+                      : "Unknown"}
+                  </Badge>
+                </div>
+
+                {/* Gemini status */}
+                <div className="flex items-center justify-between rounded-xl border bg-secondary/20 p-3">
+                  <div className="flex items-center gap-3">
+                    {tokenCheckResult?.gemini.status === "valid" ? <Wifi className="h-4 w-4 text-green-500" />
+                      : tokenCheckResult?.gemini.status === "not_configured" ? <CircleDashed className="h-4 w-4 text-muted-foreground" />
+                      : <WifiOff className="h-4 w-4 text-red-500" />}
+                    <div>
+                      <p className="text-sm font-medium">Gemini API</p>
+                      {tokenCheckResult ? (
+                        <p className="text-xs text-muted-foreground">
+                          {tokenCheckResult.gemini.status === "valid" ? "Responded successfully"
+                            : tokenCheckResult.gemini.status === "not_configured" ? "Not configured"
+                            : tokenCheckResult.gemini.error || "Error checking status"}
+                        </p>
+                      ) : (
+                        <p className="text-xs text-muted-foreground">Not checked yet</p>
+                      )}
+                    </div>
+                  </div>
+                  <Badge variant={
+                    tokenCheckResult?.gemini.status === "valid" ? "default"
+                    : "destructive"
+                  } className="rounded-full px-3 shrink-0 ml-2">
+                    {tokenCheckResult?.gemini.status === "valid" ? "Healthy"
+                      : tokenCheckResult?.gemini.status === "not_configured" ? "N/A"
+                      : "Error"}
+                  </Badge>
+                </div>
+
+                {/* SMTP status */}
+                <div className="flex items-center justify-between rounded-xl border bg-secondary/20 p-3">
+                  <div className="flex items-center gap-3">
+                    {summary?.integrations?.metaConfigured || summary?.integrations?.aiConfigured ? <Wifi className="h-4 w-4 text-green-500" />
+                      : <CircleDashed className="h-4 w-4 text-muted-foreground" />}
+                    <div>
+                      <p className="text-sm font-medium">SMTP</p>
+                      <p className="text-xs text-muted-foreground">Configured in environment</p>
+                    </div>
+                  </div>
+                  <Badge variant="default" className="rounded-full px-3 shrink-0 ml-2">Active</Badge>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between pt-1">
+                <p className="text-xs text-muted-foreground">
+                  {lastTokenCheck
+                    ? `Last checked: ${new Date(lastTokenCheck).toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}`
+                    : "Automatic checks run twice daily"}
+                </p>
+                <Button variant="outline" size="sm" className="gap-2" onClick={() => void checkTokensNow()} disabled={tokenCheckLoading}>
+                  {tokenCheckLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                  Check Now
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
 
           <div className="grid gap-6 xl:grid-cols-2 items-start">
             {/* Integration Configuration */}

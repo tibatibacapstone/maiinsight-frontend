@@ -21,7 +21,6 @@ import {
   Settings,
   ChevronLeft,
   ChevronRight,
-  LogOut,
   GitGraph,
   FileText,
   Target,
@@ -41,7 +40,6 @@ export type PageId =
 interface SidebarProps {
   currentPage: PageId
   onNavigate: (page: PageId) => void
-  onLogout: () => void
   userRole?: UserRole
 }
 
@@ -60,7 +58,6 @@ const navItems = [
 export function DashboardSidebar({
   currentPage,
   onNavigate,
-  onLogout,
   userRole,
 }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false)
@@ -159,30 +156,6 @@ export function DashboardSidebar({
               </>
             )}
           </Button>
-
-          {collapsed ? (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  className="h-11 w-full justify-center text-destructive hover:bg-destructive/10 hover:text-destructive"
-                  onClick={onLogout}
-                >
-                  <LogOut className="h-5 w-5" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="right">Logout</TooltipContent>
-            </Tooltip>
-          ) : (
-            <Button
-              variant="ghost"
-              className="h-11 w-full justify-start gap-3 text-destructive hover:bg-destructive/10 hover:text-destructive"
-              onClick={onLogout}
-            >
-              <LogOut className="h-5 w-5" />
-              <span>Logout</span>
-            </Button>
-          )}
         </div>
       </aside>
     </TooltipProvider>
