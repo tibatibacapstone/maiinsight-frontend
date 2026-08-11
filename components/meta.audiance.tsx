@@ -266,7 +266,7 @@ function MetaAudienceCharts({ onBack }: MetaAudienceProps) {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="text-2xl font-semibold tracking-tight text-foreground">Audience Profile</h2>
-          <p className="mt-1 text-sm text-muted-foreground">Instagram audience profile based on synced Meta Graph API data.</p>
+          <p className="mt-1 text-sm text-muted-foreground">Latest synchronized Instagram audience snapshot; month filters do not make this a historical demographic snapshot.</p>
         </div>
 
         {onBack ? (

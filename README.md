@@ -45,8 +45,22 @@ npm run lint         # ESLint
 Copy `.env.example` to `.env`:
 
 ```ini
-NEXT_PUBLIC_API_URL=http://localhost:5000/api
+NEXT_PUBLIC_API_BASE_URL=http://localhost:5000
 NEXT_PUBLIC_GOOGLE_CLIENT_ID=your-google-oauth-client-id
+```
+
+`NEXT_PUBLIC_GOOGLE_CLIENT_ID` must match the backend `GOOGLE_CLIENT_ID`. The
+frontend sends a Google ID token, which the backend verifies against that audience.
+
+`NEXT_PUBLIC_API_BASE_URL` is preferred. Existing deployments may continue using
+the backward-compatible `NEXT_PUBLIC_API_URL` variable. When both are configured,
+`NEXT_PUBLIC_API_BASE_URL` takes priority. Production builds reject missing or
+placeholder API URLs; localhost fallback is development-only. The committed
+`.env.production` intentionally contains no active backend URL assignment.
+Production deployment must inject one valid value, for example:
+
+```ini
+NEXT_PUBLIC_API_BASE_URL=https://actual-backend-domain.example
 ```
 
 See [Installation Guide](../docs/INSTALLATION-GUIDE.md) for full configuration.

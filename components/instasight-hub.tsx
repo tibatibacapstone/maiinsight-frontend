@@ -56,6 +56,11 @@ interface MetaStatusResponse {
       startedAt: string
       finishedAt?: string | null
     } | null
+    latestSuccessfulSync: {
+      status: string
+      startedAt: string
+      finishedAt?: string | null
+    } | null
     setupMessage: string | null
     suggestion: string | null
     connectionError: string | null
@@ -71,36 +76,37 @@ interface MetaDashboardResponse {
     configured: boolean
     hasData: boolean
     lastSyncedAt: string | null
+    latestSyncStatus: string | null
     summary: {
-  totalViews: number
-  viewsChangePct: number
-  viewsFromFollowers: number
-viewsFromFollowersPct: number
+  totalViews: number | null
+  viewsChangePct: number | null
+viewsFromFollowers: number | null
+viewsFromFollowersPct: number | null
 viewsFromFollowersChangePct: number
 
-viewsFromNonFollowers: number
-viewsFromNonFollowersPct: number
+viewsFromNonFollowers: number | null
+viewsFromNonFollowersPct: number | null
 viewsFromNonFollowersChangePct: number
 
-  totalReach: number
-  totalProfileViews: number
-  profileViewsChangePct: number
-  totalInteractions: number
+  totalReach: number | null
+  totalProfileViews: number | null
+  profileViewsChangePct: number | null
+  totalInteractions: number | null
   totalLikes: number
   totalComments: number
   totalShares: number
   totalSaved: number
- engagementRate: number
- engagementRateChangePct: number
+ engagementRate: number | null
+ engagementRateChangePct: number | null
 
 shareRate: number
 saveRate: number
 
-profileVisitRate: number
-profileVisitRateChangePct: number
+profileVisitRate: number | null
+profileVisitRateChangePct: number | null
  averageInteractionsPerContent: number
 
-interactionsChangePct: number
+interactionsChangePct: number | null
 
 interactionsFromFollowers: number
 interactionsFromFollowersChangePct: number
@@ -114,51 +120,73 @@ interactionsFromNonFollowersPct: number
   contentCount: number
   topContentType: string
 
-  reachChangePct: number
-reachFromFollowers: number
-reachFromFollowersPct: number
+  reachChangePct: number | null
+reachFromFollowers: number | null
+reachFromFollowersPct: number | null
 reachFromFollowersChangePct: number
 
-reachFromNonFollowers: number
-reachFromNonFollowersPct: number
+reachFromNonFollowers: number | null
+reachFromNonFollowersPct: number | null
 reachFromNonFollowersChangePct: number
 
   followersCount: number | null
   followersChangePct: number
+  followerSnapshotDate: string | null
+  followerSnapshotSource: "selected_period" | "latest_fallback" | "unavailable"
+  hasSelectedPeriodFollowerSnapshot: boolean
 
-newFollowsCount: number
-newFollowsChangePct: number
+newFollowsCount: number | null
+newFollowsChangePct: number | null
 
-  unfollowsCount: number
-  unfollowsChangePct: number
+  unfollowsCount: number | null
+  unfollowsChangePct: number | null
   followsCount: number
   instagramMediaCount: number
   instagramUsername: string | null
+  availability: {
+    views: boolean
+    viewsBreakdown: boolean
+    reach: boolean
+    reachBreakdown: boolean
+    profileViews: boolean
+    follows: boolean
+    unfollows: boolean
+    followersSnapshot: boolean
+  }
+  metricCoverage: Record<string, {
+    source: string
+    attemptedMonths: number
+    availableMonths: number
+    totalMonths: number
+    complete: boolean
+    availability: "available" | "partial" | "unavailable"
+    aggregation: string
+  }>
 }
     trend: Array<{
       date: string
-      reach: number
-      views: number
-      interactions: number
-      profileViews: number
-      engagementRate?: number
+      reach: number | null
+      views: number | null
+      interactions: number | null
+      profileViews: number | null
+      engagementRate?: number | null
     }>
     monthlyViewsTrend: Array<{
   month: string
 
-  views: number
+  views: number | null
   viewsFromFollowers: number
   viewsFromNonFollowers: number
 
-  reach: number
+  reach: number | null
   reachFromFollowers: number
   reachFromNonFollowers: number
 
-  interactions: number
+  interactions: number | null
   interactionsFromFollowers: number
   interactionsFromNonFollowers: number
 
-  profileViews: number
+  profileViews: number | null
 
   contentCount: number
 }>
@@ -188,16 +216,16 @@ newFollowsChangePct: number
   mediaUrl: string | null
   permalink: string | null
   postedAt: string | null
-  views: number
-  reach: number
+  views: number | null
+  reach: number | null
   likes: number
   comments: number
   interactions: number
-  shares: number
-  saved: number
-  engagementRate: number
-  shareRate: number
-  saveRate: number
+  shares: number | null
+  saved: number | null
+  engagementRate: number | null
+  shareRate: number | null
+  saveRate: number | null
 }>
 contentList: Array<{
   id: string
@@ -208,16 +236,16 @@ contentList: Array<{
   mediaUrl: string | null
   permalink: string | null
   postedAt: string | null
-  views: number
-  reach: number
+  views: number | null
+  reach: number | null
   likes: number
   comments: number
   interactions: number
-  shares: number
-  saved: number
-  engagementRate: number
-  shareRate: number
-  saveRate: number
+  shares: number | null
+  saved: number | null
+  engagementRate: number | null
+  shareRate: number | null
+  saveRate: number | null
 }>
 
 contentListTotal: number
@@ -225,7 +253,14 @@ contentListTotal: number
 }
 
 const formatNumber = (value: number) => value.toLocaleString("en-US")
-const formatPercent = (value: number) => `${value.toFixed(1)}%`
+const formatPercent = (value: number | null | undefined) =>
+  typeof value === "number" && Number.isFinite(value)
+    ? `${value.toFixed(1)}%`
+    : "Not available"
+const formatAvailableNumber = (value: number | null | undefined) =>
+  value == null ? "Not available" : formatNumber(value)
+const formatAvailablePercent = (value: number | null | undefined) =>
+  formatPercent(value)
 const formatDistributionPercent = (value: number, total: number) => {
   if (!total || total <= 0) return "0.0%"
 
@@ -304,6 +339,30 @@ const formatDateTime = (value?: string | null) => {
     minute: "2-digit",
   }).format(timestamp)
 }
+
+const CoverageNote = ({
+  coverage,
+}: {
+  coverage?: { availableMonths: number; totalMonths: number; complete: boolean }
+}) => {
+  if (!coverage || coverage.complete || coverage.totalMonths <= 1) return null
+  return (
+    <p className="mt-2 text-xs text-amber-700">
+      Partial history: {coverage.availableMonths} of {coverage.totalMonths} months available.
+    </p>
+  )
+}
+const formatSnapshotDate = (value?: string | null) => {
+  if (!value) return "Not available"
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return "Not available"
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(date)
+}
 const MONTH_OPTIONS = [
   { value: "all", label: "All Month" },
   { value: "1", label: "January" },
@@ -368,45 +427,42 @@ const YEAR_OPTIONS = Array.from({ length: 5 }, (_, index) =>
   const [isLoading, setIsLoading] = useState(true)
   const [isSyncing, setIsSyncing] = useState(false)
   const [error, setError] = useState<{ message: string; suggestion?: string | null; technical?: string | null } | null>(null)
+  const [syncWarning, setSyncWarning] = useState<string | null>(null)
 
 const [contentPage, setContentPage] = useState(1)
 const [contentSortBy, setContentSortBy] = useState("latest")
 const [contentSearchKeyword, setContentSearchKeyword] = useState("")
 const CONTENT_PAGE_SIZE = 10
 
-const loadMetaDashboard = useCallback(async () => {
+const loadMetaStatus = useCallback(async () => {
   try {
-    setIsLoading(true)
-    setError(null)
-
-    const statusResponse = await fetch(getApiUrl("/meta/status"), {
+    const response = await fetch(getApiUrl("/meta/status"), {
       method: "GET",
       cache: "no-store",
       headers: getAuthHeaders(),
     })
+    const result: MetaStatusResponse | null = await response.json().catch(() => null)
 
-    const statusResult: MetaStatusResponse | null = await statusResponse.json().catch(() => null)
-
-    if (!statusResponse.ok || !statusResult?.success || !statusResult.data) {
-      throw new Error(statusResult?.message || "InstaSight status could not be loaded.")
+    if (!response.ok || !result?.success || !result.data) {
+      throw new Error(result?.message || "InstaSight status could not be loaded.")
     }
 
-    setStatus(statusResult.data)
+    setStatus(result.data)
+  } catch {
+    setStatus(null)
+  }
+}, [])
 
-    if (!statusResult.data.configured) {
-      setDashboard(null)
-      return
-    }
+const loadMetaDashboard = useCallback(async () => {
+  try {
+    setIsLoading(true)
+    setError(null)
 
     const query = new URLSearchParams()
 const monthRange = getMonthDateRange(selectedYear, selectedMonth)
 
 query.set("since", monthRange.startDate)
 query.set("until", monthRange.endDate)
-
-if (contentLabelFilter && contentLabelFilter !== "all") {
-  query.set("contentLabel", contentLabelFilter)
-}
 
     const dashboardResponse = await fetch(
       getApiUrl(`/meta/dashboard?${query.toString()}`),
@@ -421,21 +477,15 @@ if (contentLabelFilter && contentLabelFilter !== "all") {
 
     if (!dashboardResponse.ok || !dashboardResult?.success || !dashboardResult.data) {
       setDashboard(null)
-      const isMetaConfigured = statusResult?.data?.configured
       setError({
         message: dashboardResult?.message || "InstaSight data could not be loaded.",
-        suggestion: dashboardResult?.suggestion || (
-          isMetaConfigured
-            ? "The Meta API credentials are configured but data could not be loaded. Please try syncing again or contact IT Support."
-            : "Please check the Meta connection and try again."
-        ),
+        suggestion: dashboardResult?.suggestion || "Stored InstaSight data could not be loaded. Please try again or contact IT Support.",
       })
       return
     }
 
     setDashboard(dashboardResult.data)
   } catch (loadError) {
-    setStatus(null)
     setDashboard(null)
     setError({
       message: loadError instanceof Error ? loadError.message : "InstaSight could not be loaded.",
@@ -444,19 +494,21 @@ if (contentLabelFilter && contentLabelFilter !== "all") {
   } finally {
     setIsLoading(false)
   }
-}, [selectedMonth, selectedYear, contentLabelFilter])
+}, [selectedMonth, selectedYear])
 
 useEffect(() => {
   void loadMetaDashboard()
 }, [loadMetaDashboard])
 
+useEffect(() => {
+  void loadMetaStatus()
+}, [loadMetaStatus])
+
   const handleSync = async () => {
     try {
       setIsSyncing(true)
       setError(null)
-
-      const today = new Date()
-const syncUntil = getLocalDateInputValue(today)
+      setSyncWarning(null)
 
 const response = await fetch(getApiUrl("/meta/sync"), {
   method: "POST",
@@ -464,39 +516,30 @@ const response = await fetch(getApiUrl("/meta/sync"), {
     ...getAuthHeaders(),
     "Content-Type": "application/json",
   },
-  body: JSON.stringify({
-    since: "2025-01-01",
-    until: syncUntil,
-  }),
+  body: JSON.stringify({}),
 })
 
       const result = await response.json().catch(() => null)
       if (!response.ok || !result?.success) {
         const isMetaConfigured = status?.configured
-        setError({
-          message: result?.message || "InstaSight could not sync Meta data.",
-          suggestion: result?.suggestion || (
-            isMetaConfigured
-              ? "The Meta API returned an error. Please verify the access token is valid and not expired, then try again."
-              : "Please check the Meta connection and try again."
-          ),
-          technical: result?.technicalMessage || null,
-        })
-        await loadMetaDashboard()
+        await Promise.all([loadMetaDashboard(), loadMetaStatus()])
+        setSyncWarning(
+          isMetaConfigured
+            ? "Meta synchronization failed. Showing data from the last successful sync."
+            : "Meta synchronization failed because the integration is not configured."
+        )
         return
       }
 
-      await loadMetaDashboard()
-    } catch (syncError) {
+      await Promise.all([loadMetaDashboard(), loadMetaStatus()])
+    } catch {
       const isMetaConfigured = status?.configured
-      setError({
-        message: "InstaSight could not sync Meta data.",
-        suggestion: isMetaConfigured
-          ? "An unexpected error occurred while syncing. The Meta API access token may be invalid or expired. Please try again."
-          : "Please check the Meta connection and try again.",
-        technical: syncError instanceof Error ? syncError.message : null,
-      })
-      await loadMetaDashboard()
+      await Promise.all([loadMetaDashboard(), loadMetaStatus()])
+      setSyncWarning(
+        isMetaConfigured
+          ? "Meta synchronization failed. Showing data from the last successful sync."
+          : "Meta synchronization failed because the integration is not configured."
+      )
     } finally {
       setIsSyncing(false)
     }
@@ -530,6 +573,13 @@ const sortedContentList = useMemo(() => {
   const keyword = contentSearchKeyword.trim().toLowerCase()
 
   const rows = contentList.filter((item) => {
+    if (
+      contentLabelFilter !== "all" &&
+      item.contentLabel !== contentLabelFilter
+    ) {
+      return false
+    }
+
     if (!keyword) return true
 
     const caption = String(item.caption || "").toLowerCase()
@@ -561,7 +611,7 @@ const sortedContentList = useMemo(() => {
       new Date(b.postedAt || 0).getTime() -
       new Date(a.postedAt || 0).getTime()
   )
-}, [contentList, contentSortBy, contentSearchKeyword])
+}, [contentList, contentLabelFilter, contentSortBy, contentSearchKeyword])
 
 const totalContentPages = Math.max(
   1,
@@ -599,7 +649,7 @@ return (
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">InstaSight</h1>
-          <p className="text-sm text-muted-foreground">Instagram performance insights powered by live Meta Graph API data.</p>
+          <p className="text-sm text-muted-foreground">Instagram performance from synchronized MaiinSight data.</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <Button variant="outline" className="gap-2" onClick={onViewAudience}>
@@ -661,41 +711,39 @@ return (
   </Select>
 </div>
 
-      <div className="w-[260px]">
-  <Select value={contentLabelFilter} onValueChange={setContentLabelFilter}>
-    <SelectTrigger className="h-10 w-full rounded-xl border bg-secondary/60 px-4 shadow-sm">
-      <div className="flex w-full items-center gap-3">
-        <span className="text-[0.6rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-          Content Type
-        </span>
-        <SelectValue placeholder="Select content type" />
-      </div>
-    </SelectTrigger>
-
-    <SelectContent className="w-[260px] rounded-xl border bg-background shadow-lg">
-      <SelectItem value="all">All Type</SelectItem>
-      <SelectItem value="content_promotion">Promotion</SelectItem>
-      <SelectItem value="content_advertisement">Advertisement</SelectItem>
-    </SelectContent>
-  </Select>
-</div>
     </div>
   </CardContent>
 </Card>
+      {hasRealData && (syncWarning || status?.connectionState === "error" || status?.configured === false) ? (
+        <BusinessErrorAlert
+          title="Meta synchronization warning"
+          message={syncWarning || "Meta synchronization is currently unavailable or not configured. Showing stored InstaSight data."}
+          suggestion={`Last successfully synced: ${dashboard?.lastSyncedAt ? new Date(dashboard.lastSyncedAt).toLocaleString() : "Not available"}`}
+          technicalDetails={canViewTechnicalDetails ? status?.connectionError : null}
+          showTechnicalDetails={canViewTechnicalDetails}
+        />
+      ) : null}
       {isLoading ? (
         <StateCard state="loading" title="Loading InstaSight data..." minHeight="min-h-[240px]" />
-      ) : !status?.configured ? (
+      ) : status && !status.configured && !hasRealData ? (
         <StateCard
           state="warning"
           title="Meta API is not connected yet."
           description={status?.suggestion || "Please ask IT Support to configure Meta credentials in Settings or environment variables."}
           minHeight="min-h-[220px]"
         />
-      ) : status?.connectionState === "error" && status?.connectionError ? (
+      ) : status?.connectionState === "error" && status?.connectionError && !hasRealData ? (
         <StateCard
           state="error"
           title="Meta connection error"
           description={status.connectionError}
+          minHeight="min-h-[220px]"
+        />
+      ) : syncWarning && !hasRealData ? (
+        <StateCard
+          state="error"
+          title="Meta synchronization failed"
+          description="No synchronized Instagram data is available yet. Retry after the Meta connection is restored."
           minHeight="min-h-[220px]"
         />
       ) : error ? (
@@ -789,7 +837,7 @@ return (
 
   <Card className="border-border bg-card shadow-sm">
   <CardHeader>
-    <CardTitleTooltip title="Total Followers" tooltip="Followers and unfollows from Meta" className="text-sm font-medium text-muted-foreground" />
+    <CardTitleTooltip title="Followers Snapshot" tooltip="A stored follower-count snapshot. This value is never estimated from follows and unfollows." className="text-sm font-medium text-muted-foreground" />
   </CardHeader>
 
   <CardContent className="space-y-3">
@@ -798,14 +846,16 @@ return (
         <span>Followers</span>
       </div>
 
-      <div className="flex items-end gap-3">
-  <p className="text-[1.75rem] font-semibold leading-none tracking-tight">
-    {dashboard?.summary.followersCount !== null &&
-    dashboard?.summary.followersCount !== undefined
-      ? formatNumber(dashboard.summary.followersCount)
-      : "-"}
-  </p>
-</div>
+      <div>
+        <p className="text-[1.75rem] font-semibold leading-none tracking-tight">
+          {formatAvailableNumber(dashboard?.summary.followersCount)}
+        </p>
+        <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+          {dashboard?.summary.followerSnapshotDate
+            ? `Latest snapshot: ${formatSnapshotDate(dashboard.summary.followerSnapshotDate)}`
+            : "No snapshot available"}
+        </p>
+      </div>
     </div>
 
     <div className="grid grid-cols-2 gap-3 pt-1">
@@ -816,12 +866,14 @@ return (
 
     <div className="flex items-center gap-1.5">
       <span className="text-sm font-semibold leading-none">
-        {formatNumber(dashboard?.summary.newFollowsCount || 0)}
+        {formatAvailableNumber(dashboard?.summary.newFollowsCount)}
       </span>
 
-      <ChangeIndicator
-        value={dashboard?.summary.newFollowsChangePct || 0}
-      />
+      {dashboard?.summary.newFollowsChangePct != null ? (
+        <ChangeIndicator value={dashboard.summary.newFollowsChangePct} />
+      ) : (
+        <span className="text-xs text-muted-foreground">Not available</span>
+      )}
     </div>
   </div>
 
@@ -832,13 +884,14 @@ return (
 
     <div className="flex items-center gap-1.5">
       <span className="text-sm font-semibold leading-none">
-        {formatNumber(dashboard?.summary.unfollowsCount || 0)}
+        {formatAvailableNumber(dashboard?.summary.unfollowsCount)}
       </span>
 
-      <ChangeIndicator
-        value={dashboard?.summary.unfollowsChangePct || 0}
-        isNegativeGood
-      />
+      {dashboard?.summary.unfollowsChangePct != null ? (
+        <ChangeIndicator value={dashboard.summary.unfollowsChangePct} isNegativeGood />
+      ) : (
+        <span className="text-xs text-muted-foreground">Not available</span>
+      )}
     </div>
   </div>
 </div>
@@ -847,7 +900,7 @@ return (
 
   <Card className="border-border bg-card shadow-sm">
   <CardHeader>
-    <CardTitleTooltip title="Total Views" tooltip="Views breakdown from Meta" className="text-sm font-medium text-muted-foreground" />
+    <CardTitleTooltip title="Total Views" tooltip="Historical Instagram account views during the selected calendar period." className="text-sm font-medium text-muted-foreground" />
   </CardHeader>
 
   <CardContent className="space-y-3">
@@ -858,11 +911,12 @@ return (
 
       <div className="flex items-end gap-3">
         <p className="text-[1.75rem] font-semibold leading-none tracking-tight">
-          {formatNumber(dashboard?.summary.totalViews || 0)}
+          {formatAvailableNumber(dashboard?.summary.totalViews)}
         </p>
 
-        <ChangeIndicator value={dashboard?.summary.viewsChangePct || 0} />
+        {dashboard?.summary.viewsChangePct != null ? <ChangeIndicator value={dashboard.summary.viewsChangePct} /> : null}
       </div>
+      <CoverageNote coverage={dashboard?.summary.metricCoverage?.views} />
     </div>
 
     <div className="grid grid-cols-2 gap-3 pt-1">
@@ -873,13 +927,12 @@ return (
 
     <div className="flex items-center gap-1.5">
       <span className="text-sm font-semibold leading-none">
-        {formatNumber(dashboard?.summary.viewsFromFollowers || 0)}
+        {formatAvailableNumber(dashboard?.summary.viewsFromFollowers)}
       </span>
 
-      <DistributionPercent
-  value={dashboard?.summary.viewsFromFollowers || 0}
-  total={dashboard?.summary.totalViews || 0}
-/>
+      {dashboard?.summary.viewsFromFollowers != null && dashboard.summary.totalViews != null ? (
+        <DistributionPercent value={dashboard.summary.viewsFromFollowers} total={dashboard.summary.totalViews} />
+      ) : null}
     </div>
   </div>
 
@@ -890,13 +943,12 @@ return (
 
     <div className="flex items-center gap-1.5">
       <span className="text-sm font-semibold leading-none">
-        {formatNumber(dashboard?.summary.viewsFromNonFollowers || 0)}
+        {formatAvailableNumber(dashboard?.summary.viewsFromNonFollowers)}
       </span>
 
-      <DistributionPercent
-  value={dashboard?.summary.viewsFromNonFollowers || 0}
-  total={dashboard?.summary.totalViews || 0}
-/>
+      {dashboard?.summary.viewsFromNonFollowers != null && dashboard.summary.totalViews != null ? (
+        <DistributionPercent value={dashboard.summary.viewsFromNonFollowers} total={dashboard.summary.totalViews} />
+      ) : null}
     </div>
   </div>
 </div>
@@ -905,7 +957,7 @@ return (
 
   <Card className="border-border bg-card shadow-sm">
   <CardHeader>
-    <CardTitleTooltip title="Total Reach" tooltip="Reach breakdown from Meta" className="text-sm font-medium text-muted-foreground" />
+    <CardTitleTooltip title="Total Reach" tooltip="Historical Instagram account reach during the selected calendar period; yearly values sum monthly reach and are not annual unique reach." className="text-sm font-medium text-muted-foreground" />
   </CardHeader>
 
   <CardContent className="space-y-3">
@@ -916,11 +968,12 @@ return (
 
       <div className="flex items-end gap-3">
         <p className="text-[1.75rem] font-semibold leading-none tracking-tight">
-          {formatNumber(dashboard?.summary.totalReach || 0)}
+          {formatAvailableNumber(dashboard?.summary.totalReach)}
         </p>
 
-        <ChangeIndicator value={dashboard?.summary.reachChangePct || 0} />
+        {dashboard?.summary.reachChangePct != null ? <ChangeIndicator value={dashboard.summary.reachChangePct} /> : null}
       </div>
+      <CoverageNote coverage={dashboard?.summary.metricCoverage?.reach} />
     </div>
 
     <div className="grid grid-cols-2 gap-3 pt-1">
@@ -931,13 +984,12 @@ return (
 
         <div className="flex items-center gap-1.5">
           <span className="text-sm font-semibold leading-none">
-             {formatNumber(dashboard?.summary.reachFromFollowers || 0)}
+             {formatAvailableNumber(dashboard?.summary.reachFromFollowers)}
 </span>
 
-          <DistributionPercent
-  value={dashboard?.summary.reachFromFollowers || 0}
-  total={dashboard?.summary.totalReach || 0}
-/>
+          {dashboard?.summary.reachFromFollowers != null && dashboard.summary.totalReach != null ? (
+            <DistributionPercent value={dashboard.summary.reachFromFollowers} total={dashboard.summary.totalReach} />
+          ) : null}
         </div>
       </div>
 
@@ -948,13 +1000,12 @@ return (
 
         <div className="flex items-center gap-1.5">
           <span className="text-sm font-semibold leading-none">
-            {formatNumber(dashboard?.summary.reachFromNonFollowers || 0)}
+            {formatAvailableNumber(dashboard?.summary.reachFromNonFollowers)}
           </span>
 
-          <DistributionPercent
-  value={dashboard?.summary.reachFromNonFollowers || 0}
-  total={dashboard?.summary.totalReach || 0}
-/>
+          {dashboard?.summary.reachFromNonFollowers != null && dashboard.summary.totalReach != null ? (
+            <DistributionPercent value={dashboard.summary.reachFromNonFollowers} total={dashboard.summary.totalReach} />
+          ) : null}
         </div>
       </div>
     </div>
@@ -962,7 +1013,7 @@ return (
 </Card>
 <Card className="border-border bg-card shadow-sm">
   <CardHeader>
-    <CardTitleTooltip title="Interactions" tooltip="Total interaction breakdown from Meta" className="text-sm font-medium text-muted-foreground" />
+    <CardTitleTooltip title="Interactions" tooltip="Historical Instagram account interactions during the selected calendar period." className="text-sm font-medium text-muted-foreground" />
   </CardHeader>
 
   <CardContent className="space-y-3">
@@ -970,11 +1021,12 @@ return (
   
       <div className="flex items-end gap-3">
         <p className="text-[1.75rem] font-semibold leading-none tracking-tight">
-          {formatNumber(dashboard?.summary.totalInteractions || 0)}
+          {formatAvailableNumber(dashboard?.summary.totalInteractions)}
         </p>
 
-        <ChangeIndicator value={dashboard?.summary.interactionsChangePct || 0} />
+        {dashboard?.summary.interactionsChangePct != null ? <ChangeIndicator value={dashboard.summary.interactionsChangePct} /> : null}
       </div>
+      <CoverageNote coverage={dashboard?.summary.metricCoverage?.total_interactions} />
     </div>
   </CardContent>
 </Card>
@@ -987,13 +1039,12 @@ return (
   <CardContent>
     <div className="flex items-end gap-3">
       <p className="text-[1.75rem] font-semibold leading-none tracking-tight">
-        {formatNumber(dashboard?.summary.totalProfileViews || 0)}
+        {formatAvailableNumber(dashboard?.summary.totalProfileViews)}
       </p>
 
-      <ChangeIndicator
-        value={dashboard?.summary.profileViewsChangePct || 0}
-      />
+      {dashboard?.summary.profileViewsChangePct != null ? <ChangeIndicator value={dashboard.summary.profileViewsChangePct} /> : null}
     </div>
+    <CoverageNote coverage={dashboard?.summary.metricCoverage?.profile_views} />
   </CardContent>
 </Card>
   {/* Row 2: Avg Interactions - Engagement Rate - Conversion Rate - Save Rate */}
@@ -1006,31 +1057,29 @@ return (
   <CardContent>
     <div className="flex items-end gap-3">
       <p className="text-[1.75rem] font-semibold leading-none tracking-tight">
-        {formatPercent(dashboard?.summary.engagementRate || 0)}
+        {formatAvailablePercent(dashboard?.summary.engagementRate)}
       </p>
 
-      <ChangeIndicator
-        value={dashboard?.summary.engagementRateChangePct || 0}
-      />
+      {dashboard?.summary.engagementRateChangePct != null ? <ChangeIndicator value={dashboard.summary.engagementRateChangePct} /> : null}
     </div>
+    <CoverageNote coverage={dashboard?.summary.metricCoverage?.engagement_rate} />
   </CardContent>
 </Card>
 
   <Card className="border-border bg-card shadow-sm">
   <CardHeader>
-    <CardTitleTooltip title="Conversion Rate" tooltip="Profile views divided by reach" className="text-sm font-medium text-muted-foreground" />
+    <CardTitleTooltip title="Profile Visit Rate" tooltip="Profile views divided by reach; this is not a booking or transaction conversion rate." className="text-sm font-medium text-muted-foreground" />
   </CardHeader>
 
   <CardContent>
     <div className="flex items-end gap-3">
       <p className="text-[1.75rem] font-semibold leading-none tracking-tight">
-        {formatPercent(dashboard?.summary.profileVisitRate || 0)}
+        {formatAvailablePercent(dashboard?.summary.profileVisitRate)}
       </p>
 
-      <ChangeIndicator
-        value={dashboard?.summary.profileVisitRateChangePct || 0}
-      />
+      {dashboard?.summary.profileVisitRateChangePct != null ? <ChangeIndicator value={dashboard.summary.profileVisitRateChangePct} /> : null}
     </div>
+    <CoverageNote coverage={dashboard?.summary.metricCoverage?.profile_visit_rate} />
   </CardContent>
 </Card>
 
@@ -1040,7 +1089,7 @@ return (
           <div className="grid gap-6 xl:grid-cols-2">
             <Card className="border-border bg-card shadow-sm">
               <CardHeader>
-                <CardTitleTooltip title="Meta Metrics Trend" tooltip="Reach, views, and interactions from synced Meta insight data." />
+                <CardTitleTooltip title="Meta Metrics Trend" tooltip="Historical Instagram account activity during the selected calendar period. Missing Meta metrics remain unavailable." />
               </CardHeader>
               <CardContent>
                 <div className="h-[300px]">
@@ -1058,7 +1107,7 @@ return (
                             interactions: "Interactions",
                             profileViews: "Profile Views",
                           }
-                          return [formatNumber(Number(value || 0)), labels[String(name)] || String(name)]
+                          return [value == null ? "Not available" : formatNumber(Number(value)), labels[String(name)] || String(name)]
                         }}
                       />
                       <Area type="monotone" dataKey="reach" name="Reach" stroke="var(--chart-1)" fill="var(--chart-1)" fillOpacity={0.14} />
@@ -1073,9 +1122,12 @@ return (
 
             <Card className="border-border bg-card shadow-sm">
               <CardHeader>
-                <CardTitleTooltip title="Top Content by Views" tooltip="Content ranking from the latest Meta sync." />
+                <CardTitleTooltip title="Top Content by Views" tooltip="Selected-period content ranked by its latest stored view snapshot, not views earned only within the posting month." />
               </CardHeader>
               <CardContent>
+                {!topContent.length ? (
+                  <StateCard state="empty" title="Views not available" description="Meta did not return a supported view metric for content in this period." minHeight="min-h-[260px]" />
+                ) : (
                 <div className="h-[300px]">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={topContent.slice(0, 6)} layout="vertical" margin={{ left: 12, right: 8 }}>
@@ -1087,6 +1139,7 @@ return (
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
+                )}
               </CardContent>
             </Card>
           </div>
@@ -1124,15 +1177,15 @@ return (
                 </div>
                 <div className="flex items-center justify-between border-b pb-3">
                   <span className="text-muted-foreground">Profile visits from reach</span>
-                  <span className="font-semibold text-foreground">{formatPercent(dashboard?.summary.profileVisitRate || 0)}</span>
+                  <span className="font-semibold text-foreground">{formatAvailablePercent(dashboard?.summary.profileVisitRate)}</span>
                 </div>
                 <div className="flex items-center justify-between border-b pb-3">
                   <span className="text-muted-foreground">Save intent rate</span>
-                  <span className="font-semibold text-foreground">{formatPercent(dashboard?.summary.saveRate || 0)}</span>
+                  <span className="font-semibold text-foreground">{formatAvailablePercent(dashboard?.summary.saveRate)}</span>
                 </div>
                 <div className="flex items-center justify-between border-b pb-3">
                   <span className="text-muted-foreground">Share amplification rate</span>
-                  <span className="font-semibold text-foreground">{formatPercent(dashboard?.summary.shareRate || 0)}</span>
+                  <span className="font-semibold text-foreground">{formatAvailablePercent(dashboard?.summary.shareRate)}</span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-muted-foreground">Synced content analyzed</span>
@@ -1163,22 +1216,44 @@ return (
         />
       </div>
 
-      <div className="flex h-10 items-center gap-3 rounded-xl border bg-secondary/60 px-4 shadow-sm">
-        <span className="text-[0.6rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-          Sort By
-        </span>
+      <div className="w-[220px]">
+        <Select value={contentLabelFilter} onValueChange={setContentLabelFilter}>
+          <SelectTrigger className="h-10 w-full rounded-xl border bg-secondary/60 px-4 shadow-sm">
+            <div className="flex w-full items-center gap-3">
+              <span className="text-[0.6rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                Content Type
+              </span>
+              <SelectValue placeholder="All Type" />
+            </div>
+          </SelectTrigger>
 
-        <select
-          value={contentSortBy}
-          onChange={(event) => setContentSortBy(event.target.value)}
-          className="bg-transparent text-sm font-medium outline-none"
-        >
-          <option value="latest">Latest Content</option>
-          <option value="top_views">Top Views</option>
-          <option value="top_reach">Top Reach</option>
-          <option value="top_interactions">Top Interactions</option>
-          <option value="top_engagement">Top Engagement</option>
-        </select>
+          <SelectContent className="w-[220px] rounded-xl border bg-background shadow-lg">
+            <SelectItem value="all">All Type</SelectItem>
+            <SelectItem value="content_promotion">Promotion</SelectItem>
+            <SelectItem value="content_advertisement">Advertisement</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div className="w-[210px]">
+        <Select value={contentSortBy} onValueChange={setContentSortBy}>
+          <SelectTrigger className="h-10 w-full rounded-xl border bg-secondary/60 px-4 shadow-sm">
+            <div className="flex w-full items-center gap-3">
+              <span className="text-[0.6rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                Sort By
+              </span>
+              <SelectValue placeholder="Latest Content" />
+            </div>
+          </SelectTrigger>
+
+          <SelectContent className="w-[210px] rounded-xl border bg-background shadow-lg">
+            <SelectItem value="latest">Latest Content</SelectItem>
+            <SelectItem value="top_views">Top Views</SelectItem>
+            <SelectItem value="top_reach">Top Reach</SelectItem>
+            <SelectItem value="top_interactions">Top Interactions</SelectItem>
+            <SelectItem value="top_engagement">Top Engagement</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
     </div>
   </div>
@@ -1251,11 +1326,11 @@ return (
   </td>
 
   <td className="px-4 py-4 text-right align-top">
-    {formatNumber(item.views)}
+    {formatAvailableNumber(item.views)}
   </td>
 
   <td className="px-4 py-4 text-right align-top">
-    {formatNumber(item.reach)}
+    {formatAvailableNumber(item.reach)}
   </td>
 
   <td className="px-4 py-4 text-right align-top">
@@ -1267,15 +1342,15 @@ return (
   </td>
 
   <td className="px-4 py-4 text-right align-top">
-    {formatNumber(item.saved)}
+    {formatAvailableNumber(item.saved)}
   </td>
 
   <td className="px-4 py-4 text-right align-top">
-    {formatNumber(item.shares)}
+    {formatAvailableNumber(item.shares)}
   </td>
 
   <td className="px-4 py-4 text-right align-top">
-    {formatPercent(item.engagementRate)}
+    {formatAvailablePercent(item.engagementRate)}
   </td>
 </tr>
     ))

@@ -51,6 +51,18 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { getApiUrl } from "@/lib/api"
+import {
+  buildMetaComparisonInsight,
+  finiteMetric,
+  formatMetaNumber,
+  formatMetaPercent,
+  type NullableMetric,
+} from "@/lib/meta-metric-formatters"
+import {
+  buildPeriodSearchParams,
+  getBangkokCalendarDate,
+  resolvePeriodDateRange,
+} from "@/lib/period-filter"
 import { getAuthHeaders, getStoredRole } from "@/lib/roles"
 import {
   CUSTOMER_SEGMENT_COLORS,
@@ -76,6 +88,7 @@ interface OverviewKpiData {
 }
 
 interface OccupancyTrendPoint {
+  key?: string
   label: string
   bookedSessions: number
   availableSessions: number
@@ -159,10 +172,10 @@ interface PlaytimeData {
 
 interface MetaTrendPoint {
   date: string
-  reach: number
-  views: number
-  interactions: number
-  engagementRate?: number
+  reach: NullableMetric
+  views: NullableMetric
+  interactions: NullableMetric
+  engagementRate?: NullableMetric
 }
 
 interface MetaDashboardData {
@@ -170,11 +183,11 @@ interface MetaDashboardData {
   hasData: boolean
   lastSyncedAt: string | null
   summary: {
-    totalViews: number
-    totalReach: number
-    totalInteractions: number
+    totalViews: NullableMetric
+    totalReach: NullableMetric
+    totalInteractions: NullableMetric
     totalShares: number
-    engagementRate: number
+    engagementRate: NullableMetric
     shareRate: number
   }
   trend: MetaTrendPoint[]
@@ -196,6 +209,68 @@ interface BusinessInsightState {
   generatedAt: string | null
   providerLabel: string | null
   strategy: StrategyPayload
+}
+const formatOccupancyXAxisLabel = (
+  value: string,
+  activePeriod: "MTD" | "YTD" | null
+) => {
+  if (!value) return ""
+
+  // YTD monthly key, for example "2024-02"
+  if (activePeriod === "YTD" && /^\d{4}-\d{2}$/.test(value)) {
+    const [year, month] = value.split("-").map(Number)
+
+    return new Intl.DateTimeFormat("en-US", {
+      month: "short",
+    }).format(new Date(year, month - 1, 1))
+  }
+
+  // MTD daily key, for example "2024-02-01"
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    const [year, month, day] = value.split("-").map(Number)
+
+    return new Intl.DateTimeFormat("en-US", {
+      month: "short",
+      day: "numeric",
+    }).format(new Date(year, month - 1, day))
+  }
+
+  return value
+}
+
+const getDatePartsFromKey = (value?: string) => {
+  if (!value) return null
+
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+
+  if (!match) return null
+
+  return {
+    year: Number(match[1]),
+    month: Number(match[2]),
+    day: Number(match[3]),
+  }
+}
+
+const getLastDayOfMonth = (year: number, month: number) =>
+  new Date(year, month, 0).getDate()
+
+const shouldShowMtdTick = (value?: string) => {
+  const parts = getDatePartsFromKey(value)
+
+  if (!parts) return false
+
+  const lastDay = getLastDayOfMonth(parts.year, parts.month)
+
+  return (
+    parts.day === 1 ||
+    parts.day === 5 ||
+    parts.day === 10 ||
+    parts.day === 15 ||
+    parts.day === 20 ||
+    parts.day === 25 ||
+    parts.day === lastDay
+  )
 }
 
 const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
@@ -228,12 +303,41 @@ const playtimeLabelMap: Record<string, string> = {
 }
 const bookingTypeLabelMap: Record<string, string> = {
   membership: "Membership",
+  non_membersership: "Non-Membership",
   non_membership: "Non-Membership",
   internal: "Internal",
   blocked: "Internal",
   regular_booking: "Membership",
-  member_internal_booking: "Non Membership",
+  member_internal_booking: "Non-Membership",
   other: "Other",
+}
+
+const bookingTypeColorMap: Record<string, string> = {
+  membership: "var(--chart-1)",
+  regular_booking: "var(--chart-1)",
+
+  non_membership: "var(--chart-2)",
+  non_membersership: "var(--chart-2)",
+  member_internal_booking: "var(--chart-2)",
+
+  internal: "var(--chart-3)",
+  blocked: "var(--chart-3)",
+
+  other: "var(--chart-4)",
+}
+
+const bookingTypeOrder: Record<string, number> = {
+  membership: 0,
+  regular_booking: 0,
+
+  non_membership: 1,
+  non_membersership: 1,
+  member_internal_booking: 1,
+
+  internal: 2,
+  blocked: 2,
+
+  other: 3,
 }
 
 const getStoredToken = () => {
@@ -289,18 +393,12 @@ const formatExactDateTime = (value?: string | null) => {
 }
 
 const formatCurrency = (value: number) => `IDR ${Math.round(value).toLocaleString("id-ID")}`
-const formatPercent = (value: number) => `${Number(value.toFixed(1))}%`
-const formatCompactNumber = (value: number) =>
-  new Intl.NumberFormat("en-US", {
-    notation: "compact",
-    maximumFractionDigits: 1,
-  }).format(value)
-
-const formatLocalDate = (value: Date) => {
-  const year = value.getFullYear()
-  const month = String(value.getMonth() + 1).padStart(2, "0")
-  const day = String(value.getDate()).padStart(2, "0")
-  return `${year}-${month}-${day}`
+const formatPercent = formatMetaPercent
+const formatCompactNumber = formatMetaNumber
+const addNullableMetric = (left: NullableMetric, right: NullableMetric): number | null => {
+  const safeLeft = finiteMetric(left)
+  const safeRight = finiteMetric(right)
+  return safeLeft == null || safeRight == null ? null : safeLeft + safeRight
 }
 
 const formatMonthValue = (month: string, year: string) => {
@@ -313,7 +411,7 @@ const formatMonthValue = (month: string, year: string) => {
 const buildYearOptions = (min?: string | null, max?: string | null, fallbackYear?: string) => {
   const minYear = min ? Number(min.slice(0, 4)) : Number(fallbackYear)
   const maxYear = max ? Number(max.slice(0, 4)) : Number(fallbackYear)
-  const safeFallbackYear = Number(fallbackYear) || new Date().getFullYear()
+  const safeFallbackYear = Number(fallbackYear) || getBangkokCalendarDate(new Date()).year
   const startYear = Number.isFinite(minYear) && minYear > 0 ? minYear : safeFallbackYear
   const endYear = Number.isFinite(maxYear) && maxYear >= startYear ? maxYear : startYear
   const years = []
@@ -329,45 +427,11 @@ const getAvailableMonthValuesForYear = (year: string, availableMonthValues: stri
   availableMonthValues.filter((value) => value.startsWith(`${year}-`))
 
 const getDefaultMonthSelection = () => {
-  const now = new Date()
+  const today = getBangkokCalendarDate(new Date())
 
   return {
     month: DEFAULT_MONTH_OPTION,
-    year: String(now.getFullYear()),
-  }
-}
-
-const resolveDateRange = (month: string, year: string, periodType: "MTD" | "YTD" | null) => {
-  const yearNumber = Number(year)
-  const now = new Date()
-  const monthIndex = months.indexOf(month)
-
-  if (!yearNumber) {
-    return {
-      startDate: new Date(now.getFullYear(), now.getMonth(), 1),
-      endDate: now,
-    }
-  }
-
-  if (month === DEFAULT_MONTH_OPTION) {
-    return {
-      startDate: new Date(yearNumber, 0, 1),
-      endDate: yearNumber === now.getFullYear() ? now : new Date(yearNumber, 11, 31),
-    }
-  }
-
-  const safeMonthIndex = monthIndex >= 0 ? monthIndex : now.getMonth()
-
-  if (periodType === "YTD") {
-    return {
-      startDate: new Date(yearNumber, 0, 1),
-      endDate: new Date(yearNumber, safeMonthIndex + 1, 0),
-    }
-  }
-
-  return {
-    startDate: new Date(yearNumber, safeMonthIndex, 1),
-    endDate: new Date(yearNumber, safeMonthIndex + 1, 0),
+    year: String(today.year),
   }
 }
 
@@ -415,7 +479,9 @@ const buildFallbackBusinessInsight = ({
   const topSegmentLabel = topSegment
     ? `${topSegment.name} (${formatPercent(topSegment.percentage)})`
     : "Latest customer groups not yet available"
-  const metaContext = metaDashboard?.hasData
+  const metaContext = metaDashboard?.hasData &&
+    finiteMetric(metaDashboard.summary.totalReach) != null &&
+    finiteMetric(metaDashboard.summary.engagementRate) != null
     ? `Meta reached ${formatCompactNumber(metaDashboard.summary.totalReach)} with ${formatPercent(metaDashboard.summary.engagementRate)} engagement rate.`
     : "Meta data is not available yet, so we cannot compare ads reach with revenue."
 
@@ -475,33 +541,6 @@ const buildPlaytimeChart = (playtimeData: PlaytimeData | null) => {
     { name: "Afternoon", rawName: "Afternoon", value: derived.Afternoon, color: chartColors[1] },
     { name: "Night", rawName: "Night", value: derived.Night, color: chartColors[2] },
   ].filter((item) => item.value > 0)
-}
-
-const buildMetaComparisonInsight = ({
-  reportData,
-  metaDashboard,
-}: {
-  reportData: RevenueReportData | null
-  metaDashboard: MetaDashboardData | null
-}) => {
-  if (!reportData) {
-    return "Revenue data is not available yet for comparison with Meta."
-  }
-
-  if (!metaDashboard?.configured) {
-    return "Meta is not connected yet. Sync Instagram data first if you want to compare revenue with ads reach."
-  }
-
-  if (!metaDashboard.hasData) {
-    return "No Meta data for this period yet. Revenue data is ready, but ads reach data is not available for comparison."
-  }
-
-  const revenue = reportData.summary.totalRevenue
-  const reach = metaDashboard.summary.totalReach
-  const engagementRate = metaDashboard.summary.engagementRate
-  const revenuePer1kReach = reach > 0 ? revenue / (reach / 1000) : 0
-
-  return `Revenue was ${formatCurrency(revenue)} with ${formatCompactNumber(reach)} reach from Meta ads in this period. That's about ${formatCurrency(revenuePer1kReach)} per 1K reach with ${formatPercent(engagementRate)} engagement rate.`
 }
 
 const pieLabelRenderer = ({
@@ -571,6 +610,7 @@ function TitleWithTooltip({ title, tooltip }: { title: string; tooltip: string }
 }
 
 export function AnalyticsDashboard() {
+
   const defaultSelection = getDefaultMonthSelection()
   const [selectedMonth, setSelectedMonth] = useState(defaultSelection.month)
   const [selectedYear, setSelectedYear] = useState(defaultSelection.year)
@@ -599,7 +639,7 @@ export function AnalyticsDashboard() {
 
   const yearOptions = useMemo(() => {
     const startYear = 2023
-    const endYear = new Date().getFullYear()
+    const endYear = getBangkokCalendarDate(new Date()).year
     return Array.from({ length: Math.max(endYear - startYear + 1, 1) }, (_, index) => {
       const year = String(startYear + index)
       return {
@@ -642,16 +682,25 @@ export function AnalyticsDashboard() {
         year: selectedYear,
       }
 
-      const { startDate, endDate } = resolveDateRange(effectiveSelection.month, effectiveSelection.year, periodType || "MTD")
-      const startDateIso = formatLocalDate(startDate)
-      const endDateIso = formatLocalDate(endDate)
-      const overviewParams = new URLSearchParams({
-        month: effectiveSelection.month,
-        year: effectiveSelection.year,
+      const canonicalPeriod = {
+        month:
+          effectiveSelection.month === DEFAULT_MONTH_OPTION
+            ? null
+            : months.indexOf(effectiveSelection.month) + 1,
+        year: Number(effectiveSelection.year),
         periodType: periodType || "MTD",
+      } as const
+      const { startDate: startDateIso, endDate: endDateIso } =
+        resolvePeriodDateRange(canonicalPeriod)
+      const overviewParams = buildPeriodSearchParams(canonicalPeriod, {
         venue: selectedVenue,
         customerType: selectedCustomerType,
       })
+      const occupancyParams = new URLSearchParams(overviewParams.toString())
+
+if ((periodType || "MTD") === "MTD") {
+  occupancyParams.set("bucket", "daily")
+}
       const reportParams = new URLSearchParams({
         startDate: startDateIso,
         endDate: endDateIso,
@@ -697,7 +746,15 @@ export function AnalyticsDashboard() {
       const statusTask = fetch(getApiUrl("/operations/status"), { headers: getAuthHeaders(), cache: "no-store" })
       const [kpiResponse, occupancyResponse, reportResponse] = await Promise.all([
         fetch(getApiUrl(`/dashboard/overview-kpis?${overviewParams.toString()}`), { headers: getAuthHeaders(), cache: "no-store" }),
-        fetch(getApiUrl(`/dashboard/occupancy-trend?${overviewParams.toString()}`), { headers: getAuthHeaders(), cache: "no-store" }),
+        fetch(
+  getApiUrl(
+    `/dashboard/occupancy-trend?${occupancyParams.toString()}`
+  ),
+  {
+    headers: getAuthHeaders(),
+    cache: "no-store",
+  }
+),
         fetch(getApiUrl(`/operations/management-report?${reportParams.toString()}`), { headers: getAuthHeaders(), cache: "no-store" }),
       ])
 
@@ -858,18 +915,20 @@ export function AnalyticsDashboard() {
 
   const topSegment = segmentLegend[0] || null
 
-  const bookingTypeMixChart = useMemo(() => {
-    const breakdown = reportData?.bookingTypeBreakdown || {}
+ const bookingTypeMixChart = useMemo(() => {
+  const breakdown = reportData?.bookingTypeBreakdown || {}
 
-    return Object.entries(breakdown)
-      .map(([key, value], index) => ({
-        key,
-        name: bookingTypeLabelMap[key] || key,
-        value: Number(value || 0),
-        color: chartColors[index % chartColors.length],
-      }))
-      .filter((item) => item.value > 0)
-  }, [reportData?.bookingTypeBreakdown])
+  return Object.entries(breakdown)
+    .map(([key, value]) => ({
+      key,
+      name: bookingTypeLabelMap[key] || key,
+      value: Number(value || 0),
+      color: bookingTypeColorMap[key] || "var(--chart-4)",
+      order: bookingTypeOrder[key] ?? 99,
+    }))
+    .filter((item) => item.value > 0)
+    .sort((left, right) => left.order - right.order)
+}, [reportData?.bookingTypeBreakdown])
 
   const bookingTypeMixTotal = useMemo(
     () => bookingTypeMixChart.reduce((sum, item) => sum + item.value, 0),
@@ -892,25 +951,49 @@ export function AnalyticsDashboard() {
   const revenueMetaComparisonData = useMemo(() => {
     if (!reportData?.revenueTrend?.length) return []
 
-    const metaDailyMap = new Map<string, { reach: number; views: number; interactions: number; engagementRate?: number }>()
-    const metaMonthlyMap = new Map<string, { reach: number; views: number; interactions: number; engagementRate?: number }>()
+    type ComparisonMetaPoint = {
+      reach: number | null
+      views: number | null
+      interactions: number | null
+      engagementRate: number | null
+    }
+    const metaDailyMap = new Map<string, ComparisonMetaPoint>()
+    const metaMonthlyMap = new Map<string, ComparisonMetaPoint>()
 
     metaDashboard?.trend?.forEach((item) => {
       const dailyKey = item.date
       const monthlyKey = item.date.slice(0, 7)
-      const daily = metaDailyMap.get(dailyKey) || { reach: 0, views: 0, interactions: 0 }
-      daily.reach += Number(item.reach || 0)
-      daily.views += Number(item.views || 0)
-      daily.interactions += Number(item.interactions || 0)
-      const dailyEngagementRate = Number(item.engagementRate ?? NaN)
-      if (Number.isFinite(dailyEngagementRate)) daily.engagementRate = dailyEngagementRate
-      metaDailyMap.set(dailyKey, daily)
+      const daily = metaDailyMap.get(dailyKey)
+      const dailyEngagementRate = finiteMetric(item.engagementRate)
+      const nextDaily: ComparisonMetaPoint = daily
+        ? {
+            reach: addNullableMetric(daily.reach, item.reach),
+            views: addNullableMetric(daily.views, item.views),
+            interactions: addNullableMetric(daily.interactions, item.interactions),
+            engagementRate: dailyEngagementRate,
+          }
+        : {
+            reach: finiteMetric(item.reach),
+            views: finiteMetric(item.views),
+            interactions: finiteMetric(item.interactions),
+            engagementRate: dailyEngagementRate,
+          }
+      metaDailyMap.set(dailyKey, nextDaily)
 
-      const monthly = metaMonthlyMap.get(monthlyKey) || { reach: 0, views: 0, interactions: 0 }
-      monthly.reach += Number(item.reach || 0)
-      monthly.views += Number(item.views || 0)
-      monthly.interactions += Number(item.interactions || 0)
-      metaMonthlyMap.set(monthlyKey, monthly)
+      const monthly = metaMonthlyMap.get(monthlyKey)
+      metaMonthlyMap.set(monthlyKey, monthly
+        ? {
+            reach: addNullableMetric(monthly.reach, item.reach),
+            views: addNullableMetric(monthly.views, item.views),
+            interactions: addNullableMetric(monthly.interactions, item.interactions),
+            engagementRate: dailyEngagementRate,
+          }
+        : {
+            reach: finiteMetric(item.reach),
+            views: finiteMetric(item.views),
+            interactions: finiteMetric(item.interactions),
+            engagementRate: dailyEngagementRate,
+          })
     })
 
     return reportData.revenueTrend.map((point) => {
@@ -918,26 +1001,33 @@ export function AnalyticsDashboard() {
         ? metaMonthlyMap.get(point.key)
         : metaDailyMap.get(point.key)
 
-      const reach = Number(metaPoint?.reach || 0)
-      const interactions = Number(metaPoint?.interactions || 0)
-      const engagementRate = Number(metaPoint?.engagementRate ?? NaN)
+      const reach = finiteMetric(metaPoint?.reach)
+      const interactions = finiteMetric(metaPoint?.interactions)
+      const engagementRate = finiteMetric(metaPoint?.engagementRate)
 
       return {
         label: point.label,
         revenue: Number(point.revenue || 0),
         reach,
-        views: Number(metaPoint?.views || 0),
-        engagementRate: Number.isFinite(engagementRate)
+        views: finiteMetric(metaPoint?.views),
+        engagementRate: engagementRate != null
           ? engagementRate
-          : reach > 0
+          : reach != null && interactions != null && reach > 0
             ? Number(((interactions / reach) * 100).toFixed(2))
-            : 0,
+            : null,
       }
     })
   }, [metaDashboard?.trend, reportData])
 
   const metaComparisonInsight = useMemo(
-    () => buildMetaComparisonInsight({ reportData, metaDashboard }),
+    () => buildMetaComparisonInsight({
+      reportAvailable: Boolean(reportData),
+      configured: Boolean(metaDashboard?.configured),
+      hasData: Boolean(metaDashboard?.hasData),
+      revenue: reportData?.summary.totalRevenue,
+      reach: metaDashboard?.summary.totalReach,
+      engagementRate: metaDashboard?.summary.engagementRate,
+    }),
     [metaDashboard, reportData]
   )
 
@@ -1003,9 +1093,9 @@ export function AnalyticsDashboard() {
         occupancyInsight: reportData.insights.occupancyInsight,
       },
       promotion_context: {
-        metaReach: metaDashboard?.summary.totalReach || 0,
-        metaViews: metaDashboard?.summary.totalViews || 0,
-        metaEngagementRate: metaDashboard?.summary.engagementRate || 0,
+        metaReach: metaDashboard?.summary.totalReach ?? null,
+        metaViews: metaDashboard?.summary.totalViews ?? null,
+        metaEngagementRate: metaDashboard?.summary.engagementRate ?? null,
         metaInsight: metaComparisonInsight,
         historicalOnly: true,
         revenueDefinition: "Revenue is based on the facility play date.",
@@ -1107,6 +1197,75 @@ export function AnalyticsDashboard() {
     : overviewKpi?.lowSessionBasis === "selected_period"
       ? "Selected period pattern"
       : "No session pattern"
+
+   const formattedOccupancyTrend = useMemo(
+  () =>
+    occupancyTrend.map((point) => ({
+      ...point,
+      chartKey: point.key ?? point.label,
+      displayLabel: formatOccupancyXAxisLabel(
+        point.key ?? point.label,
+        periodType
+      ),
+    })),
+  [occupancyTrend, periodType]
+)
+
+const formatTrendXAxisTick = (
+  value: string,
+  activePeriod: "MTD" | "YTD" | null
+) => {
+  if (!value) return ""
+
+  if (
+    activePeriod === "YTD" &&
+    /^\d{4}-\d{2}$/.test(value)
+  ) {
+    const [, monthText] = value.split("-")
+    const month = Number(monthText)
+
+    return new Intl.DateTimeFormat("en-US", {
+      month: "short",
+    }).format(new Date(2024, month - 1, 1))
+  }
+
+  const parts = getDatePartsFromKey(value)
+
+  if (parts) {
+    return new Intl.DateTimeFormat("en-US", {
+      month: "short",
+      day: "numeric",
+    }).format(
+      new Date(parts.year, parts.month - 1, parts.day)
+    )
+  }
+
+  return value
+}
+
+const occupancyXAxisTicks = useMemo(() => {
+  if ((periodType || "MTD") !== "MTD") {
+    return undefined
+  }
+
+  return formattedOccupancyTrend
+    .filter((point) =>
+      shouldShowMtdTick(point.chartKey)
+    )
+    .map((point) => point.chartKey)
+}, [formattedOccupancyTrend, periodType])
+
+const revenueXAxisTicks = useMemo(() => {
+  if ((periodType || "MTD") !== "MTD") {
+    return undefined
+  }
+
+  return (reportData?.revenueTrend || [])
+    .filter((point) =>
+      shouldShowMtdTick(point.key)
+    )
+    .map((point) => point.key)
+}, [periodType, reportData?.revenueTrend])
 
   return (
     <div className="space-y-6">
@@ -1464,7 +1623,15 @@ export function AnalyticsDashboard() {
               <CardContent>
                 <div className="h-[320px]">
                   <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={occupancyTrend}>
+                    <AreaChart
+                      data={formattedOccupancyTrend}
+                      margin={{
+                        top: 8,
+                        right: 28,
+                        bottom: 4,
+                        left: 4,
+                      }}
+                    >
                       <defs>
                         <linearGradient id="occupancyGradient" x1="0" y1="0" x2="0" y2="1">
                           <stop offset="5%" stopColor="var(--chart-1)" stopOpacity={0.35} />
@@ -1472,7 +1639,23 @@ export function AnalyticsDashboard() {
                         </linearGradient>
                       </defs>
                       <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-                      <XAxis dataKey="label" stroke="var(--muted-foreground)" tickLine={false} axisLine={false} />
+                      <XAxis
+                        dataKey="chartKey"
+                        ticks={occupancyXAxisTicks}
+                        tickFormatter={(value: string) =>
+                          formatTrendXAxisTick(value, periodType)
+                        }
+                        stroke="var(--muted-foreground)"
+                        tickLine={false}
+                        axisLine={false}
+                        interval={0}
+                        tickMargin={10}
+                        fontSize={12}
+                        padding={{
+                          left: 8,
+                          right: 12,
+                        }}
+                      />
                       <YAxis stroke="var(--muted-foreground)" tickLine={false} axisLine={false} unit="%" />
                       <RechartsTooltip formatter={(value: number, name: string, props: { payload?: OccupancyTrendPoint }) => name === "rate" ? [`${value}%`, `${props.payload?.bookedSessions || 0}/${props.payload?.availableSessions || 0} booked sessions`] : [value, name]} />
                       {occupancyTrend.length > 0 ? (
@@ -1505,14 +1688,65 @@ export function AnalyticsDashboard() {
                 <div className="h-[320px]">
                   {revenueTrendHasData ? (
                     <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={reportData?.revenueTrend || []}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-                        <XAxis dataKey="label" stroke="var(--muted-foreground)" tickLine={false} axisLine={false} />
-                        <YAxis stroke="var(--muted-foreground)" tickLine={false} axisLine={false} tickFormatter={(value) => `${Math.round(Number(value) / 1000000)}M`} />
-                        <RechartsTooltip formatter={(value: number) => [formatCurrency(value), "Booking revenue by play date"]} />
-                        <Bar dataKey="revenue" fill="var(--chart-2)" radius={[6, 6, 0, 0]} />
-                      </BarChart>
-                    </ResponsiveContainer>
+  <BarChart
+    data={reportData?.revenueTrend || []}
+    margin={{
+      top: 8,
+      right: 28,
+      bottom: 4,
+      left: 4,
+    }}
+  >
+    <CartesianGrid
+      strokeDasharray="3 3"
+      stroke="var(--border)"
+      vertical={false}
+    />
+
+    <XAxis
+      dataKey="key"
+      ticks={revenueXAxisTicks}
+      tickFormatter={(value: string) =>
+        formatTrendXAxisTick(value, periodType)
+      }
+      stroke="var(--muted-foreground)"
+      tickLine={false}
+      axisLine={false}
+      interval={0}
+      tickMargin={10}
+      fontSize={12}
+      padding={{
+        left: 8,
+        right: 12,
+      }}
+    />
+
+    <YAxis
+      stroke="var(--muted-foreground)"
+      tickLine={false}
+      axisLine={false}
+      tickFormatter={(value) =>
+        `${Math.round(Number(value) / 1_000_000)}M`
+      }
+    />
+
+    <RechartsTooltip
+      labelFormatter={(value: string) =>
+        formatTrendXAxisTick(value, periodType)
+      }
+      formatter={(value: number) => [
+        formatCurrency(value),
+        "Booking revenue by play date",
+      ]}
+    />
+
+    <Bar
+      dataKey="revenue"
+      fill="var(--chart-2)"
+      radius={[6, 6, 0, 0]}
+    />
+  </BarChart>
+</ResponsiveContainer>
                   ) : (
                     <div className="flex h-full items-center justify-center rounded-2xl border border-dashed border-border bg-muted/20 px-6 text-center text-sm text-muted-foreground">
                       No revenue trend data is available for the selected period. Check the active filters or uploaded transactions.
@@ -1571,17 +1805,17 @@ export function AnalyticsDashboard() {
                   </div>
                   <div className="rounded-xl border border-border bg-secondary/20 p-3">
                     <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Meta Reach</p>
-                    <p className="mt-2 text-lg font-semibold text-slate-900">{formatCompactNumber(metaDashboard?.summary.totalReach || 0)}</p>
+                    <p className="mt-2 text-lg font-semibold text-slate-900">{formatCompactNumber(metaDashboard?.summary.totalReach)}</p>
                   </div>
                   <div className="rounded-xl border border-border bg-secondary/20 p-3">
                     <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Engagement Rate</p>
-                    <p className="mt-2 text-lg font-semibold text-slate-900">{formatPercent(metaDashboard?.summary.engagementRate || 0)}</p>
+                    <p className="mt-2 text-lg font-semibold text-slate-900">{formatPercent(metaDashboard?.summary.engagementRate)}</p>
                   </div>
                   <div className="rounded-xl border border-border bg-secondary/20 p-3">
                     <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Revenue / 1K Reach</p>
                     <p className="mt-2 text-lg font-semibold text-slate-900">
-                      {metaDashboard?.summary.totalReach
-                        ? formatCurrency((reportData?.summary.totalRevenue || 0) / (metaDashboard.summary.totalReach / 1000))
+                      {Number(finiteMetric(metaDashboard?.summary.totalReach)) > 0
+                        ? formatCurrency((reportData?.summary.totalRevenue || 0) / (Number(finiteMetric(metaDashboard?.summary.totalReach)) / 1000))
                         : "-"}
                     </p>
                   </div>

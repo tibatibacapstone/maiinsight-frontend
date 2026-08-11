@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState, type FormEvent } from "react"
+import { Suspense, useMemo, useState, type FormEvent } from "react"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import { BarChart3, CheckCircle2, KeyRound, ShieldCheck } from "lucide-react"
@@ -9,10 +9,9 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { getApiUrl } from "@/lib/api"
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:5000"
-
-export default function ActivatePage() {
+function ActivateContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const inviteToken = searchParams.get("token") ?? ""
@@ -46,7 +45,7 @@ export default function ActivatePage() {
 
     setIsSubmitting(true)
     try {
-      const response = await fetch(`${API_BASE_URL}/api/auth/register`, {
+      const response = await fetch(getApiUrl("/auth/register"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ inviteToken, password }),
@@ -196,5 +195,19 @@ export default function ActivatePage() {
         </Card>
       </div>
     </div>
+  )
+}
+
+export default function ActivatePage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-screen items-center justify-center bg-background text-muted-foreground">
+          Loading activation page...
+        </div>
+      }
+    >
+      <ActivateContent />
+    </Suspense>
   )
 }

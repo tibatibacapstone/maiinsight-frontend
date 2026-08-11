@@ -85,8 +85,13 @@ interface HeatmapSummary {
     totalCapacity?: number
     totalPossibleSessions?: number
     occupiedCustomerSessions?: number
+    occupiedSlots?: number
     internalSessions?: number
+    blockedSlots?: number
     emptySessions?: number
+    emptySlots?: number
+    totalPossibleSlots?: number
+    occupancyRate?: number | null
     emptyRate?: number
     internalRate?: number
   }>

@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { toast } from "sonner"
 import {
   Copy, Eye, EyeOff, Key, Link as LinkIcon, Loader2, Save, Shield, Users,
@@ -47,13 +47,31 @@ interface SummaryResponse {
       aiProvider: string
       aiProviderLabel: string
       aiModel: string | null
-      geminiApiKey: string
+      geminiApiKeyConfigured: boolean
       geminiModel: string
-      metaIgUserId: string
-      metaAccessToken: string
+      metaAccessTokenConfigured: boolean
       metaGraphVersion: string
     }
-    users: UserRow[]
+  }
+}
+
+interface UsersResponse {
+  success: boolean
+  message?: string
+  data?: UserRow[]
+}
+
+interface IntegrationConfigResponse {
+  success: boolean
+  message?: string
+  data?: {
+    geminiApiKeyConfigured: boolean
+    geminiModel: string
+    geminiEnabled: boolean
+    metaAccessTokenConfigured: boolean
+    metaIgUserId: string
+    metaGraphVersion: string
+    metaEnabled: boolean
   }
 }
 
@@ -94,10 +112,8 @@ export function SystemSettings() {
   const [deletingUser, setDeletingUser] = useState<UserRow | null>(null)
   const [isDeletingUser, setIsDeletingUser] = useState(false)
 
-  const geminiApiKeyValue = summary?.integrations.geminiApiKey || ""
-  const metaAccessTokenValue = summary?.integrations.metaAccessToken || ""
-  const hasGeminiSecret = Boolean(geminiApiKeyValue)
-  const hasMetaSecret = Boolean(metaAccessTokenValue)
+  const hasGeminiSecret = Boolean(summary?.integrations.geminiApiKeyConfigured)
+  const hasMetaSecret = Boolean(summary?.integrations.metaAccessTokenConfigured)
   const isDatabaseConnected = summary?.database?.status === "connected"
 
   const totalPages = Math.max(1, Math.ceil(users.length / USERS_PER_PAGE))
@@ -108,46 +124,73 @@ export function SystemSettings() {
     [isItSupport],
   )
 
-  const loadSettings = async () => {
+  const loadSettings = useCallback(async () => {
     try {
       setIsLoading(true)
       setError(null)
-      const response = await fetch(getApiUrl("/system/summary"), {
-        headers: getAuthHeaders(),
-        cache: "no-store",
-      })
+      const [response, configResponse, usersResponse] = await Promise.all([
+        fetch(getApiUrl("/system/summary"), {
+          headers: getAuthHeaders(),
+          cache: "no-store",
+        }),
+        isItSupport
+          ? fetch(getApiUrl("/system/config"), {
+              headers: getAuthHeaders(),
+              cache: "no-store",
+            })
+          : Promise.resolve(null),
+        isItSupport
+          ? fetch(getApiUrl("/system/users"), {
+              headers: getAuthHeaders(),
+              cache: "no-store",
+            })
+          : Promise.resolve(null),
+      ])
       const result: SummaryResponse = await response.json().catch(() => null)
       if (!response.ok || !result?.success || !result.data) {
         throw new Error(result?.message || "Settings could not be loaded.")
       }
 
       setSummary(result.data)
-      setUsers(result.data.users || [])
+      const configResult: IntegrationConfigResponse | null = configResponse
+        ? await configResponse.json().catch(() => null)
+        : null
+      const usersResult: UsersResponse | null = usersResponse
+        ? await usersResponse.json().catch(() => null)
+        : null
+      if (configResponse && (!configResponse.ok || !configResult?.success || !configResult.data)) {
+        throw new Error(configResult?.message || "Integration configuration could not be loaded.")
+      }
+      if (usersResponse && (!usersResponse.ok || !usersResult?.success || !usersResult.data)) {
+        throw new Error(usersResult?.message || "User directory could not be loaded.")
+      }
+      setUsers(usersResult?.data || [])
+      const editableConfig = configResult?.data
       setIntegrationForm({
-        geminiApiKey: result.data.integrations.geminiApiKey || "",
-        geminiModel: result.data.integrations.geminiModel || "",
-        geminiEnabled: result.data.integrations.aiEnabled,
-        metaIgUserId: result.data.integrations.metaIgUserId || "",
-        metaAccessToken: result.data.integrations.metaAccessToken || "",
-        metaGraphVersion: result.data.integrations.metaGraphVersion || "",
-        metaEnabled: result.data.integrations.metaEnabled,
+        geminiApiKey: "",
+        geminiModel: editableConfig?.geminiModel || result.data.integrations.geminiModel || "",
+        geminiEnabled: editableConfig?.geminiEnabled ?? result.data.integrations.aiEnabled,
+        metaIgUserId: editableConfig?.metaIgUserId || "",
+        metaAccessToken: "",
+        metaGraphVersion: editableConfig?.metaGraphVersion || result.data.integrations.metaGraphVersion || "",
+        metaEnabled: editableConfig?.metaEnabled ?? result.data.integrations.metaEnabled,
       })
     } catch (err) {
       setError(err instanceof Error ? err.message : "Settings could not be loaded.")
     } finally {
       setIsLoading(false)
     }
-  }
+  }, [isItSupport])
 
   useEffect(() => {
-    if (isItSupport) void loadSettings()
-  }, [isItSupport])
+    if (userRole === USER_ROLES.OPERATIONAL || isItSupport) void loadSettings()
+  }, [isItSupport, loadSettings, userRole])
 
   useEffect(() => {
     if (userPage > totalPages) setUserPage(totalPages)
   }, [userPage, totalPages])
 
-  if (!isItSupport) {
+  if (userRole !== USER_ROLES.OPERATIONAL && !isItSupport) {
     return (
       <AccessDenied
         title="Forbidden"
@@ -156,6 +199,55 @@ export function SystemSettings() {
         requiredRole="IT Support"
         showButton={false}
       />
+    )
+  }
+
+  if (!isItSupport) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-2xl font-bold">System Configuration</h1>
+          <p className="text-muted-foreground">Read-only integration and system status.</p>
+        </div>
+        <BusinessErrorAlert
+          title="Read-Only Access"
+          message="Marketing Operational can view safe connection status. Integration credentials remain restricted to IT Support."
+          variant="info"
+        />
+        {error ? <BusinessErrorAlert title="Status Unavailable" message={error} /> : null}
+        {isLoading ? (
+          <div className="flex min-h-[200px] items-center justify-center">
+            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          </div>
+        ) : (
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <KpiCard
+              label="Gemini"
+              value={summary?.integrations.aiConfigured ? "Configured" : "Not configured"}
+              changeLabel={summary?.integrations.aiEnabled ? "Enabled" : "Disabled"}
+              tooltip="Safe Gemini integration status. Credentials are not displayed."
+            />
+            <KpiCard
+              label="Meta"
+              value={summary?.integrations.metaConfigured ? "Configured" : "Not configured"}
+              changeLabel={summary?.integrations.metaEnabled ? "Enabled" : "Disabled"}
+              tooltip="Safe Meta integration status. Credentials are not displayed."
+            />
+            <KpiCard
+              label="Database"
+              value={isDatabaseConnected ? "Connected" : "Unavailable"}
+              changeLabel={summary?.database?.lastUpdated ? `Last updated ${new Date(summary.database.lastUpdated).toLocaleString()}` : "No import recorded"}
+              tooltip="Database connection status."
+            />
+            <KpiCard
+              label="Segmentation"
+              value={summary?.latestSegmentationRun ? "Ready" : "No runs yet"}
+              changeLabel={summary?.latestSegmentationRun?.status || "Unavailable"}
+              tooltip="Latest customer-segmentation status."
+            />
+          </div>
+        )}
+      </div>
     )
   }
 
@@ -417,14 +509,14 @@ export function SystemSettings() {
                         <Input
                           id="gemini-key"
                           type={showGeminiKey ? "text" : "password"}
-                          value={integrationForm.geminiApiKey}
+                        value={integrationForm.geminiApiKey}
                           onChange={(e) => setIntegrationForm((p) => ({ ...p, geminiApiKey: e.target.value }))}
-                          placeholder="Paste Gemini API key"
+                          placeholder={hasGeminiSecret ? "Configured — enter a new key to replace" : "Enter Gemini API key"}
                         />
                         <Button type="button" variant="outline" size="icon" onClick={() => setShowGeminiKey((v) => !v)}>
                           {showGeminiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                         </Button>
-                        <Button type="button" variant="secondary" size="icon" onClick={() => void copyText(integrationForm.geminiApiKey, "Gemini API key")} disabled={!hasGeminiSecret}>
+                        <Button type="button" variant="secondary" size="icon" onClick={() => void copyText(integrationForm.geminiApiKey, "New Gemini API key")} disabled={!integrationForm.geminiApiKey}>
                           <Copy className="h-4 w-4" />
                         </Button>
                       </div>
@@ -471,12 +563,12 @@ export function SystemSettings() {
                           type={showMetaToken ? "text" : "password"}
                           value={integrationForm.metaAccessToken}
                           onChange={(e) => setIntegrationForm((p) => ({ ...p, metaAccessToken: e.target.value }))}
-                          placeholder="Paste Meta access token"
+                          placeholder={hasMetaSecret ? "Configured — enter a new token to replace" : "Enter Meta access token"}
                         />
                         <Button type="button" variant="outline" size="icon" onClick={() => setShowMetaToken((v) => !v)}>
                           {showMetaToken ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                         </Button>
-                        <Button type="button" variant="secondary" size="icon" onClick={() => void copyText(integrationForm.metaAccessToken, "Meta access token")} disabled={!hasMetaSecret}>
+                        <Button type="button" variant="secondary" size="icon" onClick={() => void copyText(integrationForm.metaAccessToken, "New Meta access token")} disabled={!integrationForm.metaAccessToken}>
                           <Copy className="h-4 w-4" />
                         </Button>
                       </div>
