@@ -8,6 +8,7 @@ import {
   Info,
   Loader2,
   RefreshCw,
+  Search,
   Users,
 } from "lucide-react"
 import {
@@ -108,12 +109,14 @@ interface HeatmapSummary {
     occupiedSlots?: number
     internalSessions?: number
     blockedSlots?: number
+    tutupSessions?: number
     emptySessions?: number
     emptySlots?: number
     totalPossibleSlots?: number
     occupancyRate?: number | null
     emptyRate?: number
     internalRate?: number
+    tutupRate?: number
   }>
   mostEmptySlot: {
     dayLabel: string
@@ -270,6 +273,8 @@ export const HeatmapGrid = ({ heatmapSummary }: { heatmapSummary: HeatmapSummary
                     const internalSessions = slot?.internalSessions ?? 0
                     const blockedSlots = slot?.blockedSlots ?? 0
                     const internalRate = slot?.internalRate ?? 0
+                    const tutupSessions = slot?.tutupSessions ?? 0
+                    const tutupRate = slot?.tutupRate ?? 0
                     const visual = getHeatmapCellVisual({ occupancyRate, internalRate })
                     const tooltipLines = getHeatmapTooltipLines({
                       ...slot,
@@ -278,6 +283,8 @@ export const HeatmapGrid = ({ heatmapSummary }: { heatmapSummary: HeatmapSummary
                       internalSessions,
                       blockedSlots,
                       internalRate,
+                      tutupSessions,
+                      tutupRate,
                     })
 
                     return (
@@ -296,6 +303,16 @@ export const HeatmapGrid = ({ heatmapSummary }: { heatmapSummary: HeatmapSummary
                                 style={{
                                   width: visual.internalWidth,
                                   opacity: visual.internalOpacity,
+                                }}
+                              />
+                            )}
+                            {tutupSessions > 0 && (
+                              <span
+                                aria-hidden="true"
+                                className="absolute inset-y-0 left-0 bg-black"
+                                style={{
+                                  width: visual.tutupWidth,
+                                  opacity: visual.tutupOpacity,
                                 }}
                               />
                             )}
@@ -353,6 +370,8 @@ export function SegmentVisualization() {
   const [heatmapSummary, setHeatmapSummary] = useState<HeatmapSummary | null>(null)
   const [customers, setCustomers] = useState<CustomerRfmScore[]>([])
   const [selectedSegment, setSelectedSegment] = useState<string | null>(null)
+  const [searchTerm, setSearchTerm] = useState("")
+  const [debouncedSearch, setDebouncedSearch] = useState("")
   const [viewMode, setViewMode] = useState<"distribution" | "profile" | "radar">("distribution")
   // Default these detail cards to hidden
   const [showWhyThisSegment, setShowWhyThisSegment] = useState(false)
@@ -394,7 +413,7 @@ export function SegmentVisualization() {
       setSelectedSegment((current) =>
         current && sortedClusters.some((cluster) => cluster.segmentName === current)
           ? current
-          : sortedClusters[0]?.segmentName || null
+          : null
       )
 
       const runScope = normalizedLatest.run
@@ -466,8 +485,13 @@ export function SegmentVisualization() {
   }, [])
 
   useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(searchTerm.trim()), 400)
+    return () => clearTimeout(timer)
+  }, [searchTerm])
+
+  useEffect(() => {
     setCurrentPage(1)
-  }, [selectedSegment, pageSize])
+  }, [selectedSegment, pageSize, debouncedSearch])
 
   useEffect(() => {
     if (!latestData?.run?.id) {
@@ -481,6 +505,7 @@ export function SegmentVisualization() {
         setIsLoadingCustomers(true)
         const customerResult = await fetchSegmentationCustomers({
           segmentName: selectedSegment || undefined,
+          search: debouncedSearch || undefined,
           limit: pageSize,
           offset: (currentPage - 1) * pageSize,
         })
@@ -500,11 +525,11 @@ export function SegmentVisualization() {
     }
 
     void loadCustomers()
-  }, [latestData?.run?.id, selectedSegment, currentPage, pageSize])
+  }, [latestData?.run?.id, selectedSegment, currentPage, pageSize, debouncedSearch])
 
   const clusters = useMemo(() => summaryData?.clusters || [], [summaryData])
   const selectedCluster =
-    clusters.find((cluster) => cluster.segmentName === selectedSegment) || clusters[0] || null
+    clusters.find((cluster) => cluster.segmentName === selectedSegment) || null
   const selectedCustomers = selectedSegment
     ? customers.filter((customer) => customer.segmentName === selectedSegment)
     : customers
@@ -693,6 +718,20 @@ export function SegmentVisualization() {
           </CardHeader>
           <CardContent>
             <div className="flex flex-wrap gap-3">
+              <button
+                onClick={() => setSelectedSegment(null)}
+                className={`flex items-center gap-2 rounded-xl border-2 px-4 py-2 transition-all ${
+                  selectedSegment === null
+                    ? "border-primary bg-primary/10 shadow-md shadow-primary/10"
+                    : "border-border bg-secondary/50 hover:border-primary/50"
+                }`}
+              >
+                <span className="h-3 w-3 rounded-full bg-slate-400" />
+                <span className="font-medium">All Segments</span>
+                <Badge variant="secondary" className="text-xs">
+                  {formatNumber(latestData.totalCustomers, 0)} customers
+                </Badge>
+              </button>
               {distributionData.map((cluster) => (
                 <button
                   key={cluster.segmentName}
@@ -959,6 +998,16 @@ export function SegmentVisualization() {
               <Badge variant="outline" className="rounded-full bg-secondary/40 px-3 py-1">
                 {uniqueBookingTypes} booking type groups
               </Badge>
+              <div className="relative ml-auto w-full sm:w-64">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <input
+                  type="text"
+                  value={searchTerm}
+                  onChange={(event) => setSearchTerm(event.target.value)}
+                  placeholder="Search by name or customer ID..."
+                  className="h-9 w-full rounded-full border border-border bg-background pl-9 pr-3 text-sm outline-none transition-colors focus:border-primary focus:ring-1 focus:ring-primary/30"
+                />
+              </div>
             </div>
             <p className="mb-4 text-sm text-muted-foreground">
               This table is built from completed payments and manual/walk-in bookings only, so the records shown here are already filtered for business use.
@@ -972,15 +1021,38 @@ export function SegmentVisualization() {
               <div className="flex min-h-[180px] flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-border bg-gradient-to-br from-background to-secondary/20 text-sm text-muted-foreground">
                 <Users className="h-10 w-10 text-muted-foreground/50" />
                 <div className="text-center">
-                  <p className="font-medium">No customer rows available for this segment.</p>
+                  <p className="font-medium">
+                    {debouncedSearch
+                      ? "No customers match your search."
+                      : "No customer rows available."}
+                  </p>
                   <p className="text-xs text-muted-foreground">
-                    Try another segment or refresh the latest segmentation run.
+                    {debouncedSearch
+                      ? "Try a different name or customer ID, or clear the search."
+                      : "Try another segment or refresh the latest segmentation run."}
                   </p>
                 </div>
               </div>
             ) : (
               <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
-                <div className="flex flex-col gap-4 border-b border-border bg-gradient-to-r from-background to-secondary/20 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-background/80 px-4 py-2 text-xs text-muted-foreground">
+                  <span>
+                    Showing {displayedRowStart}-{displayedRowEnd} of {totalCustomerRows}
+                  </span>
+                  <label className="flex items-center gap-2 rounded-full border border-border bg-muted/30 px-3 py-1">
+                    <span>Rows:</span>
+                    <select
+                      value={pageSize}
+                      onChange={(event) => setPageSize(Number(event.target.value))}
+                      className="rounded-full border border-border bg-background px-2 py-1 text-xs"
+                    >
+                      {[10, 20, 50].map((size) => (
+                        <option key={size} value={size}>{size}</option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+                <div className="border-b border-border bg-gradient-to-r from-background to-secondary/20 px-4 py-3">
                   <div className="grid grid-cols-[1.6fr_1fr_1fr_1fr_1fr_0.8fr] gap-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
                     <Tooltip>
                       <TooltipTrigger asChild>
@@ -1030,23 +1102,6 @@ export function SegmentVisualization() {
                         <p>Assigned customer segment from the latest model run.</p>
                       </TooltipContent>
                     </Tooltip>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-                    <span>
-                      Showing {displayedRowStart}-{displayedRowEnd} of {totalCustomerRows}
-                    </span>
-                    <label className="flex items-center gap-2 rounded-full border border-border bg-muted/30 px-3 py-1">
-                      <span>Rows:</span>
-                      <select
-                        value={pageSize}
-                        onChange={(event) => setPageSize(Number(event.target.value))}
-                        className="rounded-full border border-border bg-background px-2 py-1 text-xs"
-                      >
-                        {[10, 20, 50].map((size) => (
-                          <option key={size} value={size}>{size}</option>
-                        ))}
-                      </select>
-                    </label>
                   </div>
                 </div>
                 <div className="max-h-[560px] overflow-y-auto">

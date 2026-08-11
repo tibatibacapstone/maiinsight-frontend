@@ -219,10 +219,6 @@ interface MetaSyncResponse {
   }
 }
 
-interface AiStrategyResponse {
-  success?: boolean
-  message?: string
-}
 interface MlSummary {
   lastRun: string
   records: number
@@ -361,6 +357,17 @@ const formatDisplaySyncTime = (value?: string | null) => {
   return new Intl.DateTimeFormat("en-US", {
     dateStyle: "medium",
     timeStyle: "short",
+  }).format(date)
+}
+
+const formatTransactionDate = (value?: string | null) => {
+  if (!value) return "Not available"
+
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+
+  return new Intl.DateTimeFormat("en-US", {
+    dateStyle: "medium",
   }).format(date)
 }
 
@@ -550,6 +557,8 @@ const [mlSummary, setMlSummary] = useState<MlSummary>({
   const [templatePreviewData, setTemplatePreviewData] = useState<TemplatePreviewData | null>(null)
   const [isLoadingRawRows, setIsLoadingRawRows] = useState(false)
   const [rawRowsError, setRawRowsError] = useState<BusinessErrorState | null>(null)
+  const [sortColumn, setSortColumn] = useState<string | null>(null)
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc")
   const [syncingSourceId, setSyncingSourceId] = useState<string | null>(null)
   const [metaConfigured, setMetaConfigured] = useState(false)
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
@@ -760,28 +769,14 @@ if (!response.ok) {
         }
 
         if (sourceId === "3") {
-          const response = await fetch(getApiUrl("/ai-strategy/generate"), {
-            method: "POST",
-            headers: {
-              ...getAuthHeaders(),
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              selected_filters: {
-                source: "data-center",
-                sourceName: source.name,
-                triggeredFrom: "Sync Now",
-              },
-              customer_segment_summary: {},
-              business_context: {},
-              promotion_context: {},
-            }),
+          const response = await fetch(getApiUrl("/ai-strategy/status"), {
+            method: "GET",
+            cache: "no-store",
+            headers: getAuthHeaders(),
           })
 
-          const result: AiStrategyResponse = await response.json()
-
-          if (!response.ok || result.success === false) {
-            throw new Error(result.message || "Failed to generate AI strategy.")
+          if (!response.ok) {
+            throw new Error("Failed to refresh AI Strategy Engine status.")
           }
         }
 
@@ -1260,7 +1255,7 @@ const handleViewRawRows= async (job: SyncJob) => {
     const result = await response.json().catch(() => null)
 
     if (!response.ok || !result?.success) {
-      throw createFriendlyImportError(result, "Raw Data Preview Failed")
+      throw createFriendlyImportError(result, "Transaction Data Preview Failed")
     }
 
     const rows: RawTransactionRow[] = Array.isArray(result.data)
@@ -1282,12 +1277,12 @@ const handleViewRawRows= async (job: SyncJob) => {
       error && typeof error === "object" && "title" in error
         ? (error as BusinessErrorState)
         : createBusinessErrorState({
-            title: "Raw Data Preview Failed",
-            message: "We couldn't load the uploaded transaction preview.",
+            title: "Transaction Data Preview Failed",
+            message: "We couldn't load the cleaned transaction preview.",
             suggestion: "Please try again. Contact IT Support if the issue continues.",
-            errorCode: "RAW_DATA_PREVIEW_FAILED",
+            errorCode: "TRANSACTION_DATA_PREVIEW_FAILED",
             technicalDetails:
-              error instanceof Error ? error.message : "Failed to load raw data.",
+              error instanceof Error ? error.message : "Failed to load transaction data.",
           })
 
     setRawRowsError(friendlyError)
@@ -1408,6 +1403,22 @@ const handleViewRawRows= async (job: SyncJob) => {
   const triggerSync = (sourceId: string) => {
     void syncSource(sourceId)
   }
+  const handleSort = (column: string) => {
+    if (sortColumn === column) {
+      setSortDirection((d) => (d === "asc" ? "desc" : "asc"))
+    } else {
+      setSortColumn(column)
+      setSortDirection("asc")
+    }
+  }
+  const sortedRows = [...rawRows].sort((a, b) => {
+    if (!sortColumn) return 0
+    const va = a.data?.[sortColumn]
+    const vb = b.data?.[sortColumn]
+    const sa = va == null ? "" : String(va)
+    const sb = vb == null ? "" : String(vb)
+    return sortDirection === "asc" ? sa.localeCompare(sb, undefined, { numeric: true }) : sb.localeCompare(sa, undefined, { numeric: true })
+  })
 if (!canAccessDataCenter) {
   return (
     <div className="flex min-h-[60vh] items-center justify-center">
@@ -2084,18 +2095,18 @@ if (!canAccessDataCenter) {
         <Dialog open={rawModalOpen} onOpenChange={setRawModalOpen}>
           <DialogContent className="max-h-[92vh] !w-[98vw] !max-w-[98vw] !sm:w-[98vw] !sm:max-w-[98vw] overflow-hidden">
             <DialogHeader>
-              <DialogTitle>Raw Uploaded Data</DialogTitle>
+              <DialogTitle>Cleaned Transaction Data</DialogTitle>
               <DialogDescription>
                 {selectedRawJob
                   ? `${selectedRawJob.name} - ${selectedRawJob.records.toLocaleString()} records`
-                  : "Preview uploaded transaction data"}
+                  : "Preview cleaned transaction data"}
               </DialogDescription>
             </DialogHeader>
 
             {isLoadingRawRows ? (
               <div className="flex items-center gap-2 rounded-lg border p-4 text-sm text-muted-foreground">
                 <Loader2 className="h-4 w-4 animate-spin" />
-                Loading raw data...
+                Loading transaction data...
               </div>
                         ) : rawRowsError ? (
               <BusinessErrorAlert
@@ -2108,12 +2119,12 @@ if (!canAccessDataCenter) {
               />
             ) : rawRows.length === 0 ? (
               <div className="rounded-md border p-4 text-sm text-muted-foreground">
-                No raw data found for this upload history.
+                No transaction data found for this upload history.
               </div>
             ) : (
               <div className="space-y-3 overflow-hidden">
                 <p className="text-sm text-muted-foreground">
-                  Showing first {rawRows.length} rows from the uploaded transaction file.
+                  Showing {rawRows.length} cleaned transaction records from the uploaded file.
                 </p>
 
                                 <div className="max-h-[68vh] overflow-x-auto overflow-y-auto rounded-xl border bg-muted/20 p-2">
@@ -2128,16 +2139,22 @@ if (!canAccessDataCenter) {
                           {rawHeaders.map((header) => (
                             <th
                               key={header}
-                              className="min-w-[160px] border-b border-r bg-background px-3 py-2 text-left font-semibold whitespace-nowrap last:border-r-0"
+                              className="min-w-[160px] border-b border-r bg-background px-3 py-2 text-left font-semibold whitespace-nowrap last:border-r-0 cursor-pointer select-none hover:bg-muted/40"
+                              onClick={() => handleSort(header)}
                             >
-                              {header}
+                              <span className="inline-flex items-center gap-1">
+                                {header}
+                                {sortColumn === header ? (
+                                  <span className="text-xs text-muted-foreground">{sortDirection === "asc" ? "▲" : "▼"}</span>
+                                ) : null}
+                              </span>
                             </th>
                           ))}
                         </tr>
                       </thead>
 
                       <tbody>
-                        {rawRows.map((row) => (
+                        {sortedRows.map((row) => (
                           <tr key={row.id} className="hover:bg-muted/40">
                             <td className="sticky left-0 z-10 border-b border-r bg-background px-3 py-2 text-muted-foreground whitespace-nowrap">
                               {row.rowNumber}

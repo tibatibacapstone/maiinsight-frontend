@@ -29,6 +29,8 @@ export const PAGE_PERMISSIONS: Record<UserRole, string[]> = {
     "segments",
     "genai",
     "instasight",
+    "genai",
+    "targeting",
   ],
   it_support: [
     "dashboard",

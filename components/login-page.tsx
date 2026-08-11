@@ -475,7 +475,6 @@ export function LoginPage({ onSubmit, onGoogleCredential, isLoading, error }: Lo
                   </Link>
                 </div>
 
-                {/* Submit Button */}
                 <Button
                   type="submit"
                   className="w-full h-11"
@@ -485,7 +484,7 @@ export function LoginPage({ onSubmit, onGoogleCredential, isLoading, error }: Lo
                 </Button>
 
               </form>
-              {/* Footer */}
+
               <p className="text-center text-xs text-muted-foreground">
                 By continuing, you agree to our{" "}
                 <Link href="/terms" className="underline hover:text-foreground transition-colors">Terms of Service</Link>

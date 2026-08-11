@@ -70,39 +70,39 @@ export default function Home() {
   }, [])
 
   const handleLogin = (token: string, user: LoginResponse["user"]) => {
-  setIsAuthenticated(true)
-  setUserRole(user.role)
-  setCurrentPage(getRequestedPage())
+    setIsAuthenticated(true)
+    setUserRole(user.role)
+    setCurrentPage(getRequestedPage())
 
-  localStorage.setItem("maiinToken", token)
-  localStorage.setItem("maiinRole", user.role)
-  localStorage.setItem("maiinUser", JSON.stringify(user))
+    localStorage.setItem("maiinToken", token)
+    localStorage.setItem("maiinRole", user.role)
+    localStorage.setItem("maiinUser", JSON.stringify(user))
 
-  // bersihkan key lama agar tidak bentrok
-  localStorage.removeItem("token")
-  localStorage.removeItem("authToken")
-  localStorage.removeItem("accessToken")
-  localStorage.removeItem("maiinsight_token")
-  localStorage.removeItem("user")
-  localStorage.removeItem("maiinsight_user")
-}
+    localStorage.removeItem("token")
+    localStorage.removeItem("authToken")
+    localStorage.removeItem("accessToken")
+    localStorage.removeItem("maiinsight_token")
+    localStorage.removeItem("user")
+    localStorage.removeItem("maiinsight_user")
+  }
 
   const handleLogout = () => {
-  setIsAuthenticated(false)
-  setCurrentPage(DEFAULT_PAGE)
-  setAuthError(null)
+    setIsAuthenticated(false)
+    setUserRole("operational")
+    setCurrentPage(DEFAULT_PAGE)
+    setAuthError(null)
 
-  localStorage.removeItem("maiinToken")
-  localStorage.removeItem("maiinRole")
-  localStorage.removeItem("maiinUser")
+    localStorage.removeItem("maiinToken")
+    localStorage.removeItem("maiinRole")
+    localStorage.removeItem("maiinUser")
 
-  localStorage.removeItem("token")
-  localStorage.removeItem("authToken")
-  localStorage.removeItem("accessToken")
-  localStorage.removeItem("maiinsight_token")
-  localStorage.removeItem("user")
-  localStorage.removeItem("maiinsight_user")
-}
+    localStorage.removeItem("token")
+    localStorage.removeItem("authToken")
+    localStorage.removeItem("accessToken")
+    localStorage.removeItem("maiinsight_token")
+    localStorage.removeItem("user")
+    localStorage.removeItem("maiinsight_user")
+  }
 
   const handleNavigate = (page: PageId) => {
     setCurrentPage(page)
@@ -132,7 +132,7 @@ export default function Home() {
 
       const loginData = data as LoginResponse
       handleLogin(loginData.token, loginData.user)
-    } catch (error) {
+    } catch {
       setAuthError("Unable to connect to the API. Please try again.")
     } finally {
       setIsLoading(false)
@@ -162,7 +162,7 @@ export default function Home() {
 
       const loginData = data as LoginResponse
       handleLogin(loginData.token, loginData.user)
-    } catch (error) {
+    } catch {
       setAuthError("Unable to connect to the API. Please try again.")
     } finally {
       setIsLoading(false)

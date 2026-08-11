@@ -1,6 +1,6 @@
 "use client"
 
-import { Suspense, useMemo, useState, type FormEvent } from "react"
+import { Suspense, useEffect, useMemo, useState, type FormEvent } from "react"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import { BarChart3, CheckCircle2, KeyRound, ShieldCheck } from "lucide-react"
@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { getApiUrl } from "@/lib/api"
 
-function ActivateContent() {
+function ActivateForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const inviteToken = searchParams.get("token") ?? ""
@@ -20,6 +20,10 @@ function ActivateContent() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (localStorage.getItem("maiinToken")) router.replace("/")
+  }, [router])
 
   const isTokenPresent = useMemo(() => Boolean(inviteToken), [inviteToken])
 
@@ -207,7 +211,7 @@ export default function ActivatePage() {
         </div>
       }
     >
-      <ActivateContent />
+      <ActivateForm />
     </Suspense>
   )
 }

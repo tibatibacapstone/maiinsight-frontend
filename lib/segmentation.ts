@@ -194,6 +194,7 @@ export const fetchSegmentationSummary = async (): Promise<SegmentationSummaryDat
 
 export const fetchSegmentationCustomers = async (params: {
   segmentName?: string
+  search?: string
   limit?: number
   offset?: number
 } = {}): Promise<SegmentationCustomersData> => {

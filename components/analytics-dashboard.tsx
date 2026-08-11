@@ -657,6 +657,16 @@ export function AnalyticsDashboard() {
     }))
   }, [availableMonthValues, selectedYear])
 
+  useEffect(() => {
+    const latestYear = availableMonthValues
+      .map((v) => v.slice(0, 4))
+      .filter((y, i, a) => a.indexOf(y) === i)
+      .sort((a, b) => Number(b) - Number(a))[0]
+    if (latestYear) {
+      setSelectedYear(latestYear)
+    }
+  }, [availableMonthValues])
+
   const loadDashboard = useCallback(async (options?: { background?: boolean }) => {
     try {
       const isBackgroundLoad = Boolean(options?.background)
@@ -1834,8 +1844,8 @@ const revenueXAxisTicks = useMemo(() => {
 
             <Card className="border-border bg-card shadow-sm">
               <CardHeader>
-                <CardTitle><TitleWithTooltip title="Booking Type Mix" tooltip="Shows how bookings are split between members and guests." /></CardTitle>
-                <CardDescription>Mix of member vs guest bookings.</CardDescription>
+                <CardTitle><TitleWithTooltip title="Valid Booking Status" tooltip="Shows the distribution of completed bookings and operational sessions grouped by status type." /></CardTitle>
+                <CardDescription>Breakdown of Payment Completed, Manual/Walk-in, and Internal bookings.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="h-[280px]">
@@ -1878,7 +1888,7 @@ const revenueXAxisTicks = useMemo(() => {
                 )}
                 {bookingTypeMixLegend.length > 0 ? (
                   <p className="text-xs text-muted-foreground">
-                    Shows what percentage of bookings are members vs guests.
+                    Shows the percentage breakdown of valid booking and operational statuses.
                   </p>
                 ) : null}
               </CardContent>

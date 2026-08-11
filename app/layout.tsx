@@ -4,6 +4,7 @@ import { Geist, Geist_Mono } from "next/font/google"
 import "./globals.css"
 import { Toaster } from "@/components/ui/sonner"
 import { Providers } from "./providers"
+import { AuthProvider } from "@/lib/auth-context"
 
 const geist = Geist({
   subsets: ["latin"],
@@ -32,7 +33,9 @@ export default function RootLayout({
     <html lang="id" className="bg-background">
       <body className={`${geist.variable} ${geistMono.variable} min-h-screen bg-background font-sans text-foreground antialiased`}>
         <Providers>
-          {children}
+          <AuthProvider>
+            {children}
+          </AuthProvider>
         </Providers>
         <Toaster />
       </body>
