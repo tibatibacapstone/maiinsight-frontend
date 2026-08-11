@@ -38,13 +38,33 @@ export interface RecommendedTargetCustomer {
 }
 
 export interface RecommendedCustomersResponse {
-  date: string
+  campaignDay: string
+  analysisPeriodMonths: number
+  latestPlayDate: string | null
+  unavailableReason: "LATEST_PLAY_DATE_NOT_AVAILABLE" | null
   courtType: string
   sessionName: string
   segmentName: string | null
   customerType: string
   customers: RecommendedTargetCustomer[]
   totalCustomers: number
+  monthlyPerformance: Array<{
+    month: string
+    monthLabel: string
+    dataThrough: string
+    totalPossibleSlots: number
+    occupiedSlots: number
+    emptySlots: number
+    occupancyRate: number | null
+    revenue: number
+  }>
+  historicalSummary: {
+    analysisPeriodMonths: number
+    averageOccupancy: number | null
+    averageFilledSlots: number
+    totalRevenue: number
+    averageMonthlyRevenue: number
+  } | null
   pagination: {
     limit: number
     offset: number
@@ -101,12 +121,12 @@ export const getLowOccupancySessions = async (params: {
 }
 
 export const getRecommendedCustomers = async (params: {
-  date?: string
+  campaignDay: string
+  analysisPeriodMonths: number
   courtType?: string
   sessionName: string
   customerType?: string
   segmentName?: string
-  minSessionBookingCount?: number
   limit?: number
   offset?: number
 }) => {
