@@ -46,6 +46,7 @@ import {
   getLowOccupancySessions,
   getRecommendedCustomers,
   type LowOccupancySessionCard,
+  type RecommendedCustomersResponse,
   type RecommendedTargetCustomer,
 } from "@/lib/targeting"
 import {
@@ -128,7 +129,7 @@ const SESSION_HOUR_LABELS: Record<string, string> = {
   Morning: "06:00 - 10:59",
   Afternoon: "11:00 - 14:59",
   Evening: "15:00 - 18:59",
-  Night: "19:00 - 23:59",
+  Night: "19:00 - 22:59",
 }
 
 const PlaytimeAxisTick = ({ x, y, payload }: { x?: number; y?: number; payload?: { value?: string } }) => {
@@ -213,7 +214,8 @@ const INITIAL_COURT_TYPE = "all"
 const INITIAL_SESSION_NAME: (typeof SESSION_OPTIONS)[number] = "Morning"
 const INITIAL_CUSTOMER_TYPE = "all"
 const INITIAL_SEGMENT_NAME = "all"
-const INITIAL_MIN_SESSION_BOOKING_COUNT = 1
+const CAMPAIGN_DAY_OPTIONS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+const ANALYSIS_PERIOD_OPTIONS = [1, 2, 3, 4, 6, 12]
 
 const VENUE_OPTIONS = [
   { value: "All Venue", label: "All Venue" },
@@ -264,8 +266,8 @@ const mapCustomerTypeToApiValue = (displayType: string) => {
 }
 
 const FILTER_HELP_TEXT = {
-  campaignDate:
-    "Pick the target play date you want to inspect. The session cards use uploaded historical transactions for that selected day, not live slot availability.",
+  campaignDay: "Evaluate only historical activity occurring on this weekday.",
+  analysisPeriod: "Calendar months ending on the latest available play date.",
   courtType:
     "Focus the promo opportunity on a specific court type or keep all courts included.",
   playSession:
@@ -274,8 +276,6 @@ const FILTER_HELP_TEXT = {
     "Narrow the audience to membership, non-membership, or both depending on the promo goal.",
   rfmSegment:
     "Filter the audience by the latest available RFM segment to support retention, growth, or re-engagement campaigns.",
-  minBookingCount:
-    "Set the minimum number of past bookings in the selected session before a customer is considered a strong target.",
 } as const
 
 function FilterLabel({ label, tooltip }: { label: string; tooltip: string }) {
@@ -331,12 +331,15 @@ const [heatmapData, setHeatmapData] = useState<HeatmapSummary | null>(null)
 const [isLoadingHeatmap, setIsLoadingHeatmap] = useState(true)
 const [dataMonthLabel, setDataMonthLabel] = useState<string | null>(null)
 
-  const [date, setDate] = useState(INITIAL_DATE)
+  const [campaignDay, setCampaignDay] = useState("Monday")
+  const [analysisPeriodMonths, setAnalysisPeriodMonths] = useState(3)
   const [courtType, setCourtType] = useState(INITIAL_COURT_TYPE)
   const [sessionName, setSessionName] = useState<(typeof SESSION_OPTIONS)[number]>(INITIAL_SESSION_NAME)
   const [customerType, setCustomerType] = useState(INITIAL_CUSTOMER_TYPE)
   const [segmentName, setSegmentName] = useState(INITIAL_SEGMENT_NAME)
-  const [minSessionBookingCount, setMinSessionBookingCount] = useState(INITIAL_MIN_SESSION_BOOKING_COUNT)
+  const [monthlyPerformance, setMonthlyPerformance] = useState<RecommendedCustomersResponse["monthlyPerformance"]>([])
+  const [historicalSummary, setHistoricalSummary] = useState<RecommendedCustomersResponse["historicalSummary"]>(null)
+  const [latestCampaignPlayDate, setLatestCampaignPlayDate] = useState<string | null>(null)
 
   const [sessions, setSessions] = useState<LowOccupancySessionCard[]>([])
   const [customers, setCustomers] = useState<RecommendedTargetCustomer[]>([])
@@ -355,7 +358,7 @@ const [dataMonthLabel, setDataMonthLabel] = useState<string | null>(null)
   const [customerPageSize] = useState(INITIAL_CUSTOMER_PAGE_SIZE)
   const [customerPagination, setCustomerPagination] = useState<CustomerPagination | null>(null)
 
-  const loadSessions = async (nextDate = date, nextCourtType = courtType) => {
+  const loadSessions = async (nextDate = INITIAL_DATE, nextCourtType = courtType) => {
     setIsLoadingSessions(true)
     setSessionError(null)
 
@@ -378,22 +381,21 @@ const [dataMonthLabel, setDataMonthLabel] = useState<string | null>(null)
   }
 
   const loadCustomers = async (filters?: {
-    nextDate?: string
+    nextCampaignDay?: string
+    nextAnalysisPeriodMonths?: number
     nextCourtType?: string
     nextSessionName?: string
     nextCustomerType?: string
     nextSegmentName?: string
-    nextMinSessionBookingCount?: number
     nextCustomerPage?: number
     nextPageSize?: number
   }) => {
-    const nextDate = filters?.nextDate ?? date
+    const nextCampaignDay = filters?.nextCampaignDay ?? campaignDay
+    const nextAnalysisPeriodMonths = filters?.nextAnalysisPeriodMonths ?? analysisPeriodMonths
     const nextCourtType = filters?.nextCourtType ?? courtType
     const nextSessionName = filters?.nextSessionName ?? sessionName
     const nextCustomerType = filters?.nextCustomerType ?? customerType
     const nextSegmentName = filters?.nextSegmentName ?? segmentName
-    const nextMinSessionBookingCount =
-      filters?.nextMinSessionBookingCount ?? minSessionBookingCount
     const nextCustomerPage = filters?.nextCustomerPage ?? currentCustomerPage
     const nextPageSize = filters?.nextPageSize ?? customerPageSize
 
@@ -402,16 +404,19 @@ const [dataMonthLabel, setDataMonthLabel] = useState<string | null>(null)
 
     try {
       const response = await getRecommendedCustomers({
-        date: nextDate,
+        campaignDay: nextCampaignDay,
+        analysisPeriodMonths: nextAnalysisPeriodMonths,
         courtType: nextCourtType,
         sessionName: nextSessionName,
         customerType: nextCustomerType,
         segmentName: nextSegmentName === "all" ? undefined : nextSegmentName,
-        minSessionBookingCount: nextMinSessionBookingCount,
         limit: nextPageSize,
         offset: (nextCustomerPage - 1) * nextPageSize,
       })
       setCustomers(response.customers)
+      setMonthlyPerformance(response.monthlyPerformance || [])
+      setHistoricalSummary(response.historicalSummary)
+      setLatestCampaignPlayDate(response.latestPlayDate)
       setCustomerPagination(response.pagination ?? null)
     } catch (error) {
       setCustomerError(
@@ -574,11 +579,11 @@ const [dataMonthLabel, setDataMonthLabel] = useState<string | null>(null)
             courtType: INITIAL_COURT_TYPE,
           }),
           getRecommendedCustomers({
-            date: INITIAL_DATE,
+            campaignDay: "Monday",
+            analysisPeriodMonths: 3,
             courtType: INITIAL_COURT_TYPE,
             sessionName: INITIAL_SESSION_NAME,
             customerType: INITIAL_CUSTOMER_TYPE,
-            minSessionBookingCount: INITIAL_MIN_SESSION_BOOKING_COUNT,
             limit: 50,
             offset: 0,
           }),
@@ -586,6 +591,9 @@ const [dataMonthLabel, setDataMonthLabel] = useState<string | null>(null)
 
         setSessions(sessionResponse.sessions)
         setCustomers(customerResponse.customers)
+        setMonthlyPerformance(customerResponse.monthlyPerformance || [])
+        setHistoricalSummary(customerResponse.historicalSummary)
+        setLatestCampaignPlayDate(customerResponse.latestPlayDate)
       } catch (error) {
         const message =
           error instanceof Error ? error.message : "Failed to initialize Promote Underbooked Sessions."
@@ -605,7 +613,7 @@ const [dataMonthLabel, setDataMonthLabel] = useState<string | null>(null)
   const handleApply = async () => {
     setStatusMessage(null)
     setCurrentCustomerPage(1)
-    await Promise.all([loadSessions(date, courtType), loadCustomers()])
+    await Promise.all([loadSessions(INITIAL_DATE, courtType), loadCustomers()])
   }
 
   const handleCardSelect = async (card: LowOccupancySessionCard) => {
@@ -638,9 +646,8 @@ const [dataMonthLabel, setDataMonthLabel] = useState<string | null>(null)
           nextVenue: selectedVenue,
           nextCustomerType: selectedCustomerType,
         }),
-        loadSessions(date, nextCourtType),
+        loadSessions(INITIAL_DATE, nextCourtType),
         loadCustomers({
-          nextDate: date,
           nextCourtType,
           nextCustomerType: nextCustomerTypeVal,
         }),
@@ -690,7 +697,7 @@ const [dataMonthLabel, setDataMonthLabel] = useState<string | null>(null)
       sessionStartHour: selectedSessionCard?.sessionStartHour || null,
       sessionEndHour: selectedSessionCard?.sessionEndHour || null,
       slotTimeLabel,
-      date,
+      date: INITIAL_DATE,
       preferredSession: customer.preferredSession,
       selectedSessionBookingCount: customer.selectedSessionBookingCount,
       selectedCourtBookingCount: customer.selectedCourtBookingCount,
@@ -757,7 +764,8 @@ const playtimeBehaviorInsight = !dominantPlaytime || !playtimeMixData
       Page filters
     </p>
     <div className="flex flex-wrap items-center justify-end gap-2">
-      <div className="group relative w-[200px]">
+      <div className="group flex h-11 w-[200px] items-center gap-3 rounded-xl border border-border/70 bg-background/90 px-3 shadow-sm transition hover:border-primary/35 hover:bg-background focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/15">
+        <span className="shrink-0 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Start</span>
         <input
           type="date"
           value={selectedStartDate}
@@ -768,10 +776,11 @@ const playtimeBehaviorInsight = !dominantPlaytime || !playtimeMixData
               setSelectedEndDate(nextStartDate)
             }
           }}
-          className="h-11 w-full rounded-xl border border-border/70 bg-background/90 px-3 text-sm font-medium text-foreground shadow-sm outline-none transition hover:border-primary/35 hover:bg-background focus:border-primary focus:ring-2 focus:ring-primary/15"
+          className="min-w-0 flex-1 bg-transparent text-sm font-medium text-foreground outline-none"
         />
       </div>
-      <div className="group relative w-[200px]">
+      <div className="group flex h-11 w-[200px] items-center gap-3 rounded-xl border border-border/70 bg-background/90 px-3 shadow-sm transition hover:border-primary/35 hover:bg-background focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/15">
+        <span className="shrink-0 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">End</span>
         <input
           type="date"
           value={selectedEndDate}
@@ -782,7 +791,7 @@ const playtimeBehaviorInsight = !dominantPlaytime || !playtimeMixData
               setSelectedStartDate(nextEndDate)
             }
           }}
-          className="h-11 w-full rounded-xl border border-border/70 bg-background/90 px-3 text-sm font-medium text-foreground shadow-sm outline-none transition hover:border-primary/35 hover:bg-background focus:border-primary focus:ring-2 focus:ring-primary/15"
+          className="min-w-0 flex-1 bg-transparent text-sm font-medium text-foreground outline-none"
         />
       </div>
       <div className="w-[160px]">
@@ -800,12 +809,12 @@ const playtimeBehaviorInsight = !dominantPlaytime || !playtimeMixData
           </SelectContent>
         </Select>
       </div>
-      <div className="w-[180px]">
+      <div className="w-[210px] min-w-[210px]">
         <Select value={selectedCustomerType} onValueChange={setSelectedCustomerType}>
           <SelectTrigger className="h-11 w-full rounded-xl border border-border/70 bg-background/90 px-3 shadow-sm outline-none transition hover:border-primary/35 hover:bg-background focus:ring-2 focus:ring-primary/15">
-            <div className="flex min-w-0 items-center gap-3">
+            <div className="flex min-w-0 flex-1 items-center gap-3">
               <span className="shrink-0 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Customer</span>
-              <SelectValue placeholder="Customer" />
+              <SelectValue placeholder="Customer" className="whitespace-nowrap" />
             </div>
           </SelectTrigger>
           <SelectContent position="popper" className="w-[var(--radix-select-trigger-width)] rounded-xl border bg-background shadow-lg">
@@ -924,15 +933,21 @@ const playtimeBehaviorInsight = !dominantPlaytime || !playtimeMixData
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             <label className="space-y-2">
               <FilterLabel
-                label="Campaign Date"
-                tooltip={FILTER_HELP_TEXT.campaignDate}
+                label="Campaign Day"
+                tooltip={FILTER_HELP_TEXT.campaignDay}
               />
-              <input
-                type="date"
-                value={date}
-                onChange={(event) => setDate(event.target.value)}
+              <select
+                value={campaignDay}
+                onChange={(event) => setCampaignDay(event.target.value)}
                 className="h-12 w-full rounded-2xl border border-border/70 bg-background/90 px-4 text-sm font-medium shadow-sm outline-none transition hover:border-primary/35 hover:bg-background focus:border-primary focus:ring-2 focus:ring-primary/15"
-              />
+              >{CAMPAIGN_DAY_OPTIONS.map((day) => <option key={day} value={day}>{day}</option>)}</select>
+            </label>
+
+            <label className="space-y-2">
+              <FilterLabel label="Analysis Period" tooltip={FILTER_HELP_TEXT.analysisPeriod} />
+              <select value={analysisPeriodMonths} onChange={(event) => setAnalysisPeriodMonths(Number(event.target.value))} className="h-12 w-full rounded-2xl border border-border/70 bg-background/90 px-4 text-sm font-medium shadow-sm outline-none transition hover:border-primary/35 hover:bg-background focus:border-primary focus:ring-2 focus:ring-primary/15">
+                {ANALYSIS_PERIOD_OPTIONS.map((months) => <option key={months} value={months}>{months} Month{months > 1 ? "s" : ""}</option>)}
+              </select>
             </label>
 
             <label className="space-y-2">
@@ -1009,23 +1024,6 @@ const playtimeBehaviorInsight = !dominantPlaytime || !playtimeMixData
               </select>
             </label>
 
-            <label className="space-y-2">
-              <FilterLabel
-                label="Minimum Session Booking Count"
-                tooltip={FILTER_HELP_TEXT.minBookingCount}
-              />
-              <input
-                type="number"
-                min={1}
-                value={minSessionBookingCount}
-                onChange={(event) =>
-                  setMinSessionBookingCount(
-                    Math.max(1, Number(event.target.value) || 1)
-                  )
-                }
-                className="h-12 w-full rounded-2xl border border-border/70 bg-background/90 px-4 text-sm font-medium shadow-sm outline-none transition hover:border-primary/35 hover:bg-background focus:border-primary focus:ring-2 focus:ring-primary/15"
-              />
-            </label>
           </div>
 
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
@@ -1050,6 +1048,66 @@ const playtimeBehaviorInsight = !dominantPlaytime || !playtimeMixData
       </Card>
 
       <Card>
+        <CardHeader>
+          <CardTitleTooltip title="Historical Campaign Performance" tooltip="Facility occupancy and revenue for the selected weekday, court, and play session." />
+          <CardDescription>Calendar-month performance anchored to the latest available play date.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-5">
+          {historicalSummary && (
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <div className="flex min-h-20 flex-col justify-center rounded-2xl border border-primary/20 bg-primary/15 p-4">
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Average Occupancy</p>
+                <p className="mt-1.5 text-xl font-bold text-foreground">{historicalSummary.averageOccupancy ?? "Unavailable"}%</p>
+              </div>
+              <div className="flex min-h-20 flex-col justify-center rounded-2xl border border-primary/20 bg-primary/15 p-4">
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Average Filled Slots</p>
+                <p className="mt-1.5 text-xl font-bold text-foreground">
+                  {historicalSummary.averageFilledSlots}{" "}
+                  <span className="text-sm font-medium text-muted-foreground">slots/month</span>
+                </p>
+              </div>
+              <div className="flex min-h-20 flex-col justify-center rounded-2xl border border-primary/20 bg-primary/15 p-4">
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Total Revenue</p>
+                <p className="mt-1.5 whitespace-nowrap text-xl font-bold text-foreground">Rp {historicalSummary.totalRevenue.toLocaleString("id-ID")}</p>
+              </div>
+              <div className="flex min-h-20 flex-col justify-center rounded-2xl border border-primary/20 bg-primary/15 p-4">
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Average Monthly Revenue</p>
+                <p className="mt-1.5 whitespace-nowrap text-xl font-bold text-foreground">Rp {historicalSummary.averageMonthlyRevenue.toLocaleString("id-ID")}</p>
+              </div>
+            </div>
+          )}
+          {monthlyPerformance.length > 0 && (
+            <p className="text-sm font-semibold text-foreground">Monthly Breakdown</p>
+          )}
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            {monthlyPerformance.map((month) => (
+              <div key={month.month} className="flex h-full flex-col rounded-2xl border border-border/80 bg-card p-4 transition-colors hover:border-primary/25 hover:bg-primary/[0.025]">
+                <p className="text-xs font-semibold uppercase tracking-wider text-primary">{month.monthLabel}</p>
+                <p className="mt-3 text-3xl font-bold leading-none text-foreground">{month.occupancyRate === null ? "Unavailable" : `${month.occupancyRate}%`}</p>
+                <p className="text-sm text-muted-foreground">Occupancy Rate</p>
+                <div className="mt-4 grid grid-cols-2 gap-3">
+                  <div>
+                    <p className="text-xs text-muted-foreground">Filled Slots</p>
+                    <p className="mt-0.5 font-semibold text-foreground">{month.occupiedSlots} of {month.totalPossibleSlots}</p>
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-xs text-muted-foreground">Revenue</p>
+                    <p className="mt-0.5 whitespace-nowrap font-semibold text-foreground">Rp {month.revenue.toLocaleString("id-ID")}</p>
+                  </div>
+                </div>
+                <p className="mt-4 whitespace-nowrap border-t border-primary/10 pt-3 text-xs text-muted-foreground">Data through {month.dataThrough}</p>
+              </div>
+            ))}
+          </div>
+          {!isLoadingCustomers && !latestCampaignPlayDate && monthlyPerformance.length === 0 && (
+            <div className="rounded-xl border border-dashed border-border px-4 py-5 text-sm text-muted-foreground">
+              Historical campaign performance is unavailable because no valid play-date history exists.
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {false && <Card>
         <CardHeader>
           <CardTitleTooltip title="Historically Low-Demand Sessions" tooltip="Time slots with the weakest historical booking demand — strong candidates for promotions." />
           <CardDescription>
@@ -1127,7 +1185,7 @@ const playtimeBehaviorInsight = !dominantPlaytime || !playtimeMixData
             </div>
           )}
         </CardContent>
-      </Card>
+      </Card>}
 
       <Card className="overflow-hidden">
         <CardHeader>
@@ -1153,23 +1211,23 @@ const playtimeBehaviorInsight = !dominantPlaytime || !playtimeMixData
               No matching customers found for this session. Try adjusting the filters.
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-border text-sm">
+            <div className="max-w-full overflow-x-auto rounded-2xl border border-border">
+              <table className="min-w-[1900px] divide-y divide-border text-sm [&_td:not(:last-child)]:border-r [&_td:not(:last-child)]:border-border/70 [&_th:not(:last-child)]:border-r [&_th:not(:last-child)]:border-border/70">
                 <thead>
-                  <tr className="text-left text-muted-foreground">
-                    <th className="px-3 py-3 font-medium">Customer Name</th>
-                    <th className="px-3 py-3 font-medium">Customer Type</th>
-                    <th className="px-3 py-3 font-medium">Phone</th>
-                    <th className="px-3 py-3 font-medium">Email</th>
-                    <th className="px-3 py-3 font-medium">Preferred Session</th>
-                    <th className="px-3 py-3 font-medium">Session Count</th>
-                    <th className="px-3 py-3 font-medium">Court Count</th>
-                    <th className="px-3 py-3 font-medium">Last Booking</th>
-                    <th className="px-3 py-3 font-medium">Avg Spend</th>
-                    <th className="px-3 py-3 font-medium">RFM Segment</th>
-                    <th className="px-3 py-3 font-medium">Priority</th>
-                    <th className="px-3 py-3 font-medium">Suggested Action</th>
-                    <th className="px-3 py-3 font-medium">Actions</th>
+                  <tr className="text-muted-foreground">
+                    <th className="min-w-[150px] px-3 py-3 text-center align-middle font-semibold">Customer Name</th>
+                    <th className="min-w-[135px] px-3 py-3 text-center align-middle font-semibold">Customer Type</th>
+                    <th className="min-w-[125px] px-3 py-3 text-center align-middle font-semibold">Phone</th>
+                    <th className="min-w-[190px] px-3 py-3 text-center align-middle font-semibold">Email</th>
+                    <th className="min-w-[130px] px-3 py-3 text-center align-middle font-semibold">Preferred Session</th>
+                    <th className="min-w-[105px] px-3 py-3 text-center align-middle font-semibold">Session Count</th>
+                    <th className="min-w-[95px] px-3 py-3 text-center align-middle font-semibold">Court Count</th>
+                    <th className="min-w-[120px] px-3 py-3 text-center align-middle font-semibold">Last Booking</th>
+                    <th className="min-w-[125px] px-3 py-3 text-center align-middle font-semibold">Avg Spend</th>
+                    <th className="min-w-[145px] px-3 py-3 text-center align-middle font-semibold">RFM Segment</th>
+                    <th className="min-w-[135px] px-3 py-3 text-center align-middle font-semibold">Priority</th>
+                    <th className="min-w-[220px] px-3 py-3 text-center align-middle font-semibold">Suggested Action</th>
+                    <th className="min-w-[220px] px-3 py-3 text-center align-middle font-semibold">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
@@ -1179,24 +1237,31 @@ const playtimeBehaviorInsight = !dominantPlaytime || !playtimeMixData
                         {customer.customerName || customer.customerKey}
                       </td>
                       <td className="px-3 py-3">{customer.customerTypeLabel}</td>
-                      <td className="px-3 py-3">{customer.phone || "-"}</td>
+                      <td className="whitespace-nowrap px-3 py-3">{customer.phone || "-"}</td>
                       <td className="px-3 py-3">{customer.email || "-"}</td>
-                      <td className="px-3 py-3">{customer.preferredSession || "-"}</td>
-                      <td className="px-3 py-3">{customer.selectedSessionBookingCount}</td>
-                      <td className="px-3 py-3">{customer.selectedCourtBookingCount}</td>
-                      <td className="px-3 py-3">{customer.lastBookingDate || "-"}</td>
-                      <td className="px-3 py-3">Rp {customer.avgSpend.toLocaleString()}</td>
-                      <td className="px-3 py-3">{customer.rfmSegmentName || "Not segmented"}</td>
-                      <td className="px-3 py-3">
+                      <td className="whitespace-nowrap px-3 py-3 text-center">{customer.preferredSession || "-"}</td>
+                      <td className="px-3 py-3 text-center">{customer.selectedSessionBookingCount}</td>
+                      <td className="px-3 py-3 text-center">{customer.selectedCourtBookingCount}</td>
+                      <td className="min-w-[120px] whitespace-nowrap px-3 py-3 text-center">{customer.lastBookingDate || "-"}</td>
+                      <td className="min-w-[125px] whitespace-nowrap px-3 py-3 text-right">Rp {customer.avgSpend.toLocaleString()}</td>
+                      <td className="px-3 py-3 text-center">{customer.rfmSegmentName || "Not segmented"}</td>
+                      <td className="px-3 py-3 text-center">
                         <div className="space-y-1">
-                          <Badge variant="secondary">{customer.targetPriorityLabel}</Badge>
+                          <Badge
+                            variant="secondary"
+                            className={customer.targetPriorityLabel === "High Priority"
+                              ? "border border-orange-200 bg-orange-50 text-orange-700 hover:bg-orange-100"
+                              : "border border-border bg-muted text-muted-foreground hover:bg-muted"}
+                          >
+                            {customer.targetPriorityLabel}
+                          </Badge>
                           <p className="text-xs text-muted-foreground">
                             Score: {customer.targetPriorityScore}
                           </p>
                         </div>
                       </td>
                       <td className="px-3 py-3">{customer.suggestedAction}</td>
-                      <td className="px-3 py-3">
+                      <td className="px-3 py-3 text-center">
                         <div className="flex min-w-[220px] flex-col gap-2">
                           <Button
                             variant="outline"
