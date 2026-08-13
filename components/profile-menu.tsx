@@ -265,16 +265,16 @@ export function ProfileMenu({ userRole, onLogout }: ProfileMenuProps) {
       <DropdownMenuSeparator />
 
       <div className="space-y-2 px-2 py-1.5">
-        <p className="text-xs font-medium text-muted-foreground">Change username</p>
+        <p className="text-xs font-medium text-muted-foreground">Change name</p>
         <Input
           value={nameValue}
           onChange={(event) => setNameValue(event.target.value)}
-          placeholder="Enter your username"
+          placeholder="Enter your name"
           maxLength={100}
         />
         <Button type="button" size="sm" className="w-full" disabled={nameBusy} onClick={handleSaveName}>
           {nameBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-          Save username
+          Save name
         </Button>
       </div>
 

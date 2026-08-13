@@ -30,7 +30,7 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="id" className="bg-background">
+    <html lang="id" className="bg-background" suppressHydrationWarning>
       <body className={`${geist.variable} ${geistMono.variable} min-h-screen bg-background font-sans text-foreground antialiased`}>
         <Providers>
           <AuthProvider>
