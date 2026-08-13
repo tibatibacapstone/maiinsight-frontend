@@ -58,6 +58,7 @@ import {
   formatMetaPercent,
   type NullableMetric,
 } from "@/lib/meta-metric-formatters"
+import { getDailyXTicks } from "@/lib/chart-ticks"
 import {
   buildPeriodSearchParams,
   getBangkokCalendarDate,
@@ -250,27 +251,6 @@ const getDatePartsFromKey = (value?: string) => {
     month: Number(match[2]),
     day: Number(match[3]),
   }
-}
-
-const getLastDayOfMonth = (year: number, month: number) =>
-  new Date(year, month, 0).getDate()
-
-const shouldShowMtdTick = (value?: string) => {
-  const parts = getDatePartsFromKey(value)
-
-  if (!parts) return false
-
-  const lastDay = getLastDayOfMonth(parts.year, parts.month)
-
-  return (
-    parts.day === 1 ||
-    parts.day === 5 ||
-    parts.day === 10 ||
-    parts.day === 15 ||
-    parts.day === 20 ||
-    parts.day === 25 ||
-    parts.day === lastDay
-  )
 }
 
 const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
@@ -1253,16 +1233,33 @@ const formatTrendXAxisTick = (
   return value
 }
 
+// Shared odd-day X-axis tick rule — identical to the management report so the
+// Revenue Trend and Occupancy Trend timelines stay visually aligned. Uses the
+// actual calendar day number (not the array index), so day 28 in any month is
+// shown whenever it is odd, and even dates still get plotted by the chart but
+// are not labeled on the X-axis. In YTD/monthly mode this returns undefined
+// and the chart keeps its default tick rendering.
 const occupancyXAxisTicks = useMemo(() => {
   if ((periodType || "MTD") !== "MTD") {
     return undefined
   }
 
-  return formattedOccupancyTrend
-    .filter((point) =>
-      shouldShowMtdTick(point.chartKey)
-    )
-    .map((point) => point.chartKey)
+  const keptLabels = getDailyXTicks(
+    formattedOccupancyTrend.map((point) => ({
+      key: point.chartKey,
+      label: point.displayLabel,
+    }))
+  )
+
+  if (!keptLabels) return undefined
+
+  const labelToKey = new Map(
+    formattedOccupancyTrend.map((point) => [point.displayLabel, point.chartKey])
+  )
+
+  return keptLabels
+    .map((label) => labelToKey.get(label))
+    .filter((value): value is string => Boolean(value))
 }, [formattedOccupancyTrend, periodType])
 
 const revenueXAxisTicks = useMemo(() => {
@@ -1270,11 +1267,17 @@ const revenueXAxisTicks = useMemo(() => {
     return undefined
   }
 
-  return (reportData?.revenueTrend || [])
-    .filter((point) =>
-      shouldShowMtdTick(point.key)
-    )
-    .map((point) => point.key)
+  const keptLabels = getDailyXTicks(reportData?.revenueTrend ?? [])
+
+  if (!keptLabels) return undefined
+
+  const labelToKey = new Map(
+    (reportData?.revenueTrend ?? []).map((point) => [point.label, point.key])
+  )
+
+  return keptLabels
+    .map((label) => labelToKey.get(label))
+    .filter((value): value is string => Boolean(value))
 }, [periodType, reportData?.revenueTrend])
 
   return (
