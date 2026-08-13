@@ -19,6 +19,7 @@ import { Input } from "@/components/ui/input"
 import { getApiUrl } from "@/lib/api"
 import { getAuthHeaders } from "@/lib/roles"
 import { CUSTOMER_SEGMENT_COLORS } from "@/lib/segmentation"
+import { getDailyXTicks } from "@/lib/chart-ticks" // ⬅️ NEW: shared odd-day X-axis tick rule for both trend charts
 import {
   AlertTriangle,
   ArrowRight,
@@ -142,10 +143,6 @@ interface SessionOccupancyRow {
 interface SegmentContributionRow {
   segmentName: string
   customerCount: number
-  revenue: number
-  bookings: number
-  revenueShare: number
-  bookingShare: number
 }
 
 interface MetaDashboardData {
@@ -186,6 +183,7 @@ interface OverviewKpiData {
 
 // ⬅️ NEW: mirrors OccupancyTrendPoint used in analytics-dashboard.tsx
 interface OccupancyTrendPoint {
+  key?: string
   label: string
   bookedSessions: number
   availableSessions: number
@@ -464,11 +462,12 @@ export function ManagementReport() {
         bookingType,
       })
 
-      // ⬅️ NEW: occupancy-trend uses the report's exact date range with per-date buckets
+      // ⬅️ NEW: occupancy-trend reuses the report's exact date range; the backend
+      // emits daily buckets (<= 45 days) or monthly buckets (longer ranges) just
+      // like Revenue Trend, so no bucket override is needed
       const occupancyTrendParams = new URLSearchParams({
         startDate,
         endDate,
-        bucket: "daily",
         venue,
         customerType: "All Type",
         bookingType,
@@ -795,6 +794,18 @@ export function ManagementReport() {
     return totalAvailable > 0 ? (totalBooked / totalAvailable) * 100 : 0
   }, [occupancyTrend])
 
+  // ⬅️ NEW: shared odd-day X-axis tick rule for daily ranges (identical for
+  // Revenue Trend and Occupancy Trend so their timelines stay visually aligned).
+  // Undefined in monthly mode, so the default month labels are kept untouched.
+  const revenueTrendXTicks = useMemo(
+    () => getDailyXTicks(report?.revenueTrend ?? []),
+    [report?.revenueTrend]
+  )
+  const occupancyTrendXTicks = useMemo(
+    () => getDailyXTicks(occupancyTrend),
+    [occupancyTrend]
+  )
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -1091,7 +1102,7 @@ export function ManagementReport() {
                       </linearGradient>
                     </defs>
                     <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-                    <XAxis dataKey="label" stroke="var(--muted-foreground)" tickLine={false} axisLine={false} />
+                    <XAxis dataKey="label" ticks={occupancyTrendXTicks} interval={occupancyTrendXTicks ? 0 : undefined} stroke="var(--muted-foreground)" tickLine={false} axisLine={false} />
                     <YAxis stroke="var(--muted-foreground)" tickLine={false} axisLine={false} unit="%" />
                     <RechartsTooltip formatter={(value: number) => [`${value}%`, "Occupancy"]} />
                   <Area type="monotone" dataKey="rate" stroke="var(--chart-1)" fill="url(#printOccupancyGradient)" strokeWidth={2}>
@@ -1116,7 +1127,7 @@ export function ManagementReport() {
           </linearGradient>
         </defs>
         <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-        <XAxis dataKey="label" stroke="var(--muted-foreground)" tickLine={false} axisLine={false} />
+        <XAxis dataKey="label" ticks={revenueTrendXTicks} interval={revenueTrendXTicks ? 0 : undefined} stroke="var(--muted-foreground)" tickLine={false} axisLine={false} />
         <YAxis stroke="var(--muted-foreground)" tickLine={false} axisLine={false} tickFormatter={(value) => `${Math.round(Number(value) / 1000000)}M`} />
         <Area type="monotone" dataKey="revenue" stroke="var(--chart-1)" fill="url(#printRevenueGradient)" strokeWidth={2}>
           <LabelList
@@ -1373,7 +1384,7 @@ export function ManagementReport() {
                         </linearGradient>
                       </defs>
                       <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-                      <XAxis dataKey="label" stroke="var(--muted-foreground)" tickLine={false} axisLine={false} />
+                      <XAxis dataKey="label" ticks={revenueTrendXTicks} interval={revenueTrendXTicks ? 0 : undefined} stroke="var(--muted-foreground)" tickLine={false} axisLine={false} />
                       <YAxis stroke="var(--muted-foreground)" tickLine={false} axisLine={false} tickFormatter={(value) => `${Math.round(Number(value) / 1000000)}M`} />
                       <RechartsTooltip formatter={(value: number) => [formatCurrency(value), "Revenue"]} />
                       <Area type="monotone" dataKey="revenue" stroke="var(--chart-1)" fill="url(#reportRevenueGradient)" strokeWidth={2} />
@@ -1406,7 +1417,7 @@ export function ManagementReport() {
                           </linearGradient>
                         </defs>
                         <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-                        <XAxis dataKey="label" stroke="var(--muted-foreground)" tickLine={false} axisLine={false} />
+                        <XAxis dataKey="label" ticks={occupancyTrendXTicks} interval={occupancyTrendXTicks ? 0 : undefined} stroke="var(--muted-foreground)" tickLine={false} axisLine={false} />
                         <YAxis stroke="var(--muted-foreground)" tickLine={false} axisLine={false} unit="%" />
                         <RechartsTooltip formatter={(value: number) => [`${value}%`, "Occupancy"]} />
                         <Area type="monotone" dataKey="rate" stroke="var(--chart-1)" fill="url(#occupancyGradient)" strokeWidth={2} />
@@ -1427,7 +1438,7 @@ export function ManagementReport() {
               <CardHeader>
                 <CardTitle>
                   <span className="flex items-center gap-2">
-                    Booking Mix
+                    Booking Type Distribution
                     <InfoTooltip content="Booking type distribution for the selected reporting period." />
                   </span>
                 </CardTitle>
@@ -1495,7 +1506,7 @@ export function ManagementReport() {
                 <CardTitle>
                   <span className="flex items-center gap-2">
                     Customer Value Segments
-                    <InfoTooltip content="Customer distribution across High / Mid / Low value tiers based on visit frequency." />
+                    <InfoTooltip content="Customer value segmentation from the latest RFM clustering run (same source as the Segments page)." />
                   </span>
                 </CardTitle>
               <CardDescription>
