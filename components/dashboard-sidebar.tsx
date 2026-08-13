@@ -44,13 +44,13 @@ interface SidebarProps {
 }
 
 const navItems = [
-  { id: "dashboard" as PageId, label: "Overview", icon: LayoutDashboard },
-  { id: "reports" as PageId, label: "Management Reports", icon: FileText },
-  { id: "segments" as PageId, label: "Segments", icon: Users },
   { id: "data" as PageId, label: "Data Center", icon: Database },
+  { id: "dashboard" as PageId, label: "Overview", icon: LayoutDashboard },
+  { id: "instasight" as PageId, label: "InstaSight", icon: GitGraph },
+  { id: "segments" as PageId, label: "Segments", icon: Users },
   { id: "targeting" as PageId, label: "Fill Empty Sessions", icon: Target },
   { id: "genai" as PageId, label: "GenAI Workspace", icon: Sparkles },
-  { id: "instasight" as PageId, label: "InstaSight", icon: GitGraph },
+  { id: "reports" as PageId, label: "Management Reports", icon: FileText },
   { id: "history" as PageId, label: "History", icon: History },
   { id: "settings" as PageId, label: "Settings", icon: Settings },
 ]

@@ -205,7 +205,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const data = await response.json().catch(() => null)
 
         if (!response.ok) {
-          return data?.error || "Could not update your profile."
+          return data?.error || data?.message || "Could not update your profile."
         }
 
         if (data?.data) {

@@ -133,6 +133,23 @@ interface UploadImportResponse {
   }
 }
 
+interface ImportAnomalyItem {
+  rowNumber: number
+  type: "payment_completed_without_order_id" | "manual_walk_in_with_order_id"
+  customerName: string | null
+  orderId: string | null
+}
+
+interface ImportAnomalySummary {
+  paymentCompletedWithoutOrderId: number
+  manualWalkInWithOrderId: number
+}
+
+interface ImportAnomalyRequest {
+  anomalySummary: ImportAnomalySummary
+  anomalies: ImportAnomalyItem[]
+}
+
 interface ImportJobResponse {
   id: string
   sourceRecordId: number | string
@@ -323,7 +340,7 @@ const createFriendlyImportError = (
   message: response?.message || "We couldn't process the uploaded file.",
   suggestion:
     response?.suggestion ||
-    "Please make sure the file follows the required MaiinSight transaction template, then try again. Contact IT Support if the issue continues.",
+    "Please make sure the file follows the required MaiinSight transaction template, then try again.",
   errorCode: response?.errorCode || "IMPORT_FAILED",
   technicalDetails: response?.technicalMessage || null,
   validationErrors: Array.isArray(response?.validationErrors)
@@ -545,6 +562,8 @@ const [mlSummary, setMlSummary] = useState<MlSummary>({
   const [isUploading, setIsUploading] = useState(false)
   const [uploadMessage, setUploadMessage] = useState("")
   const [uploadError, setUploadError] = useState<BusinessErrorState | null>(null)
+  const [confirmImportRequest, setConfirmImportRequest] =
+    useState<ImportAnomalyRequest | null>(null)
 
   const [isLoadingJobs, setIsLoadingJobs] = useState(false)
   const [removingJobId, setRemovingJobId] = useState<string | null>(null)
@@ -1057,7 +1076,27 @@ if (!response.ok) {
           // ignore parse failure
         }
 
-        reject(createFriendlyImportError(parsed, "Import Failed"))
+        const friendlyError = createFriendlyImportError(parsed, "Import Failed")
+        const parsedWithConfirmation = parsed as UploadImportResponse & {
+          requiresConfirmation?: boolean
+          anomalySummary?: ImportAnomalySummary
+          anomalies?: ImportAnomalyItem[]
+        }
+        if (parsedWithConfirmation?.requiresConfirmation) {
+          const anomalyError = Object.assign(friendlyError, {
+            importAnomaly: {
+              anomalySummary: parsedWithConfirmation.anomalySummary || {
+                paymentCompletedWithoutOrderId: 0,
+                manualWalkInWithOrderId: 0,
+              },
+              anomalies: parsedWithConfirmation.anomalies || [],
+            } as ImportAnomalyRequest,
+          })
+          reject(anomalyError)
+          return
+        }
+
+        reject(friendlyError)
       }
 
       xhr.onerror = () => reject(new Error("Upload request failed."))
@@ -1066,7 +1105,7 @@ if (!response.ok) {
     })
   }
 
-  const handleUploadImport = async () => {
+  const handleUploadImport = async (confirm = false) => {
     const userRole = getStoredRole()
 
     if (!canAccessFeature(userRole, "uploadCsv")) {
@@ -1117,6 +1156,9 @@ if (!response.ok) {
 
       const formData = new FormData()
       formData.append("file", currentFile)
+      if (confirm) {
+        formData.append("confirmImport", "true")
+      }
 
       const result = await uploadFileWithProgress(
         getApiUrl("/imports/upload-file"),
@@ -1152,6 +1194,19 @@ if (!response.ok) {
           ? (error as BusinessErrorState)
           : createFriendlyImportError(null, "Import Failed")
 
+      const importAnomaly =
+        error &&
+        typeof error === "object" &&
+        "importAnomaly" in error &&
+        error.importAnomaly
+          ? (error as unknown as { importAnomaly: ImportAnomalyRequest }).importAnomaly
+          : null
+
+      if (importAnomaly) {
+        setConfirmImportRequest(importAnomaly)
+        return
+      }
+
       setUploadError(friendlyError)
       toast.error(friendlyError.title, {
         description: friendlyError.message,
@@ -1180,6 +1235,29 @@ if (!response.ok) {
     } finally {
       setIsUploading(false)
     }
+  }
+
+  const handleConfirmImport = async (approved: boolean) => {
+    const request = confirmImportRequest
+    setConfirmImportRequest(null)
+
+    if (!approved) {
+      const message =
+        "The import was cancelled because rows in the file have a booking channel and Order ID that do not match."
+      setUploadError({
+        title: "Import Cancelled",
+        message,
+        suggestion: "Correct the affected rows in the file, then upload it again.",
+        errorCode: "IMPORT_ORDER_ID_ANOMALY",
+      })
+      toast.error("Import cancelled", {
+        description: message,
+      })
+      await fetchSyncJobs()
+      return
+    }
+
+    await handleUploadImport(true)
   }
 
   const handleRunMachineLearning = async () => {
@@ -1223,7 +1301,7 @@ if (!response.ok) {
       const businessError = createBusinessErrorState({
         title: "Customer Segmentation Failed",
         message: "We couldn't complete the segmentation run.",
-        suggestion: "Please try again after the latest data import is complete. Contact IT Support if the issue continues.",
+        suggestion: "Please try again after the latest data import is complete.",
         errorCode: "SEGMENTATION_RUN_FAILED",
         technicalDetails: error instanceof Error ? error.message : "Failed to run segmentation.",
       })
@@ -1279,7 +1357,7 @@ const handleViewRawRows= async (job: SyncJob) => {
         : createBusinessErrorState({
             title: "Transaction Data Preview Failed",
             message: "We couldn't load the cleaned transaction preview.",
-            suggestion: "Please try again. Contact IT Support if the issue continues.",
+            suggestion: "Please try again.",
             errorCode: "TRANSACTION_DATA_PREVIEW_FAILED",
             technicalDetails:
               error instanceof Error ? error.message : "Failed to load transaction data.",
@@ -1610,7 +1688,7 @@ if (!canAccessDataCenter) {
                 <Button
                   className="w-full shrink-0"
                   disabled={!canManageCsv || !uploadFile || isUploading}
-                  onClick={handleUploadImport}
+                  onClick={() => handleUploadImport()}
                 >
                   {isUploading ? (
                     <>
@@ -1624,6 +1702,71 @@ if (!canAccessDataCenter) {
               </div>
             </DialogContent>
           </Dialog>
+
+          <AlertDialog open={confirmImportRequest !== null}>
+            <AlertDialogContent
+              onEscapeKeyDown={(event) => event.preventDefault()}
+            >
+              <AlertDialogHeader>
+                <AlertDialogTitle>Confirm Import</AlertDialogTitle>
+                <AlertDialogDescription className="space-y-3">
+                  <p>
+                    The file contains rows where the booking channel and Order ID do not match. Import these rows
+                    anyway?
+                  </p>
+                  <ul className="list-disc pl-5 text-sm">
+                    <li>
+                      {confirmImportRequest?.anomalySummary.paymentCompletedWithoutOrderId ?? 0}{" "}
+                      Payment Completed row(s) without an Order ID
+                    </li>
+                    <li>
+                      {confirmImportRequest?.anomalySummary.manualWalkInWithOrderId ?? 0}{" "}
+                      Manual/Walk-in row(s) with an Order ID
+                    </li>
+                  </ul>
+                  {confirmImportRequest && confirmImportRequest.anomalies.length > 0 && (
+                    <div className="max-h-48 overflow-auto rounded-lg border bg-background">
+                      <table className="w-full text-sm">
+                        <thead className="sticky top-0 bg-background">
+                          <tr className="border-b">
+                            <th className="px-3 py-2 text-left font-semibold">Row</th>
+                            <th className="px-3 py-2 text-left font-semibold">Customer</th>
+                            <th className="px-3 py-2 text-left font-semibold">Order ID</th>
+                            <th className="px-3 py-2 text-left font-semibold">Channel</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {confirmImportRequest.anomalies.map((item, index) => (
+                            <tr
+                              key={`${item.rowNumber}-${index}`}
+                              className="border-b last:border-b-0"
+                            >
+                              <td className="px-3 py-2 font-medium">{item.rowNumber}</td>
+                              <td className="px-3 py-2">{item.customerName || "-"}</td>
+                              <td className="px-3 py-2">{item.orderId || "-"}</td>
+                              <td className="px-3 py-2">
+                                {item.type === "payment_completed_without_order_id"
+                                  ? "Payment Completed (no Order ID)"
+                                  : "Manual/Walk-in (has Order ID)"}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel onClick={() => handleConfirmImport(false)}>
+                  Cancel
+                </AlertDialogCancel>
+                <AlertDialogAction onClick={() => handleConfirmImport(true)}>
+                  Import Anyway
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </div>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
   {dataSources.map((source) => (

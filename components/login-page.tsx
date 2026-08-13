@@ -31,7 +31,12 @@ function GoogleLoginButton({ onGoogleCredential, disabled }: { onGoogleCredentia
       <GoogleLogin
         text="continue_with"
         shape="rectangular"
-        width="360"
+        width="100%"
+        logo_alignment="left"
+        containerProps={{
+          className: "w-full",
+          style: { width: "100%" },
+        }}
         onSuccess={async (response) => {
           if (!response.credential) return
           setLoading(true)
@@ -205,7 +210,7 @@ export function LoginPage({ onSubmit, onGoogleCredential, isLoading, error }: Lo
           <path d="M6 6l20 20M26 6L6 26" stroke="currentColor" strokeWidth="1" opacity="0.5" />
         </svg>
 
-        <div className="w-full max-w-5xl grid lg:grid-cols-2 gap-8 relative z-10">
+        <div className="w-full max-w-6xl xl:max-w-7xl grid lg:grid-cols-[1.05fr_0.95fr] gap-10 relative z-10">
 
           {/* Left Side - Branding & Sports Animation */}
           <div className="flex flex-col justify-center space-y-6 lg:pr-8">
@@ -380,7 +385,7 @@ export function LoginPage({ onSubmit, onGoogleCredential, isLoading, error }: Lo
           </div>
 
           {/* Right Side - Login Form */}
-          <Card className="border-border bg-card shadow-xl shadow-primary/5">
+          <Card className="w-full border-border bg-card shadow-xl shadow-primary/5">
 
             <CardHeader className="space-y-1 pb-4">
               <CardTitle className="text-2xl">

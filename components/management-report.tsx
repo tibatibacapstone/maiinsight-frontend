@@ -626,7 +626,7 @@ export function ManagementReport() {
 
       toast.dismiss(toastId)
       toast.success("Presentasi manajemen siap", {
-        description: `${link.download} telah diunduh. Management juga menerima notifikasi dengan file yang bisa dilihat.`,
+        description: `${link.download} telah diunduh. Management dan Operational juga menerima notifikasi dengan file yang bisa dilihat.`,
         duration: 8000,
       })
     } catch (error) {
@@ -865,9 +865,10 @@ export function ManagementReport() {
               </SelectTrigger>
               <SelectContent position="popper" className="w-[var(--radix-select-trigger-width)] rounded-xl border bg-background shadow-lg">
                 <SelectItem value="all">All booking types</SelectItem>
-                <SelectItem value="regular_booking">Regular booking</SelectItem>
-                <SelectItem value="member_internal_booking">Member / internal</SelectItem>
-                <SelectItem value="other">Other</SelectItem>
+                <SelectItem value="GeloraApp Booking">GeloraApp Booking</SelectItem>
+                <SelectItem value="Manual/Walk-in">Manual/Walk-in</SelectItem>
+                <SelectItem value="Internal">Internal</SelectItem>
+                <SelectItem value="Tutup/Maintenance">Tutup/Maintenance</SelectItem>
               </SelectContent>
             </Select>
             <div className="inline-flex h-10 items-center rounded-lg border border-border/70 bg-background/80 p-1 shadow-sm">

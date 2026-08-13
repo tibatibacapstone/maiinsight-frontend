@@ -302,42 +302,27 @@ const playtimeLabelMap: Record<string, string> = {
   Malam: "Night",
 }
 const bookingTypeLabelMap: Record<string, string> = {
-  membership: "Membership",
-  non_membersership: "Non-Membership",
-  non_membership: "Non-Membership",
-  internal: "Internal",
-  blocked: "Internal",
-  regular_booking: "Membership",
-  member_internal_booking: "Non-Membership",
+  "GeloraApp Booking": "GeloraApp Booking",
+  "Manual/Walk-in": "Manual/Walk-in",
+  Internal: "Internal",
+  "Tutup/Maintenance": "Tutup/Maintenance",
   other: "Other",
 }
 
 const bookingTypeColorMap: Record<string, string> = {
-  membership: "var(--chart-1)",
-  regular_booking: "var(--chart-1)",
-
-  non_membership: "var(--chart-2)",
-  non_membersership: "var(--chart-2)",
-  member_internal_booking: "var(--chart-2)",
-
-  internal: "var(--chart-3)",
-  blocked: "var(--chart-3)",
-
+  "GeloraApp Booking": "var(--chart-1)",
+  "Manual/Walk-in": "var(--chart-2)",
+  Internal: "var(--chart-3)",
+  "Tutup/Maintenance": "var(--chart-4)",
   other: "var(--chart-4)",
 }
 
 const bookingTypeOrder: Record<string, number> = {
-  membership: 0,
-  regular_booking: 0,
-
-  non_membership: 1,
-  non_membersership: 1,
-  member_internal_booking: 1,
-
-  internal: 2,
-  blocked: 2,
-
-  other: 3,
+  "GeloraApp Booking": 0,
+  "Manual/Walk-in": 1,
+  Internal: 2,
+  "Tutup/Maintenance": 3,
+  other: 4,
 }
 
 const getStoredToken = () => {

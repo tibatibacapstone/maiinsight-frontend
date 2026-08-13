@@ -66,6 +66,7 @@ interface IntegrationConfigResponse {
   success: boolean
   message?: string
   data?: {
+    geminiApiKey: string
     geminiApiKeyConfigured: boolean
     geminiModel: string
     geminiEnabled: boolean
@@ -140,7 +141,7 @@ export function SystemSettings() {
     } catch (_) { /* non-critical */ } finally { setGeminiUsageLoading(false) }
   }
 
-  const checkTokensNow = async () => {
+  const checkTokensNow = async (silent = false) => {
     try {
       setTokenCheckLoading(true)
       const response = await fetch(getApiUrl("/system/check-tokens"), {
@@ -151,7 +152,7 @@ export function SystemSettings() {
       if (result?.success && result.data) {
         setTokenCheckResult(result.data)
         setLastTokenCheck(new Date().toISOString())
-        toast.success("Token and integration health check completed.")
+        if (!silent) toast.success("Token and integration health check completed.")
       } else {
         toast.error(result?.message || "Token check failed.")
       }
@@ -212,7 +213,7 @@ export function SystemSettings() {
       setUsers(usersResult?.data || [])
       const editableConfig = configResult?.data
       setIntegrationForm({
-        geminiApiKey: "",
+        geminiApiKey: editableConfig?.geminiApiKey || "",
         geminiModel: editableConfig?.geminiModel || result.data.integrations.geminiModel || "",
         geminiEnabled: editableConfig?.geminiEnabled ?? result.data.integrations.aiEnabled,
         metaIgUserId: editableConfig?.metaIgUserId || "",
@@ -230,6 +231,12 @@ export function SystemSettings() {
   useEffect(() => {
     if (userRole === USER_ROLES.OPERATIONAL || isItSupport) void loadSettings()
   }, [isItSupport, loadSettings, userRole])
+
+  useEffect(() => {
+    if (userRole !== USER_ROLES.OPERATIONAL && !isItSupport) return
+    void fetchGeminiUsage()
+    void checkTokensNow()
+  }, [isItSupport, userRole])
 
   useEffect(() => {
     if (userPage > totalPages) setUserPage(totalPages)
@@ -333,6 +340,7 @@ export function SystemSettings() {
       const result = await response.json().catch(() => null)
       if (!response.ok || !result?.success) throw new Error(result?.message || "Toggle could not be saved.")
       await loadSettings()
+      void checkTokensNow(true)
       toast.success(`${field === "geminiEnabled" ? "Gemini" : "Meta"} ${value ? "enabled" : "disabled"}.`)
     } catch (err) {
       setIntegrationForm((p) => ({ ...p, [field]: !value }))
@@ -461,12 +469,12 @@ export function SystemSettings() {
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <KpiCard
               label="Gemini"
-              value={integrationForm.geminiEnabled ? (summary?.integrations.aiConfigured ? "Connected" : "No API Key") : "Disabled"}
+              value={integrationForm.geminiEnabled ? (summary?.integrations.aiConfigured ? "Active" : "No API Key") : "Disabled — switch off"}
               changeLabel={summary?.integrations.geminiModel || "No model configured"}
               tooltip="Gemini AI integration status and configured model."
             >
-              <Badge variant={summary?.integrations.aiConfigured && integrationForm.geminiEnabled ? "default" : "destructive"} className="rounded-full px-3">
-                {summary?.integrations.aiConfigured && integrationForm.geminiEnabled ? "Active" : "Inactive"}
+              <Badge variant={integrationForm.geminiEnabled ? (summary?.integrations.aiConfigured ? "default" : "secondary") : "destructive"} className="rounded-full px-3">
+                {integrationForm.geminiEnabled ? (summary?.integrations.aiConfigured ? "Active" : "No API Key") : "Disabled"}
               </Badge>
             </KpiCard>
 
@@ -597,7 +605,10 @@ export function SystemSettings() {
                       <p className="text-sm font-medium">Meta Token</p>
                       {tokenCheckResult ? (
                         <p className="text-xs text-muted-foreground">
-                          {tokenCheckResult.meta.status === "valid" ? `Valid (${tokenCheckResult.meta.daysRemaining} days remaining)`
+                          {tokenCheckResult.meta.status === "valid"
+                            ? tokenCheckResult.meta.daysRemaining != null
+                              ? `Valid (${tokenCheckResult.meta.daysRemaining} days remaining)`
+                              : "Valid — token does not expire"
                             : tokenCheckResult.meta.status === "warning" ? `Expires in ${tokenCheckResult.meta.daysRemaining} days`
                             : tokenCheckResult.meta.status === "critical" ? `Expires in ${tokenCheckResult.meta.daysRemaining} days — action required`
                             : tokenCheckResult.meta.status === "expired" ? "Expired — token needs renewal"
@@ -696,10 +707,10 @@ export function SystemSettings() {
                     </div>
                     <div className="flex items-center gap-2.5">
                       <Badge
-                        variant={integrationForm.geminiEnabled ? "default" : "destructive"}
+                        variant={integrationForm.geminiEnabled ? (summary?.integrations.aiConfigured ? "default" : "secondary") : "destructive"}
                         className="rounded-full px-3 py-1 transition-colors duration-200"
                       >
-                        {integrationForm.geminiEnabled ? "Active" : "Inactive"}
+                        {integrationForm.geminiEnabled ? (summary?.integrations.aiConfigured ? "Active" : "No API Key") : "Disabled"}
                       </Badge>
                       <Switch
                         checked={integrationForm.geminiEnabled}

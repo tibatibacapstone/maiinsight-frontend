@@ -44,6 +44,8 @@ export function BusinessErrorAlert({
   const config = variantConfig[variant]
   const Icon = config.icon
 
+  const suggestionMentionsItSupport = /it\s*support/i.test(suggestion ?? "")
+
   return (
     <div className={`rounded-md border p-4 ${config.wrapper}`}>
       <div className="flex items-start gap-3">
@@ -57,6 +59,12 @@ export function BusinessErrorAlert({
           <p className="text-sm">{message}</p>
 
           {suggestion ? <p className="text-sm opacity-90">{suggestion}</p> : null}
+
+          {suggestion && !suggestionMentionsItSupport ? (
+            <p className="text-sm opacity-90">
+              If the issue continues, contact IT Support.
+            </p>
+          ) : null}
 
           {showTechnicalDetails && technicalDetails ? (
             <details className="text-sm">
