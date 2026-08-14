@@ -603,16 +603,11 @@ export function AnalyticsDashboard() {
   const lastRefreshAtRef = useRef(0)
 
   const yearOptions = useMemo(() => {
-    const startYear = 2023
-    const endYear = getBangkokCalendarDate(new Date()).year
-    return Array.from({ length: Math.max(endYear - startYear + 1, 1) }, (_, index) => {
-      const year = String(startYear + index)
-      return {
-        value: year,
-        disabled: false,
-      }
-    })
-  }, [])
+    const years = [...new Set(availableMonthValues.map((value) => value.slice(0, 4)))]
+      .filter(Boolean)
+      .sort((left, right) => Number(right) - Number(left))
+    return years.map((year) => ({ value: year, disabled: false }))
+  }, [availableMonthValues])
 
   const monthOptions = useMemo(() => {
     const monthsForYear = availableMonthValues.filter((value) => value.startsWith(`${selectedYear}-`))
@@ -1317,7 +1312,14 @@ const revenueXAxisTicks = useMemo(() => {
               </Select>
               <Select
                 value={selectedYear}
-                onValueChange={setSelectedYear}
+                onValueChange={(year) => {
+                  setSelectedYear(year)
+                  const availableInYear = availableMonthValues.filter((value) => value.startsWith(`${year}-`))
+                  const currentMonthValue = formatMonthValue(selectedMonth, year)
+                  if (selectedMonth !== DEFAULT_MONTH_OPTION && !availableInYear.includes(currentMonthValue || "")) {
+                    setSelectedMonth(DEFAULT_MONTH_OPTION)
+                  }
+                }}
                 disabled={!status?.hasTransactionData && !isLoading}
               >
                 <SelectTrigger className="h-11 w-[130px] rounded-xl border border-border/70 bg-background/90 px-3 shadow-sm outline-none transition hover:border-primary/35 hover:bg-background focus:ring-2 focus:ring-primary/15">
