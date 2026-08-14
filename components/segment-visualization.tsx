@@ -275,7 +275,7 @@ export const HeatmapGrid = ({ heatmapSummary }: { heatmapSummary: HeatmapSummary
                     const internalRate = slot?.internalRate ?? 0
                     const tutupSessions = slot?.tutupSessions ?? 0
                     const tutupRate = slot?.tutupRate ?? 0
-                    const visual = getHeatmapCellVisual({ occupancyRate, internalRate })
+                    const visual = getHeatmapCellVisual({ occupancyRate, internalRate, tutupRate })
                     const tooltipLines = getHeatmapTooltipLines({
                       ...slot,
                       emptySlots,
@@ -296,7 +296,7 @@ export const HeatmapGrid = ({ heatmapSummary }: { heatmapSummary: HeatmapSummary
                               backgroundColor: `rgba(249, 115, 22, ${visual.orangeAlpha})`,
                             }}
                           >
-                            {internalSessions + blockedSlots > 0 && (
+                            {internalSessions > 0 && (
                               <span
                                 aria-hidden="true"
                                 className="absolute inset-y-0 left-0 bg-slate-600"
@@ -351,12 +351,14 @@ export const HeatmapGrid = ({ heatmapSummary }: { heatmapSummary: HeatmapSummary
           </span>
           <span className="text-xs text-muted-foreground">Darker orange = higher occupancy rate</span>
           <span className="inline-flex items-center gap-2">
-            <span className="h-3 w-6 overflow-hidden rounded-sm border border-slate-300 bg-orange-200">
-              <span className="block h-full w-2/3 bg-slate-600/70" />
-            </span>
-            Gray coverage: unavailable Internal / blocked slots
+            <span className="h-3 w-3 rounded-sm bg-slate-600" />
+            Internal booking (occupied)
           </span>
-          <span className="text-xs text-muted-foreground">Gray slots are excluded from bookable capacity</span>
+          <span className="inline-flex items-center gap-2">
+            <span className="h-3 w-3 rounded-sm bg-black" />
+            Tutup / Maintenance (court closed)
+          </span>
+          <span className="text-xs text-muted-foreground">Internal counts as occupied; Tutup/Maintenance reduces bookable capacity</span>
         </div>
       </CardContent>
     </Card>
