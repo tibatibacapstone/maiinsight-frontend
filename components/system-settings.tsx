@@ -537,8 +537,15 @@ export function SystemSettings() {
                 : "Run segmentation from Data Center"}
               tooltip="K-Means++ ML Segmentation Engine status."
             >
-              <Badge variant={summary?.latestSegmentationRun?.status === "success" ? "default" : "secondary"} className="rounded-full px-3">
-                {summary?.latestSegmentationRun?.status === "success" ? "Active" : "No Runs"}
+              <Badge variant={
+                summary?.latestSegmentationRun?.status === "completed" ? "default"
+                : summary?.latestSegmentationRun?.status === "failed" ? "destructive"
+                : "secondary"
+              } className="rounded-full px-3">
+                {summary?.latestSegmentationRun?.status === "completed" ? "Active"
+                  : summary?.latestSegmentationRun?.status === "failed" ? "Failed"
+                  : summary?.latestSegmentationRun?.status === "running" ? "Running"
+                  : "No Runs"}
               </Badge>
             </KpiCard>
           </div>
