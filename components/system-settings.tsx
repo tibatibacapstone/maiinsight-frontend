@@ -5,7 +5,7 @@ import { toast } from "sonner"
 import {
   Copy, Eye, EyeOff, Key, Link as LinkIcon, Loader2, Save, Shield, Users,
   Check, CircleDashed, Pencil, Trash2, ChevronLeft, ChevronRight, X, CheckCircle,
-  Activity, AlertTriangle, RefreshCw, Wifi, WifiOff,
+  Activity, AlertTriangle, RefreshCw, Wifi, WifiOff, ExternalLink,
 } from "lucide-react"
 
 import { AccessDenied } from "@/components/access-denied"
@@ -70,6 +70,7 @@ interface IntegrationConfigResponse {
     geminiApiKeyConfigured: boolean
     geminiModel: string
     geminiEnabled: boolean
+    metaAccessToken: string
     metaAccessTokenConfigured: boolean
     metaIgUserId: string
     metaGraphVersion: string
@@ -130,6 +131,7 @@ export function SystemSettings() {
     gemini: { status: string; error?: string }
   } | null>(null)
   const [tokenCheckLoading, setTokenCheckLoading] = useState(false)
+  const [metaCheckLoading, setMetaCheckLoading] = useState(false)
   const [lastTokenCheck, setLastTokenCheck] = useState<string | null>(null)
 
   const fetchGeminiUsage = async () => {
@@ -159,6 +161,28 @@ export function SystemSettings() {
     } catch (_) {
       toast.error("Token check failed.")
     } finally { setTokenCheckLoading(false) }
+  }
+
+  const checkMetaNow = async (silent = false) => {
+    try {
+      setMetaCheckLoading(true)
+      const response = await fetch(getApiUrl("/system/check-meta"), {
+        method: "POST",
+        headers: getAuthHeaders(),
+      })
+      const result = await response.json().catch(() => null)
+      if (result?.success && result.data?.meta) {
+        setTokenCheckResult((prev) => ({
+          ...(prev || { gemini: { status: "unknown" } }),
+          meta: result.data.meta,
+        }))
+        if (!silent) toast.success("Meta connection tested successfully.")
+      } else {
+        toast.error(result?.message || "Meta connection test failed.")
+      }
+    } catch (_) {
+      toast.error("Meta connection test failed.")
+    } finally { setMetaCheckLoading(false) }
   }
   const isDatabaseConnected = summary?.database?.status === "connected"
 
@@ -217,7 +241,7 @@ export function SystemSettings() {
         geminiModel: editableConfig?.geminiModel || result.data.integrations.geminiModel || "",
         geminiEnabled: editableConfig?.geminiEnabled ?? result.data.integrations.aiEnabled,
         metaIgUserId: editableConfig?.metaIgUserId || "",
-        metaAccessToken: "",
+        metaAccessToken: editableConfig?.metaAccessToken || "",
         metaGraphVersion: editableConfig?.metaGraphVersion || result.data.integrations.metaGraphVersion || "",
         metaEnabled: editableConfig?.metaEnabled ?? result.data.integrations.metaEnabled,
       })
@@ -320,6 +344,7 @@ export function SystemSettings() {
       const result = await response.json().catch(() => null)
       if (!response.ok || !result?.success) throw new Error(result?.message || "Integration settings could not be saved.")
       await loadSettings()
+      void checkMetaNow(true)
       toast.success("Integration settings saved.")
     } catch (err) {
       setError(err instanceof Error ? err.message : "Integration settings could not be saved.")
@@ -772,6 +797,43 @@ export function SystemSettings() {
                       />
                     </div>
                   </div>
+                  <div className="mt-3 flex flex-wrap items-center gap-2.5">
+                    <Badge
+                      variant={
+                        tokenCheckResult?.meta.status === "valid" ? "default"
+                        : tokenCheckResult?.meta.status === "warning" ? "secondary"
+                        : tokenCheckResult?.meta.status === "critical" || tokenCheckResult?.meta.status === "expired" || tokenCheckResult?.meta.status === "error" || tokenCheckResult?.meta.status === "invalid" ? "destructive"
+                        : "outline"
+                      }
+                      className="rounded-full px-3 py-1 shrink-0"
+                    >
+                      {tokenCheckResult?.meta.status === "valid" ? "Healthy"
+                        : tokenCheckResult?.meta.status === "warning" ? "Warning"
+                        : tokenCheckResult?.meta.status === "critical" ? "Critical"
+                        : tokenCheckResult?.meta.status === "expired" ? "Expired"
+                        : tokenCheckResult?.meta.status === "not_configured" ? "Not Configured"
+                        : tokenCheckResult?.meta.status === "error" || tokenCheckResult?.meta.status === "invalid" ? "Error"
+                        : "Unknown"}
+                    </Badge>
+                    {tokenCheckResult?.meta.status === "valid" && (
+                      <span className="text-xs text-muted-foreground">
+                        {tokenCheckResult.meta.daysRemaining != null
+                          ? `Valid (${tokenCheckResult.meta.daysRemaining} days remaining)`
+                          : "Valid — token does not expire"}
+                      </span>
+                    )}
+                    {(tokenCheckResult?.meta.status === "warning" || tokenCheckResult?.meta.status === "critical") && (
+                      <span className="text-xs text-muted-foreground">
+                        Expires in {tokenCheckResult.meta.daysRemaining} days
+                        {tokenCheckResult.meta.expiresAt
+                          ? ` (${new Date(tokenCheckResult.meta.expiresAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })})`
+                          : ""}
+                      </span>
+                    )}
+                    {tokenCheckResult?.meta.status === "expired" && (
+                      <span className="text-xs text-destructive">Token needs renewal.</span>
+                    )}
+                  </div>
                   <div className="mt-4 grid gap-3 text-sm">
                     <div className="space-y-2">
                       <Label htmlFor="meta-user-id">IG User ID</Label>
@@ -798,16 +860,38 @@ export function SystemSettings() {
                         <Button type="button" variant="secondary" size="icon" onClick={() => void copyText(integrationForm.metaAccessToken, "New Meta access token")} disabled={!integrationForm.metaAccessToken}>
                           <Copy className="h-4 w-4" />
                         </Button>
+                        <Button type="button" variant="outline" size="sm" className="gap-2" onClick={() => void checkMetaNow()} disabled={metaCheckLoading}>
+                          {metaCheckLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                          Test Connection
+                        </Button>
                       </div>
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="meta-version">Graph Version</Label>
-                      <Input
+                      <select
                         id="meta-version"
                         value={integrationForm.metaGraphVersion}
                         onChange={(e) => setIntegrationForm((p) => ({ ...p, metaGraphVersion: e.target.value }))}
-                        placeholder="v25.0"
-                      />
+                        className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                      >
+                        {["v25.0", "v24.0", "v23.0", "v22.0", "v21.0"].map((version) => (
+                          <option key={version} value={version}>{version}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="flex items-center justify-between gap-3 rounded-xl border border-border/60 bg-card/60 p-3">
+                      <p className="text-xs text-muted-foreground">
+                        Token expired or expiring soon? Renew it in Meta for Developers and generate a new access token.
+                      </p>
+                      <a
+                        href="https://developers.facebook.com"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex shrink-0 items-center gap-1.5 text-xs font-medium text-primary hover:underline"
+                      >
+                        Renew Token
+                        <ExternalLink className="h-3.5 w-3.5" />
+                      </a>
                     </div>
                   </div>
                 </div>
