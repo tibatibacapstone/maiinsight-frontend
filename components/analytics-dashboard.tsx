@@ -260,11 +260,11 @@ const venues = [
   { value: "Mini Soccer", label: "Mini Soccer" },
   { value: "Basketball", label: "Basketball" },
 ]
-const customerTypes = [
-  { value: "all", label: "All" },
-  { value: "membership", label: "Membership" },
-  { value: "non_membership", label: "Non-Membership" },
-  { value: "internal", label: "Internal" },
+const bookingTypes = [
+  { value: "All Type", label: "All Type" },
+  { value: "GeloraApp Booking", label: "Gelora Booking" },
+  { value: "Manual/Walk-in", label: "Manual/Walk-in" },
+  { value: "Internal", label: "Internal" },
 ] as const
 const chartColors = ["var(--chart-1)", "var(--chart-2)", "var(--chart-3)", "var(--chart-4)"]
 const playtimeOrder: Record<string, number> = {
@@ -580,7 +580,7 @@ export function AnalyticsDashboard() {
   const [selectedMonth, setSelectedMonth] = useState(defaultSelection.month)
   const [selectedYear, setSelectedYear] = useState(defaultSelection.year)
   const [selectedVenue, setSelectedVenue] = useState("All Venue")
-  const [selectedCustomerType, setSelectedCustomerType] = useState("all")
+  const [selectedBookingType, setSelectedBookingType] = useState("All Type")
   const [periodType, setPeriodType] = useState<"MTD" | "YTD" | null>("MTD")
   const [status, setStatus] = useState<DashboardStatus | null>(null)
   const [overviewKpi, setOverviewKpi] = useState<OverviewKpiData | null>(null)
@@ -622,12 +622,22 @@ export function AnalyticsDashboard() {
     }))
   }, [availableMonthValues, selectedYear])
 
+  const hasAutoSelectedYearRef = useRef(false)
+
   useEffect(() => {
+    // Only default to the latest data year once, the first time transaction
+    // months become available. Without this guard, every background status
+    // refresh re-ran this effect and silently reverted any year the user had
+    // manually picked (e.g. 2025) back to the latest year (e.g. 2026).
+    if (hasAutoSelectedYearRef.current) return
+    if (availableMonthValues.length === 0) return
+
     const latestYear = availableMonthValues
       .map((v) => v.slice(0, 4))
       .filter((y, i, a) => a.indexOf(y) === i)
       .sort((a, b) => Number(b) - Number(a))[0]
     if (latestYear) {
+      hasAutoSelectedYearRef.current = true
       setSelectedYear(latestYear)
     }
   }, [availableMonthValues])
@@ -669,7 +679,7 @@ export function AnalyticsDashboard() {
         resolvePeriodDateRange(canonicalPeriod)
       const overviewParams = buildPeriodSearchParams(canonicalPeriod, {
         venue: selectedVenue,
-        customerType: selectedCustomerType,
+        customerType: selectedBookingType,
       })
       const occupancyParams = new URLSearchParams(overviewParams.toString())
 
@@ -685,8 +695,14 @@ if ((periodType || "MTD") === "MTD") {
             : selectedVenue === "Basketball"
               ? "basketball"
               : "all",
-        customerType: selectedCustomerType,
+        customerType: selectedBookingType,
         bookingType: "all",
+        // MTD only forces daily grouping when the resulting range is short
+        // (a single selected month); a wide "All Month" MTD range still
+        // groups monthly on the backend. YTD always groups monthly and,
+        // combined with a wide "All Month" range, also zero-fills months
+        // with no transactions through the current calendar month.
+        periodType: periodType || "MTD",
       })
       const metaParams = new URLSearchParams({
         since: startDateIso,
@@ -697,7 +713,7 @@ if ((periodType || "MTD") === "MTD") {
         year: effectiveSelection.year,
         periodType: periodType || "MTD",
         venue: selectedVenue,
-        customerType: selectedCustomerType,
+        customerType: selectedBookingType,
         reportParams: reportParams.toString(),
         metaParams: metaParams.toString(),
       })
@@ -751,8 +767,26 @@ if ((periodType || "MTD") === "MTD") {
 
       const nextStatusData = statusResult.data as DashboardStatus
       const nextOverviewKpi = kpiResult?.success ? kpiResult.data : null
-      const nextOccupancyTrend = occupancyResult?.success && Array.isArray(occupancyResult.data) ? occupancyResult.data : []
+      const rawOccupancyTrend = occupancyResult?.success && Array.isArray(occupancyResult.data) ? occupancyResult.data : []
       const nextReportData = reportResult?.success ? reportResult.data : null
+
+      // The backend generates monthly trend points up through the real calendar
+      // month, even when uploaded transaction data doesn't reach that far yet.
+      // For the default "All Month" + MTD view, trim trailing months beyond the
+      // latest month that actually has data so the X-axis doesn't show empty
+      // future months (e.g. data through May but the axis extending to August).
+      // "All Month" + YTD is an explicit year-to-date view instead — it should
+      // always span January through the current calendar month regardless of
+      // data availability, so skip trimming there.
+      const latestAvailableMonth = nextStatusData.transactionMonthRange?.max || null
+      const isAllMonthYtd = selectedMonth === DEFAULT_MONTH_OPTION && (periodType || "MTD") === "YTD"
+      const nextOccupancyTrend = latestAvailableMonth && !isAllMonthYtd
+        ? rawOccupancyTrend.filter((point: OccupancyTrendPoint) => {
+            const monthValue = formatMonthValue(point.key ?? point.label, selectedYear)
+            if (!monthValue) return true
+            return monthValue <= latestAvailableMonth
+          })
+        : rawOccupancyTrend
 
       setStatus(nextStatusData)
       setOverviewKpi(nextOverviewKpi)
@@ -776,7 +810,7 @@ if ((periodType || "MTD") === "MTD") {
 
       const nextPlaytimeData = playtimeResult?.success ? playtimeResult.data : null
       const nextSegmentation =
-        selectedCustomerType === "internal" || !segmentationData
+        selectedBookingType === "Internal" || !segmentationData
           ? []
           : sortClusterProfiles(segmentationData.clusters || [])
 
@@ -811,7 +845,7 @@ if ((periodType || "MTD") === "MTD") {
         setIsLoading(false)
       }
     }
-  }, [periodType, selectedCustomerType, selectedMonth, selectedVenue, selectedYear])
+  }, [periodType, selectedBookingType, selectedMonth, selectedVenue, selectedYear])
 
   useEffect(() => {
     void loadDashboard()
@@ -923,8 +957,39 @@ if ((periodType || "MTD") === "MTD") {
     ? reportData?.insights.revenueInsight || "Revenue from bookings in the selected period, grouped by play date."
     : "The current Month to Date period has no available transactions."
 
-  const revenueMetaComparisonData = useMemo(() => {
+  // Revenue Trend can switch to daily points under MTD, but Revenue vs Meta
+  // should always stay monthly regardless of the MTD/YTD filter — re-aggregate
+  // to monthly here instead of following whatever granularity Revenue Trend
+  // is currently using.
+  const monthlyRevenueTrend = useMemo(() => {
     if (!reportData?.revenueTrend?.length) return []
+
+    const isDaily = (reportData.revenueTrend[0]?.key || "").length !== 7
+    if (!isDaily) return reportData.revenueTrend
+
+    const monthlyMap = new Map<string, RevenueTrendPoint>()
+    reportData.revenueTrend.forEach((point) => {
+      const monthKey = point.key.slice(0, 7)
+      const [year, month] = monthKey.split("-").map(Number)
+      const label = new Intl.DateTimeFormat("en-US", {
+        month: "short",
+        year: "2-digit",
+      }).format(new Date(year, month - 1, 1))
+      const existing = monthlyMap.get(monthKey)
+
+      monthlyMap.set(monthKey, {
+        key: monthKey,
+        label,
+        revenue: (existing?.revenue || 0) + Number(point.revenue || 0),
+        bookings: (existing?.bookings || 0) + Number(point.bookings || 0),
+      })
+    })
+
+    return [...monthlyMap.values()].sort((a, b) => a.key.localeCompare(b.key))
+  }, [reportData])
+
+  const revenueMetaComparisonData = useMemo(() => {
+    if (!monthlyRevenueTrend.length) return []
 
     type ComparisonMetaPoint = {
       reach: number | null
@@ -932,28 +997,11 @@ if ((periodType || "MTD") === "MTD") {
       interactions: number | null
       engagementRate: number | null
     }
-    const metaDailyMap = new Map<string, ComparisonMetaPoint>()
     const metaMonthlyMap = new Map<string, ComparisonMetaPoint>()
 
     metaDashboard?.trend?.forEach((item) => {
-      const dailyKey = item.date
       const monthlyKey = item.date.slice(0, 7)
-      const daily = metaDailyMap.get(dailyKey)
       const dailyEngagementRate = finiteMetric(item.engagementRate)
-      const nextDaily: ComparisonMetaPoint = daily
-        ? {
-            reach: addNullableMetric(daily.reach, item.reach),
-            views: addNullableMetric(daily.views, item.views),
-            interactions: addNullableMetric(daily.interactions, item.interactions),
-            engagementRate: dailyEngagementRate,
-          }
-        : {
-            reach: finiteMetric(item.reach),
-            views: finiteMetric(item.views),
-            interactions: finiteMetric(item.interactions),
-            engagementRate: dailyEngagementRate,
-          }
-      metaDailyMap.set(dailyKey, nextDaily)
 
       const monthly = metaMonthlyMap.get(monthlyKey)
       metaMonthlyMap.set(monthlyKey, monthly
@@ -971,10 +1019,8 @@ if ((periodType || "MTD") === "MTD") {
           })
     })
 
-    return reportData.revenueTrend.map((point) => {
-      const metaPoint = point.key.length === 7
-        ? metaMonthlyMap.get(point.key)
-        : metaDailyMap.get(point.key)
+    return monthlyRevenueTrend.map((point) => {
+      const metaPoint = metaMonthlyMap.get(point.key)
 
       const reach = finiteMetric(metaPoint?.reach)
       const interactions = finiteMetric(metaPoint?.interactions)
@@ -992,7 +1038,7 @@ if ((periodType || "MTD") === "MTD") {
             : null,
       }
     })
-  }, [metaDashboard?.trend, reportData])
+  }, [metaDashboard?.trend, monthlyRevenueTrend])
 
   const metaComparisonInsight = useMemo(
     () => buildMetaComparisonInsight({
@@ -1028,7 +1074,7 @@ if ((periodType || "MTD") === "MTD") {
         year: selectedYear,
         periodType: periodType || "MTD",
         venue: selectedVenue,
-        customerType: selectedCustomerType,
+        bookingType: selectedBookingType,
       },
       customer_segment_summary: {
         topSegment: topSegment?.name || "Not available",
@@ -1076,7 +1122,7 @@ if ((periodType || "MTD") === "MTD") {
         revenueDefinition: "Revenue is based on the facility play date.",
       },
     }
-  }, [bookingTypeMixLegend, dominantPlaytime, metaComparisonInsight, metaDashboard?.summary.engagementRate, metaDashboard?.summary.totalReach, metaDashboard?.summary.totalViews, overviewKpi, periodType, playtimeBehaviorInsight, playtimeLegend, reportData, segmentChartTotal, selectedCustomerType, selectedMonth, selectedVenue, selectedYear, topSegment])
+  }, [bookingTypeMixLegend, dominantPlaytime, metaComparisonInsight, metaDashboard?.summary.engagementRate, metaDashboard?.summary.totalReach, metaDashboard?.summary.totalViews, overviewKpi, periodType, playtimeBehaviorInsight, playtimeLegend, reportData, segmentChartTotal, selectedBookingType, selectedMonth, selectedVenue, selectedYear, topSegment])
 
   const businessInsightKey = useMemo(
     () => (businessInsightRequest ? JSON.stringify(businessInsightRequest) : null),
@@ -1186,16 +1232,12 @@ if ((periodType || "MTD") === "MTD") {
   [occupancyTrend, periodType]
 )
 
-const formatTrendXAxisTick = (
-  value: string,
-  activePeriod: "MTD" | "YTD" | null
-) => {
+const formatTrendXAxisTick = (value: string) => {
   if (!value) return ""
 
-  if (
-    activePeriod === "YTD" &&
-    /^\d{4}-\d{2}$/.test(value)
-  ) {
+  // Monthly grouping key, for example "2026-01" (used by both MTD "All Month"
+  // and YTD views) — always render as a short month name, e.g. "Jan".
+  if (/^\d{4}-\d{2}$/.test(value)) {
     const [, monthText] = value.split("-")
     const month = Number(monthText)
 
@@ -1357,21 +1399,21 @@ const revenueXAxisTicks = useMemo(() => {
                 </SelectContent>
               </Select>
               <Select
-                value={selectedCustomerType}
-                onValueChange={setSelectedCustomerType}
+                value={selectedBookingType}
+                onValueChange={setSelectedBookingType}
               >
                 <SelectTrigger className="h-11 w-[180px] rounded-xl border border-border/70 bg-background/90 px-3 shadow-sm outline-none transition hover:border-primary/35 hover:bg-background focus:ring-2 focus:ring-primary/15">
                   <div className="flex min-w-0 items-center gap-3">
                     <span className="shrink-0 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                      Customer
+                      Booking
                     </span>
-                    <SelectValue placeholder="Customer" />
+                    <SelectValue placeholder="Booking Type" />
                   </div>
                 </SelectTrigger>
                 <SelectContent position="popper" className="w-[var(--radix-select-trigger-width)] rounded-xl border bg-background shadow-lg">
-                  {customerTypes.map((customerType) => (
-                    <SelectItem key={customerType.value} value={customerType.value}>
-                      {customerType.label}
+                  {bookingTypes.map((bookingType) => (
+                    <SelectItem key={bookingType.value} value={bookingType.value}>
+                      {bookingType.label}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -1544,7 +1586,7 @@ const revenueXAxisTicks = useMemo(() => {
             <Card className="border-border bg-card shadow-sm">
               <CardHeader>
                 <CardTitleTooltip
-                    title="Revenue by Play Date"
+                    title="Revenue"
                     tooltip="Total booking revenue from transactions in the selected period."
                     className="text-sm font-medium text-muted-foreground"
                   />
@@ -1641,7 +1683,7 @@ const revenueXAxisTicks = useMemo(() => {
                         dataKey="chartKey"
                         ticks={occupancyXAxisTicks}
                         tickFormatter={(value: string) =>
-                          formatTrendXAxisTick(value, periodType)
+                          formatTrendXAxisTick(value)
                         }
                         stroke="var(--muted-foreground)"
                         tickLine={false}
@@ -1679,7 +1721,7 @@ const revenueXAxisTicks = useMemo(() => {
 
             <Card className="border-border bg-card shadow-sm">
               <CardHeader>
-                <CardTitle><TitleWithTooltip title="Revenue by Play Date Trend" tooltip="Shows booking revenue grouped by play date, using the same filters as the overview card." /></CardTitle>
+                <CardTitle><TitleWithTooltip title="Revenue Trend" tooltip="Shows booking revenue grouped by play date, using the same filters as the overview card." /></CardTitle>
                 <CardDescription>{revenueTrendSubtitle}</CardDescription>
               </CardHeader>
               <CardContent>
@@ -1705,7 +1747,7 @@ const revenueXAxisTicks = useMemo(() => {
       dataKey="key"
       ticks={revenueXAxisTicks}
       tickFormatter={(value: string) =>
-        formatTrendXAxisTick(value, periodType)
+        formatTrendXAxisTick(value)
       }
       stroke="var(--muted-foreground)"
       tickLine={false}
@@ -1730,11 +1772,11 @@ const revenueXAxisTicks = useMemo(() => {
 
     <RechartsTooltip
       labelFormatter={(value: string) =>
-        formatTrendXAxisTick(value, periodType)
+        formatTrendXAxisTick(value)
       }
       formatter={(value: number) => [
         formatCurrency(value),
-        "Booking revenue by play date",
+        "Booking revenue",
       ]}
     />
 
@@ -1795,6 +1837,23 @@ const revenueXAxisTicks = useMemo(() => {
                       : "Meta is not connected yet, so we need InstaSight data for this."}
                   </div>
                 )}
+
+                {metaDashboard?.hasData && revenueMetaComparisonData.length > 0 ? (
+                  <div className="flex flex-col gap-1.5 text-xs text-muted-foreground">
+                    <span className="flex items-center gap-2">
+                      <span className="inline-block h-2.5 w-4 shrink-0 rounded-sm" style={{ backgroundColor: "var(--chart-2)" }} />
+                      Bar = Booking revenue by play date
+                    </span>
+                    <span className="flex items-center gap-2">
+                      <span className="inline-block w-10 shrink-0 border-t-2" style={{ borderColor: "var(--chart-1)" }} />
+                      Solid line = Meta Reach
+                    </span>
+                    <span className="flex items-center gap-2">
+                      <span className="inline-block w-10 shrink-0 border-t-2 border-dashed" style={{ borderColor: "var(--chart-3)" }} />
+                      Dashed line = Meta Engagement Rate
+                    </span>
+                  </div>
+                ) : null}
 
                 <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                   <div className="rounded-xl border border-border bg-secondary/20 p-3">
@@ -1885,7 +1944,7 @@ const revenueXAxisTicks = useMemo(() => {
 
           <Card className="border-border bg-card shadow-sm">
             <CardHeader>
-            <CardTitle><TitleWithTooltip title="Play-Time Preference Mix" tooltip="Shows how bookings are distributed across morning, afternoon, evening, and night." /></CardTitle>
+            <CardTitle><TitleWithTooltip title="Play-Time Preference" tooltip="Shows how bookings are distributed across morning, afternoon, evening, and night." /></CardTitle>
               <CardDescription>{playtimeBehaviorInsight}</CardDescription>
             </CardHeader>
             <CardContent>

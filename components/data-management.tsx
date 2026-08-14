@@ -259,7 +259,7 @@ const defaultDataSources: DataSource[] = [
   },
   {
     id: "2",
-    name: "Meta Graph API",
+    name: "Instagram Data Engine",
     type: "api",
     status: "disconnected",
     lastSync: "Not synced yet",
@@ -576,6 +576,7 @@ const [mlSummary, setMlSummary] = useState<MlSummary>({
   const [templatePreviewData, setTemplatePreviewData] = useState<TemplatePreviewData | null>(null)
   const [isLoadingRawRows, setIsLoadingRawRows] = useState(false)
   const [rawRowsError, setRawRowsError] = useState<BusinessErrorState | null>(null)
+  const [viewedFailureDetails, setViewedFailureDetails] = useState<BusinessErrorState | null>(null)
   const [sortColumn, setSortColumn] = useState<string | null>(null)
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc")
   const [syncingSourceId, setSyncingSourceId] = useState<string | null>(null)
@@ -588,6 +589,7 @@ const [mlSummary, setMlSummary] = useState<MlSummary>({
   const canAccessDataCenter =
     userRole === USER_ROLES.OPERATIONAL|| userRole === USER_ROLES.IT_SUPPORT
   const canManageCsv = canAccessFeature(userRole, "uploadCsv")
+  const canDeleteImport = canAccessFeature(userRole, "deleteImport")
   const canRunMachineLearning =
     userRole === USER_ROLES.OPERATIONAL || userRole === USER_ROLES.IT_SUPPORT
   const canViewTechnicalDetails = userRole === USER_ROLES.IT_SUPPORT
@@ -652,7 +654,7 @@ const [mlSummary, setMlSummary] = useState<MlSummary>({
       },
       {
         id: "2",
-        name: "Meta Graph API",
+        name: "Instagram Data Engine",
         type: "api",
         status: metaSourceStatus,
         lastSync: metaConfigured ? formatDisplaySyncTime(latestMetaSync) : "Not connected",
@@ -1324,6 +1326,7 @@ const handleViewRawRows= async (job: SyncJob) => {
     setRawRowsError(null)
     setRawRows([])
     setRawHeaders([])
+    setViewedFailureDetails(null)
 
     const response = await fetch(getApiUrl(`/imports/batches/${job.sourceRecordId}/rows`), {
       method: "GET",
@@ -1334,6 +1337,21 @@ const handleViewRawRows= async (job: SyncJob) => {
 
     if (!response.ok || !result?.success) {
       throw createFriendlyImportError(result, "Transaction Data Preview Failed")
+    }
+
+    if (job.status === "failed") {
+      setViewedFailureDetails(
+        createFriendlyImportError(
+          {
+            message: result.data?.errorMessage,
+            suggestion: result.data?.suggestion,
+            errorCode: result.data?.errorCode,
+            validationErrors: result.data?.validationErrors,
+          },
+          "Import Failed"
+        )
+      )
+      return
     }
 
     const rows: RawTransactionRow[] = Array.isArray(result.data)
@@ -1432,7 +1450,7 @@ const handleViewRawRows= async (job: SyncJob) => {
     const toastId = toast.loading(`Preparing export for "${job.name}"...`)
 
     try {
-      const response = await fetch(getApiUrl(`/imports/batches/${job.id}/export`), {
+      const response = await fetch(getApiUrl(`/imports/batches/${job.sourceRecordId}/export`), {
         method: "GET",
         cache: "no-store",
         headers: getAuthHeaders(),
@@ -1892,7 +1910,7 @@ if (!canAccessDataCenter) {
         </Badge>
       </div>
 
-      <h3 className="mb-1 font-semibold">K-Means++ ML Segmentation Engine</h3>
+      <h3 className="mb-1 font-semibold">ML Segmentation Engine</h3>
 
       <div className="mb-3 flex-1 space-y-1 text-sm text-muted-foreground">
         <p>{mlSummary.records.toLocaleString()} customers</p>
@@ -1981,7 +1999,7 @@ if (!canAccessDataCenter) {
         <Card className="border-border bg-card shadow-sm">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              Sync Jobs
+              Recent Activity
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Info className="h-4 w-4 cursor-help text-muted-foreground" />
@@ -2083,7 +2101,9 @@ if (!canAccessDataCenter) {
                                 <Eye className="h-4 w-4" />
                               </Button>
                             </TooltipTrigger>
-                            <TooltipContent>View Cleaned Data</TooltipContent>
+                            <TooltipContent>
+                              {job.status === "failed" ? "View Error Details" : "View Cleaned Data"}
+                            </TooltipContent>
                           </Tooltip>
                         )}
 
@@ -2106,14 +2126,14 @@ if (!canAccessDataCenter) {
                           </Tooltip>
                         )}
 
-                        {isFileJob ? (
+                        {isFileJob && job.status !== "failed" ? (
                           <Tooltip>
                             <TooltipTrigger asChild>
                               <Button
                                 variant="ghost"
                                 size="icon"
                                 className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                                disabled={!canManageCsv || removingJobId === job.id}
+                                disabled={!canDeleteImport || removingJobId === job.id}
                                 onClick={() => {
                                   setPendingJob(job)
                                   setDeleteConfirmOpen(true)
@@ -2236,12 +2256,22 @@ if (!canAccessDataCenter) {
           </DialogContent>
         </Dialog>
         <Dialog open={rawModalOpen} onOpenChange={setRawModalOpen}>
-          <DialogContent className="max-h-[92vh] !w-[98vw] !max-w-[98vw] !sm:w-[98vw] !sm:max-w-[98vw] overflow-hidden">
+          <DialogContent
+            className={
+              selectedRawJob?.status === "failed"
+                ? "!w-[min(96vw,48rem)] !max-w-[min(96vw,48rem)] max-h-[85vh] overflow-y-auto"
+                : "max-h-[92vh] !w-[98vw] !max-w-[98vw] !sm:w-[98vw] !sm:max-w-[98vw] overflow-hidden"
+            }
+          >
             <DialogHeader>
-              <DialogTitle>Cleaned Transaction Data</DialogTitle>
+              <DialogTitle>
+                {selectedRawJob?.status === "failed" ? "Import Failure Details" : "Cleaned Transaction Data"}
+              </DialogTitle>
               <DialogDescription>
                 {selectedRawJob
-                  ? `${selectedRawJob.name} - ${selectedRawJob.records.toLocaleString()} records`
+                  ? selectedRawJob.status === "failed"
+                    ? `${selectedRawJob.name} - why this import was rejected`
+                    : `${selectedRawJob.name} - ${selectedRawJob.records.toLocaleString()} records`
                   : "Preview cleaned transaction data"}
               </DialogDescription>
             </DialogHeader>
@@ -2260,6 +2290,69 @@ if (!canAccessDataCenter) {
                 technicalDetails={rawRowsError.technicalDetails}
                 showTechnicalDetails={canViewTechnicalDetails}
               />
+            ) : viewedFailureDetails ? (
+              <div className="space-y-3">
+                <BusinessErrorAlert
+                  title={viewedFailureDetails.title}
+                  message={viewedFailureDetails.message}
+                  suggestion={viewedFailureDetails.suggestion}
+                  errorCode={viewedFailureDetails.errorCode}
+                  technicalDetails={viewedFailureDetails.technicalDetails}
+                  showTechnicalDetails={canViewTechnicalDetails}
+                />
+
+                {viewedFailureDetails.validationErrors && viewedFailureDetails.validationErrors.length > 0 && (
+                  <div className="rounded-xl border border-destructive/20 bg-destructive/5 p-4">
+                    <div className="mb-3">
+                      <p className="text-sm font-semibold text-destructive">
+                        Invalid rows found
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        Please fix these rows in your CSV or Excel file, then upload again.
+                      </p>
+                    </div>
+
+                    <div className="max-h-64 overflow-auto rounded-lg border bg-background">
+                      <table className="w-full text-sm">
+                        <thead className="sticky top-0 bg-background">
+                          <tr className="border-b">
+                            <th className="px-3 py-2 text-left font-semibold">Row</th>
+                            <th className="px-3 py-2 text-left font-semibold">Column</th>
+                            <th className="px-3 py-2 text-left font-semibold">Value</th>
+                            <th className="px-3 py-2 text-left font-semibold">Reason</th>
+                          </tr>
+                        </thead>
+
+                        <tbody>
+                          {viewedFailureDetails.validationErrors.map((item, index) => (
+                            <tr
+                              key={`${item.rowNumber}-${item.column}-${index}`}
+                              className="border-b last:border-b-0"
+                            >
+                              <td className="px-3 py-2 align-top font-medium">
+                                {item.rowNumber}
+                              </td>
+                              <td className="px-3 py-2 align-top">
+                                {item.column}
+                              </td>
+                              <td className="max-w-[180px] break-words px-3 py-2 align-top text-muted-foreground">
+                                {item.value === null ||
+                                item.value === undefined ||
+                                item.value === ""
+                                  ? "-"
+                                  : String(item.value)}
+                              </td>
+                              <td className="px-3 py-2 align-top">
+                                {item.message}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </div>
             ) : rawRows.length === 0 ? (
               <div className="rounded-md border p-4 text-sm text-muted-foreground">
                 No transaction data found for this upload history.
