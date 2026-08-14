@@ -222,7 +222,13 @@ const EmptyState = () => (
   />
 )
 
-export const HeatmapGrid = ({ heatmapSummary }: { heatmapSummary: HeatmapSummary | null }) => {
+export const HeatmapGrid = ({
+  heatmapSummary,
+  emptyHint,
+}: {
+  heatmapSummary: HeatmapSummary | null
+  emptyHint?: string | null
+}) => {
   const slots = heatmapSummary?.slots || []
   const mostEmptySlot = heatmapSummary?.mostEmptySlot
   const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
@@ -236,7 +242,10 @@ export const HeatmapGrid = ({ heatmapSummary }: { heatmapSummary: HeatmapSummary
         </CardHeader>
         <CardContent>
           <div className="rounded-2xl border border-orange-200 bg-gradient-to-br from-orange-50 via-amber-50 to-white p-4 text-sm text-orange-900/80">
-            Waiting for playtime data.
+            No playtime data for the selected period.
+            {emptyHint && (
+              <span className="block pt-1 text-orange-900/60">Data available: {emptyHint}</span>
+            )}
           </div>
         </CardContent>
       </Card>

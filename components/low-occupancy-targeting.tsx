@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import {
   AlertCircle,
   Copy,
@@ -253,6 +253,35 @@ const getLast30DaysRange = () => {
 
 const INITIAL_DATE_RANGE = getLast30DaysRange()
 
+const buildMonthRange = (monthKey: string) => {
+  const parts = monthKey.split("-")
+  if (parts.length !== 2) return null
+  const year = Number(parts[0])
+  const month = Number(parts[1])
+  if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) return null
+  const lastDay = new Date(year, month, 0).getDate()
+  const monthValue = String(month).padStart(2, "0")
+  return {
+    startDate: `${year}-${monthValue}-01`,
+    endDate: `${year}-${monthValue}-${String(lastDay).padStart(2, "0")}`,
+  }
+}
+
+const buildMonthRangeLabel = (min?: string | null, max?: string | null) => {
+  const format = (key?: string | null) => {
+    if (!key) return null
+    const parts = key.split("-")
+    if (parts.length !== 2) return null
+    const month = Number(parts[1])
+    if (!Number.isFinite(month) || month < 1 || month > 12) return null
+    return `${MONTHS[month - 1]} ${parts[0]}`
+  }
+  const minLabel = format(min)
+  const maxLabel = format(max)
+  if (minLabel && maxLabel && minLabel !== maxLabel) return `${minLabel} – ${maxLabel}`
+  return minLabel || maxLabel || null
+}
+
 const mapVenueToCourtType = (venue: string) => {
   if (venue === "Mini Soccer") return "mini_soccer"
   if (venue === "Basketball") return "basketball"
@@ -330,6 +359,8 @@ const [isLoadingPlaytime, setIsLoadingPlaytime] = useState(true)
 const [heatmapData, setHeatmapData] = useState<HeatmapSummary | null>(null)
 const [isLoadingHeatmap, setIsLoadingHeatmap] = useState(true)
 const [dataMonthLabel, setDataMonthLabel] = useState<string | null>(null)
+const [dataMonthRange, setDataMonthRange] = useState<{ min?: string | null; max?: string | null } | null>(null)
+const playtimeRequestRef = useRef(0)
 
   const [campaignDay, setCampaignDay] = useState("Monday")
   const [analysisPeriodMonths, setAnalysisPeriodMonths] = useState(3)
@@ -437,6 +468,7 @@ const [dataMonthLabel, setDataMonthLabel] = useState<string | null>(null)
     nextVenue?: string
     nextCustomerType?: string
   }) => {
+    const requestId = ++playtimeRequestRef.current
     setIsLoadingPlaytime(true)
     setIsLoadingHeatmap(true)
     try {
@@ -471,6 +503,8 @@ const [dataMonthLabel, setDataMonthLabel] = useState<string | null>(null)
         monthLabel = MONTHS[start.getMonth()]
         year = String(start.getFullYear())
       }
+
+      if (requestId !== playtimeRequestRef.current) return
       setDataMonthLabel(monthLabel)
 
       const params = new URLSearchParams({
@@ -501,69 +535,61 @@ const [dataMonthLabel, setDataMonthLabel] = useState<string | null>(null)
       const playtimeResult = await playtimeRes.json().catch(() => null)
       const heatmapResult = await heatmapRes.json().catch(() => null)
 
+      if (requestId !== playtimeRequestRef.current) return
       setPlaytimeMixData(playtimeResult?.success ? playtimeResult.data : null)
       setHeatmapData(heatmapResult?.success ? heatmapResult.data : null)
     } catch {
+      if (requestId !== playtimeRequestRef.current) return
       setPlaytimeMixData(null)
       setHeatmapData(null)
     } finally {
-      setIsLoadingPlaytime(false)
-      setIsLoadingHeatmap(false)
+      if (requestId === playtimeRequestRef.current) {
+        setIsLoadingPlaytime(false)
+        setIsLoadingHeatmap(false)
+      }
     }
   }
 
   useEffect(() => {
-  const loadPlaytimeData = async () => {
-    setIsLoadingPlaytime(true)
-    setIsLoadingHeatmap(true)
-    try {
-      const statusRes = await fetch(getApiUrl("/operations/status"), { headers: getAuthHeaders(), cache: "no-store" })
-      const statusResult = await statusRes.json().catch(() => null)
-      const availableMonths = statusResult?.success ? (statusResult.data?.transactionAvailableMonths as string[]) : null
+    const initializePeriod = async () => {
+      try {
+        const statusRes = await fetch(getApiUrl("/operations/status"), {
+          headers: getAuthHeaders(),
+          cache: "no-store",
+        })
+        const statusResult = await statusRes.json().catch(() => null)
+        const statusData = statusResult?.success ? statusResult.data : null
+        const availableMonths = Array.isArray(statusData?.transactionAvailableMonths)
+          ? (statusData.transactionAvailableMonths as string[])
+          : []
 
-      let monthLabel = "All Month"
-      let year = String(new Date().getFullYear())
-      if (availableMonths && availableMonths.length > 0) {
-        const latest = availableMonths[availableMonths.length - 1]
-        const parts = latest.split("-")
-        if (parts.length === 2) {
-          year = parts[0]
-          const monthIndex = parseInt(parts[1], 10) - 1
-          if (monthIndex >= 0 && monthIndex < 12) {
-            monthLabel = MONTHS[monthIndex]
+        if (statusData?.transactionMonthRange?.min || statusData?.transactionMonthRange?.max) {
+          setDataMonthRange({
+            min: statusData.transactionMonthRange.min ?? null,
+            max: statusData.transactionMonthRange.max ?? null,
+          })
+        }
+
+        if (availableMonths.length > 0) {
+          const latest = availableMonths[availableMonths.length - 1]
+          const monthRange = buildMonthRange(latest)
+          const parts = latest.split("-")
+          if (monthRange && parts.length === 2) {
+            setSelectedStartDate(monthRange.startDate)
+            setSelectedEndDate(monthRange.endDate)
+            const monthIndex = parseInt(parts[1], 10) - 1
+            if (monthIndex >= 0 && monthIndex < 12) {
+              setDataMonthLabel(MONTHS[monthIndex])
+            }
           }
         }
+      } catch {
+        // Keep the default last-30-days range when status cannot be loaded.
       }
-      setDataMonthLabel(monthLabel)
-
-      const params = new URLSearchParams({
-        month: monthLabel,
-        year,
-        periodType: "MTD",
-        venue: "All Venue",
-        customerType: "All Type",
-      })
-
-      const [playtimeRes, heatmapRes] = await Promise.all([
-        fetch(getApiUrl(`/dashboard/playtime-mix?${params.toString()}`), { headers: getAuthHeaders(), cache: "no-store" }),
-        fetch(getApiUrl(`/dashboard/empty-slot-heatmap?${params.toString()}`), { headers: getAuthHeaders(), cache: "no-store" }),
-      ])
-
-      const playtimeResult = await playtimeRes.json().catch(() => null)
-      const heatmapResult = await heatmapRes.json().catch(() => null)
-
-      setPlaytimeMixData(playtimeResult?.success ? playtimeResult.data : null)
-      setHeatmapData(heatmapResult?.success ? heatmapResult.data : null)
-    } catch {
-      setPlaytimeMixData(null)
-      setHeatmapData(null)
-    } finally {
-      setIsLoadingPlaytime(false)
-      setIsLoadingHeatmap(false)
     }
-  }
-  void loadPlaytimeData()
-}, [])
+
+    void initializePeriod()
+  }, [])
 
   useEffect(() => {
     const initialize = async () => {
@@ -735,6 +761,7 @@ const dominantPlaytime = playtimeLegend.reduce<typeof playtimeLegend[number] | n
 const playtimeBehaviorInsight = !dominantPlaytime || !playtimeMixData
   ? "No historical play-time preference insight is available yet."
   : `Most bookings are in the ${dominantPlaytime.name} slot with ${formatPlaytimePercent(dominantPlaytime.percentage)} of all bookings.`
+const dataMonthRangeLabel = buildMonthRangeLabel(dataMonthRange?.min ?? null, dataMonthRange?.max ?? null)
 
   return (
     <div className="space-y-6">
@@ -836,7 +863,7 @@ const playtimeBehaviorInsight = !dominantPlaytime || !playtimeMixData
   </Card>
 ) : (
   <>
-    <HeatmapGrid heatmapSummary={heatmapData} />
+    <HeatmapGrid heatmapSummary={heatmapData} emptyHint={dataMonthRangeLabel} />
     {dataMonthLabel && (
       <p className="mt-1 text-xs text-muted-foreground">
         Data period: {dataMonthLabel}

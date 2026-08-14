@@ -91,6 +91,14 @@ interface SyncJob {
   performedByName?: string
 }
 
+interface ImportJobImpact {
+  facilityTransactionCount: number
+  courtHourUsageCount: number
+  rawTransactionCount: number
+  orphanCustomerCount: number
+  retainedCustomerCount: number
+}
+
 interface DataSource {
   id: string
   name: string
@@ -583,6 +591,8 @@ const [mlSummary, setMlSummary] = useState<MlSummary>({
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [downloadConfirmOpen, setDownloadConfirmOpen] = useState(false)
   const [pendingJob, setPendingJob] = useState<SyncJob | null>(null)
+  const [impactSummary, setImpactSummary] = useState<ImportJobImpact | null>(null)
+  const [isLoadingImpact, setIsLoadingImpact] = useState(false)
 
   const userRole = getStoredRole()
   const canAccessDataCenter =
@@ -1412,12 +1422,45 @@ const handleViewRawRows= async (job: SyncJob) => {
       }
   }
 
+  const loadJobImpact = async (job: SyncJob) => {
+  if (job.type !== "file" || job.sourceRecordId === undefined) return
+
+  setIsLoadingImpact(true)
+  try {
+    const response = await fetch(getApiUrl(`/imports/jobs/${job.sourceRecordId}/impact`), {
+      method: "GET",
+      headers: getAuthHeaders(),
+    })
+    const result = await response.json()
+
+    if (!response.ok || !result?.success) {
+      throw new Error(result?.message || "Failed to load deletion impact.")
+    }
+
+    const impact = result.data
+    if (impact) {
+      setImpactSummary({
+        facilityTransactionCount: Number(impact.facilityTransactionCount ?? 0),
+        courtHourUsageCount: Number(impact.courtHourUsageCount ?? 0),
+        rawTransactionCount: Number(impact.rawTransactionCount ?? 0),
+        orphanCustomerCount: Number(impact.orphanCustomerCount ?? 0),
+        retainedCustomerCount: Number(impact.retainedCustomerCount ?? 0),
+      })
+    }
+  } catch {
+    setImpactSummary(null)
+  } finally {
+    setIsLoadingImpact(false)
+  }
+  }
+
   const handleConfirmDelete = async () => {
     if (!pendingJob) return
 
     const job = pendingJob
     setDeleteConfirmOpen(false)
     setPendingJob(null)
+    setImpactSummary(null)
     await handleRemoveJob(job)
   }
 
@@ -2116,6 +2159,8 @@ if (!canAccessDataCenter) {
                                 disabled={!canManageCsv || removingJobId === job.id}
                                 onClick={() => {
                                   setPendingJob(job)
+                                  setImpactSummary(null)
+                                  void loadJobImpact(job)
                                   setDeleteConfirmOpen(true)
                                 }}
                               >
@@ -2168,11 +2213,27 @@ if (!canAccessDataCenter) {
             <AlertDialogHeader>
               <AlertDialogTitle>Delete this import?</AlertDialogTitle>
               <AlertDialogDescription>
-                This permanently removes the selected import history and uploaded data.
+                {isLoadingImpact ? (
+                  "Checking what will be deleted..."
+                ) : impactSummary ? (
+                  <>
+                    This will permanently delete {impactSummary.facilityTransactionCount}{" "}
+                    transaction(s), {impactSummary.courtHourUsageCount} play-hour record(s),{" "}
+                    {impactSummary.rawTransactionCount} raw row(s), and{" "}
+                    {impactSummary.orphanCustomerCount} customer profile(s).
+                  </>
+                ) : (
+                  "This permanently removes the selected import history and uploaded data."
+                )}
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
-              <AlertDialogCancel onClick={() => setPendingJob(null)}>
+              <AlertDialogCancel
+                onClick={() => {
+                  setPendingJob(null)
+                  setImpactSummary(null)
+                }}
+              >
                 Cancel
               </AlertDialogCancel>
               <AlertDialogAction
