@@ -888,10 +888,10 @@ export function SystemSettings() {
                     </div>
                     <div className="flex items-center justify-between gap-3 rounded-xl border border-border/60 bg-card/60 p-3">
                       <p className="text-xs text-muted-foreground">
-                        Token expired or expiring soon? Renew it in Meta for Developers and generate a new access token.
+                        Token expired or expiring soon? Sign in with the Maiin Gandaria Facebook account, then open the Graph API Explorer below to generate a new access token.
                       </p>
                       <a
-                        href="https://developers.facebook.com"
+                        href="https://developers.facebook.com/tools/explorer/"
                         target="_blank"
                         rel="noopener noreferrer"
                         className="inline-flex shrink-0 items-center gap-1.5 text-xs font-medium text-primary hover:underline"
