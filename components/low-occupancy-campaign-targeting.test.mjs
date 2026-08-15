@@ -52,7 +52,8 @@ test("recommended customer table preserves readable columns and priority emphasi
   assert.match(table, /bg-muted text-muted-foreground/)
   assert.match(table, /Score: \{customer\.targetPriorityScore\}/)
   assert.match(table, /Copy Phone/)
-  assert.match(table, /Copy Message/)
+  assert.match(table, /Generate Message/)
+  assert.match(table, /Open AI Workspace/)
 })
 
 test("historical summary precedes the responsive monthly breakdown", () => {
@@ -89,15 +90,15 @@ test("recommended customer header and body share subtle vertical dividers", () =
   assert.match(source, /border-border\/70/)
 })
 
-test("page Customer Type filter reserves space for Non Membership", () => {
-  const filterStart = source.indexOf('<Select value={selectedCustomerType}')
+test("page Booking Type filter reserves space and lists booking type options", () => {
+  const filterStart = source.indexOf('<Select value={selectedBookingType}')
   const filterEnd = source.indexOf('</Select>', filterStart)
   const filter = source.slice(source.lastIndexOf('<div className=', filterStart), filterEnd)
 
   assert.match(filter, /w-\[210px\] min-w-\[210px\]/)
   assert.match(filter, /h-11 w-full rounded-xl/)
   assert.match(filter, /flex min-w-0 flex-1 items-center gap-3/)
-  assert.match(filter, /SelectValue placeholder="Customer" className="whitespace-nowrap"/)
+  assert.match(filter, /SelectValue placeholder="Booking Type" className="whitespace-nowrap"/)
   assert.match(filter, /w-\[var\(--radix-select-trigger-width\)\]/)
-  assert.match(filter, /Non Membership|CUSTOMER_TYPE_DISPLAY_OPTIONS/)
+  assert.match(filter, /BOOKING_TYPE_OPTIONS/)
 })

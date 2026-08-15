@@ -6,7 +6,6 @@ import {
   Copy,
   Info,
   Loader2,
-  MessageSquare,
   Sparkles,
   Target,
 } from "lucide-react"
@@ -43,16 +42,21 @@ import {
   PaginationNext,
 } from "@/components/ui/pagination"
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import {
+  generateOutreachMessage,
   getLowOccupancySessions,
   getRecommendedCustomers,
   type LowOccupancySessionCard,
   type RecommendedCustomersResponse,
   type RecommendedTargetCustomer,
 } from "@/lib/targeting"
-import {
-  saveLowOccupancyOutreachContext,
-  type LowOccupancyOutreachIntent,
-} from "@/lib/low-occupancy-outreach"
+import { saveLowOccupancyOutreachContext } from "@/lib/low-occupancy-outreach"
 import {
   Bar,
   BarChart,
@@ -223,11 +227,11 @@ const VENUE_OPTIONS = [
   { value: "Basketball", label: "Basketball" },
 ]
 
-const CUSTOMER_TYPE_DISPLAY_OPTIONS = [
+const BOOKING_TYPE_OPTIONS = [
   { value: "All Type", label: "All Type" },
-  { value: "Membership", label: "Membership" },
-  { value: "Non Membership", label: "Non Membership" },
-  { value: "internal", label: "Internal" },
+  { value: "GeloraApp Booking", label: "Gelora Booking" },
+  { value: "Manual/Walk-in", label: "Manual/Walk-in" },
+  { value: "Internal", label: "Internal" },
 ]
 
 const INITIAL_CUSTOMER_PAGE_SIZE = 10
@@ -302,7 +306,7 @@ const FILTER_HELP_TEXT = {
   playSession:
     "Choose the session bucket you want to promote: Morning, Afternoon, Evening, or Night.",
   customerType:
-    "Narrow the audience to membership, non-membership, or both depending on the promo goal.",
+    "Narrow the target audience to membership, non-membership, or both depending on the promo goal.",
   rfmSegment:
     "Filter the audience by the latest available RFM segment to support retention, growth, or re-engagement campaigns.",
 } as const
@@ -380,11 +384,15 @@ const playtimeRequestRef = useRef(0)
   const [customerError, setCustomerError] = useState<string | null>(null)
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
   const [selectedCardKey, setSelectedCardKey] = useState<string | null>(null)
+  const [messageDraftCustomer, setMessageDraftCustomer] = useState<RecommendedTargetCustomer | null>(null)
+  const [generatedDraftMessage, setGeneratedDraftMessage] = useState<string | null>(null)
+  const [isGeneratingDraftMessage, setIsGeneratingDraftMessage] = useState(false)
+  const [generateDraftMessageError, setGenerateDraftMessageError] = useState<string | null>(null)
 
   const [selectedStartDate, setSelectedStartDate] = useState(INITIAL_DATE_RANGE.startDate)
   const [selectedEndDate, setSelectedEndDate] = useState(INITIAL_DATE_RANGE.endDate)
   const [selectedVenue, setSelectedVenue] = useState("All Venue")
-  const [selectedCustomerType, setSelectedCustomerType] = useState("All Type")
+  const [selectedBookingType, setSelectedBookingType] = useState("All Type")
   const [currentCustomerPage, setCurrentCustomerPage] = useState(1)
   const [customerPageSize] = useState(INITIAL_CUSTOMER_PAGE_SIZE)
   const [customerPagination, setCustomerPagination] = useState<CustomerPagination | null>(null)
@@ -659,7 +667,7 @@ const playtimeRequestRef = useRef(0)
       setStatusMessage(null)
 
       const nextCourtType = mapVenueToCourtType(selectedVenue)
-      const nextCustomerTypeVal = mapCustomerTypeToApiValue(selectedCustomerType)
+      const nextCustomerTypeVal = mapCustomerTypeToApiValue(selectedBookingType)
 
       setCourtType(nextCourtType)
       setCustomerType(nextCustomerTypeVal)
@@ -670,7 +678,7 @@ const playtimeRequestRef = useRef(0)
           nextStartDate: selectedStartDate,
           nextEndDate: selectedEndDate,
           nextVenue: selectedVenue,
-          nextCustomerType: selectedCustomerType,
+          nextCustomerType: selectedBookingType,
         }),
         loadSessions(INITIAL_DATE, nextCourtType),
         loadCustomers({
@@ -682,7 +690,43 @@ const playtimeRequestRef = useRef(0)
 
     void runFilteredPage()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedStartDate, selectedEndDate, selectedVenue, selectedCustomerType])
+  }, [selectedStartDate, selectedEndDate, selectedVenue, selectedBookingType])
+
+  const loadMessageDraft = async (customer: RecommendedTargetCustomer) => {
+    setIsGeneratingDraftMessage(true)
+    setGenerateDraftMessageError(null)
+
+    try {
+      const result = await generateOutreachMessage({
+        customerName: customer.customerName || customer.customerKey,
+        rfmSegmentName: customer.rfmSegmentName,
+        customerTypeLabel: customer.customerTypeLabel,
+        preferredSession: customer.preferredSession,
+        courtType,
+        suggestedAction: customer.suggestedAction,
+        recencyDays: customer.recencyDays,
+        totalBookingCount: customer.totalBookingCount,
+      })
+      setGeneratedDraftMessage(result.message)
+    } catch (error) {
+      setGenerateDraftMessageError(
+        error instanceof Error ? error.message : "Failed to generate the message draft."
+      )
+    } finally {
+      setIsGeneratingDraftMessage(false)
+    }
+  }
+
+  useEffect(() => {
+    if (!messageDraftCustomer) {
+      setGeneratedDraftMessage(null)
+      setGenerateDraftMessageError(null)
+      return
+    }
+
+    void loadMessageDraft(messageDraftCustomer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messageDraftCustomer])
 
   const copyText = async (text: string | null, successMessage: string) => {
     if (!text) {
@@ -698,10 +742,7 @@ const playtimeRequestRef = useRef(0)
     }
   }
 
-  const openGenAi = (
-    customer: RecommendedTargetCustomer,
-    intent: LowOccupancyOutreachIntent
-  ) => {
+  const openGenAi = (customer: RecommendedTargetCustomer) => {
     const selectedSessionCard = sessions.find(
       (session) => session.courtType === courtType && session.sessionName === sessionName
     )
@@ -711,7 +752,7 @@ const playtimeRequestRef = useRef(0)
 
     saveLowOccupancyOutreachContext({
       source: "low_occupancy_targeting",
-      intent,
+      intent: "campaign",
       customerKey: customer.customerKey,
       customerName: customer.customerName,
       phone: customer.phone,
@@ -739,11 +780,7 @@ const playtimeRequestRef = useRef(0)
       whatsappMessage: customer.whatsappMessage,
     })
 
-    setStatusMessage(
-      intent === "campaign"
-        ? "Campaign context sent to GenAI Workspace."
-        : "Outreach context sent to GenAI Workspace."
-    )
+    setStatusMessage("Campaign context sent to GenAI Workspace.")
     onNavigate("genai")
   }
 
@@ -837,16 +874,16 @@ const dataMonthRangeLabel = buildMonthRangeLabel(dataMonthRange?.min ?? null, da
         </Select>
       </div>
       <div className="w-[210px] min-w-[210px]">
-        <Select value={selectedCustomerType} onValueChange={setSelectedCustomerType}>
+        <Select value={selectedBookingType} onValueChange={setSelectedBookingType}>
           <SelectTrigger className="h-11 w-full rounded-xl border border-border/70 bg-background/90 px-3 shadow-sm outline-none transition hover:border-primary/35 hover:bg-background focus:ring-2 focus:ring-primary/15">
             <div className="flex min-w-0 flex-1 items-center gap-3">
-              <span className="shrink-0 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Customer</span>
-              <SelectValue placeholder="Customer" className="whitespace-nowrap" />
+              <span className="shrink-0 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Booking</span>
+              <SelectValue placeholder="Booking Type" className="whitespace-nowrap" />
             </div>
           </SelectTrigger>
           <SelectContent position="popper" className="w-[var(--radix-select-trigger-width)] rounded-xl border bg-background shadow-lg">
-            {CUSTOMER_TYPE_DISPLAY_OPTIONS.map((ct) => (
-              <SelectItem key={ct.value} value={ct.value}>{ct.label}</SelectItem>
+            {BOOKING_TYPE_OPTIONS.map((bt) => (
+              <SelectItem key={bt.value} value={bt.value}>{bt.label}</SelectItem>
             ))}
           </SelectContent>
         </Select>
@@ -958,102 +995,126 @@ const dataMonthRangeLabel = buildMonthRangeLabel(dataMonthRange?.min ?? null, da
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <label className="space-y-2">
+            <div className="space-y-2">
               <FilterLabel
                 label="Campaign Day"
                 tooltip={FILTER_HELP_TEXT.campaignDay}
               />
-              <select
-                value={campaignDay}
-                onChange={(event) => setCampaignDay(event.target.value)}
-                className="h-12 w-full rounded-2xl border border-border/70 bg-background/90 px-4 text-sm font-medium shadow-sm outline-none transition hover:border-primary/35 hover:bg-background focus:border-primary focus:ring-2 focus:ring-primary/15"
-              >{CAMPAIGN_DAY_OPTIONS.map((day) => <option key={day} value={day}>{day}</option>)}</select>
-            </label>
+              <Select value={campaignDay} onValueChange={setCampaignDay}>
+                <SelectTrigger className="h-11 w-full rounded-xl border border-border/70 bg-background/90 px-3 shadow-sm outline-none transition hover:border-primary/35 hover:bg-background focus:ring-2 focus:ring-primary/15">
+                  <SelectValue placeholder="Campaign Day" />
+                </SelectTrigger>
+                <SelectContent position="popper" className="w-[var(--radix-select-trigger-width)] rounded-xl border bg-background shadow-lg">
+                  {CAMPAIGN_DAY_OPTIONS.map((day) => (
+                    <SelectItem key={day} value={day}>{day}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
 
-            <label className="space-y-2">
+            <div className="space-y-2">
               <FilterLabel label="Analysis Period" tooltip={FILTER_HELP_TEXT.analysisPeriod} />
-              <select value={analysisPeriodMonths} onChange={(event) => setAnalysisPeriodMonths(Number(event.target.value))} className="h-12 w-full rounded-2xl border border-border/70 bg-background/90 px-4 text-sm font-medium shadow-sm outline-none transition hover:border-primary/35 hover:bg-background focus:border-primary focus:ring-2 focus:ring-primary/15">
-                {ANALYSIS_PERIOD_OPTIONS.map((months) => <option key={months} value={months}>{months} Month{months > 1 ? "s" : ""}</option>)}
-              </select>
-            </label>
+              <Select
+                value={String(analysisPeriodMonths)}
+                onValueChange={(value) => setAnalysisPeriodMonths(Number(value))}
+              >
+                <SelectTrigger className="h-11 w-full rounded-xl border border-border/70 bg-background/90 px-3 shadow-sm outline-none transition hover:border-primary/35 hover:bg-background focus:ring-2 focus:ring-primary/15">
+                  <SelectValue placeholder="Analysis Period" />
+                </SelectTrigger>
+                <SelectContent position="popper" className="w-[var(--radix-select-trigger-width)] rounded-xl border bg-background shadow-lg">
+                  {ANALYSIS_PERIOD_OPTIONS.map((months) => (
+                    <SelectItem key={months} value={String(months)}>
+                      {months} Month{months > 1 ? "s" : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
 
-            <label className="space-y-2">
+            <div className="space-y-2">
               <FilterLabel
                 label="Court Type"
                 tooltip={FILTER_HELP_TEXT.courtType}
               />
-              <select
-                value={courtType}
-                onChange={(event) => setCourtType(event.target.value)}
-                className="h-12 w-full rounded-2xl border border-border/70 bg-background/90 px-4 text-sm font-medium shadow-sm outline-none transition hover:border-primary/35 hover:bg-background focus:border-primary focus:ring-2 focus:ring-primary/15"
-              >
-                {COURT_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </label>
+              <Select value={courtType} onValueChange={setCourtType}>
+                <SelectTrigger className="h-11 w-full rounded-xl border border-border/70 bg-background/90 px-3 shadow-sm outline-none transition hover:border-primary/35 hover:bg-background focus:ring-2 focus:ring-primary/15">
+                  <SelectValue placeholder="Court Type" />
+                </SelectTrigger>
+                <SelectContent position="popper" className="w-[var(--radix-select-trigger-width)] rounded-xl border bg-background shadow-lg">
+                  {COURT_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
 
-            <label className="space-y-2">
+            <div className="space-y-2">
               <FilterLabel
                 label="Play Session"
                 tooltip={FILTER_HELP_TEXT.playSession}
               />
-              <select
+              <Select
                 value={sessionName}
-                onChange={(event) =>
-                  setSessionName(event.target.value as (typeof SESSION_OPTIONS)[number])
+                onValueChange={(value) =>
+                  setSessionName(value as (typeof SESSION_OPTIONS)[number])
                 }
-                className="h-12 w-full rounded-2xl border border-border/70 bg-background/90 px-4 text-sm font-medium shadow-sm outline-none transition hover:border-primary/35 hover:bg-background focus:border-primary focus:ring-2 focus:ring-primary/15"
               >
-                {SESSION_OPTIONS.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
-              </select>
-            </label>
+                <SelectTrigger className="h-11 w-full rounded-xl border border-border/70 bg-background/90 px-3 shadow-sm outline-none transition hover:border-primary/35 hover:bg-background focus:ring-2 focus:ring-primary/15">
+                  <SelectValue placeholder="Play Session" />
+                </SelectTrigger>
+                <SelectContent position="popper" className="w-[var(--radix-select-trigger-width)] rounded-xl border bg-background shadow-lg">
+                  {SESSION_OPTIONS.map((option) => (
+                    <SelectItem key={option} value={option}>
+                      {option}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
 
-            <label className="space-y-2">
+            <div className="space-y-2">
               <FilterLabel
                 label="Target Customer"
                 tooltip={FILTER_HELP_TEXT.customerType}
               />
-              <select
-                value={customerType}
-                onChange={(event) => setCustomerType(event.target.value)}
-                className="h-12 w-full rounded-2xl border border-border/70 bg-background/90 px-4 text-sm font-medium shadow-sm outline-none transition hover:border-primary/35 hover:bg-background focus:border-primary focus:ring-2 focus:ring-primary/15"
-              >
-                {CUSTOMER_TYPE_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </label>
+              <Select value={customerType} onValueChange={setCustomerType}>
+                <SelectTrigger className="h-11 w-full rounded-xl border border-border/70 bg-background/90 px-3 shadow-sm outline-none transition hover:border-primary/35 hover:bg-background focus:ring-2 focus:ring-primary/15">
+                  <SelectValue placeholder="Target Customer" />
+                </SelectTrigger>
+                <SelectContent position="popper" className="w-[var(--radix-select-trigger-width)] rounded-xl border bg-background shadow-lg">
+                  {CUSTOMER_TYPE_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
 
-            <label className="space-y-2">
+            <div className="space-y-2">
               <FilterLabel
                 label="RFM Segment"
                 tooltip={FILTER_HELP_TEXT.rfmSegment}
               />
-              <select
-                value={segmentName}
-                onChange={(event) => setSegmentName(event.target.value)}
-                className="h-12 w-full rounded-2xl border border-border/70 bg-background/90 px-4 text-sm font-medium shadow-sm outline-none transition hover:border-primary/35 hover:bg-background focus:border-primary focus:ring-2 focus:ring-primary/15"
-              >
-                {SEGMENT_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </label>
+              <Select value={segmentName} onValueChange={setSegmentName}>
+                <SelectTrigger className="h-11 w-full rounded-xl border border-border/70 bg-background/90 px-3 shadow-sm outline-none transition hover:border-primary/35 hover:bg-background focus:ring-2 focus:ring-primary/15">
+                  <SelectValue placeholder="RFM Segment" />
+                </SelectTrigger>
+                <SelectContent position="popper" className="w-[var(--radix-select-trigger-width)] rounded-xl border bg-background shadow-lg">
+                  {SEGMENT_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
 
           </div>
 
-          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div className="flex flex-col gap-2 md:flex-row md:items-center md:gap-3">
             <Button onClick={handleApply} className="h-11 gap-2 rounded-xl px-5">
               {isLoadingSessions || isLoadingCustomers ? (
                 <>
@@ -1067,7 +1128,7 @@ const dataMonthRangeLabel = buildMonthRangeLabel(dataMonthRange?.min ?? null, da
                 </>
               )}
             </Button>
-            <p className="max-w-2xl text-sm text-muted-foreground">
+            <p className="text-sm text-muted-foreground md:whitespace-nowrap">
               Recommendations are ranked from historical booking behavior and the latest available RFM segmentation.
             </p>
           </div>
@@ -1302,23 +1363,9 @@ const dataMonthRangeLabel = buildMonthRangeLabel(dataMonthRange?.min ?? null, da
                             Copy Phone
                           </Button>
                           <Button
-                            variant="outline"
                             size="sm"
                             className="justify-start gap-2"
-                            onClick={() =>
-                              void copyText(
-                                customer.whatsappMessage,
-                                "WhatsApp message copied to clipboard."
-                              )
-                            }
-                          >
-                            <MessageSquare className="h-4 w-4" />
-                            Copy Message
-                          </Button>
-                          <Button
-                            size="sm"
-                            className="justify-start gap-2"
-                            onClick={() => openGenAi(customer, "message")}
+                            onClick={() => setMessageDraftCustomer(customer)}
                           >
                             <Sparkles className="h-4 w-4" />
                             Generate Message
@@ -1327,19 +1374,10 @@ const dataMonthRangeLabel = buildMonthRangeLabel(dataMonthRange?.min ?? null, da
                             variant="outline"
                             size="sm"
                             className="justify-start gap-2"
-                            onClick={() => openGenAi(customer, "campaign")}
+                            onClick={() => openGenAi(customer)}
                           >
                             <Sparkles className="h-4 w-4" />
-                            Generate Campaign
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="justify-start gap-2"
-                            onClick={() => openGenAi(customer, "workspace")}
-                          >
-                            <Sparkles className="h-4 w-4" />
-                            Open in GenAI Workspace
+                            Open AI Workspace
                           </Button>
                         </div>
                       </td>
@@ -1402,6 +1440,64 @@ const dataMonthRangeLabel = buildMonthRangeLabel(dataMonthRange?.min ?? null, da
           ) : null}
         </CardContent>
       </Card>
+
+      <Dialog
+        open={Boolean(messageDraftCustomer)}
+        onOpenChange={(open) => {
+          if (!open) setMessageDraftCustomer(null)
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              Message Draft for {messageDraftCustomer?.customerName || messageDraftCustomer?.customerKey}
+            </DialogTitle>
+            <DialogDescription>
+              AI-generated WhatsApp message based on this customer&apos;s segment, preferred session, and booking history.
+            </DialogDescription>
+          </DialogHeader>
+
+          {isGeneratingDraftMessage ? (
+            <div className="flex min-h-24 items-center justify-center gap-2 rounded-xl border border-border bg-secondary/20 p-4 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Generating message with AI...
+            </div>
+          ) : generateDraftMessageError ? (
+            <div className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+              <AlertCircle className="h-4 w-4 shrink-0" />
+              {generateDraftMessageError}
+            </div>
+          ) : (
+            <div className="rounded-xl border border-border bg-secondary/20 p-4">
+              <p className="whitespace-pre-line text-sm leading-6 text-slate-700">
+                {generatedDraftMessage}
+              </p>
+            </div>
+          )}
+
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="outline"
+              className="gap-2"
+              disabled={isGeneratingDraftMessage || !messageDraftCustomer}
+              onClick={() => messageDraftCustomer && void loadMessageDraft(messageDraftCustomer)}
+            >
+              <Sparkles className="h-4 w-4" />
+              Regenerate
+            </Button>
+            <Button
+              className="gap-2"
+              disabled={isGeneratingDraftMessage || !generatedDraftMessage}
+              onClick={() =>
+                void copyText(generatedDraftMessage, "WhatsApp message copied to clipboard.")
+              }
+            >
+              <Copy className="h-4 w-4" />
+              Copy Message
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

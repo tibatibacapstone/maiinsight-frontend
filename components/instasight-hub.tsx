@@ -1122,24 +1122,25 @@ return (
 
             <Card className="border-border bg-card shadow-sm">
               <CardHeader>
-                <CardTitleTooltip title="Top Content by Views" tooltip="Selected-period content ranked by its latest stored view snapshot, not views earned only within the posting month." />
+                <CardTitleTooltip title="Engagement Insights" tooltip="Quick reads that normally require checking Meta graphs manually." />
               </CardHeader>
-              <CardContent>
-                {!topContent.length ? (
-                  <StateCard state="empty" title="Views not available" description="Meta did not return a supported view metric for content in this period." minHeight="min-h-[260px]" />
-                ) : (
-                <div className="h-[300px]">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={topContent.slice(0, 6)} layout="vertical" margin={{ left: 12, right: 8 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal={false} />
-                      <XAxis type="number" stroke="var(--muted-foreground)" tickLine={false} axisLine={false} />
-                      <YAxis type="category" dataKey="caption" width={156} tickFormatter={(value) => String(value || "Untitled post").slice(0, 24)} stroke="var(--muted-foreground)" tickLine={false} axisLine={false} />
-                      <RechartsTooltip formatter={(value: number) => [formatNumber(value), "Views"]} />
-                      <Bar dataKey="views" name="Views" fill="var(--chart-1)" radius={[0, 6, 6, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
+              <CardContent className="space-y-4 text-sm">
+                <div className="flex items-center justify-between border-b pb-3">
+                  <span className="text-muted-foreground">Best performing format</span>
+                  <span className="font-semibold text-foreground">{dashboard?.summary.topContentType || "-"}</span>
                 </div>
-                )}
+                <div className="flex items-center justify-between border-b pb-3">
+                  <span className="text-muted-foreground">Save intent rate</span>
+                  <span className="font-semibold text-foreground">{formatAvailablePercent(dashboard?.summary.saveRate)}</span>
+                </div>
+                <div className="flex items-center justify-between border-b pb-3">
+                  <span className="text-muted-foreground">Share amplification rate</span>
+                  <span className="font-semibold text-foreground">{formatAvailablePercent(dashboard?.summary.shareRate)}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">Synced content analyzed</span>
+                  <span className="font-semibold text-foreground">{formatNumber(dashboard?.summary.contentCount || 0)}</span>
+                </div>
               </CardContent>
             </Card>
           </div>
@@ -1147,7 +1148,7 @@ return (
           <div className="grid gap-6 xl:grid-cols-2">
             <Card className="border-border bg-card shadow-sm">
               <CardHeader>
-                <CardTitleTooltip title="Content Mix by Format" tooltip="Which Instagram format is carrying views and interactions." />
+                <CardTitleTooltip title="Content Type Engagement" tooltip="Which Instagram format is carrying views and interactions." />
               </CardHeader>
               <CardContent>
                 <div className="h-[300px]">
@@ -1168,29 +1169,24 @@ return (
 
             <Card className="border-border bg-card shadow-sm">
               <CardHeader>
-                <CardTitleTooltip title="Marketing Signals" tooltip="Quick reads that normally require checking Meta graphs manually." />
+                <CardTitleTooltip title="Top Content by Views" tooltip="Selected-period content ranked by its latest stored view snapshot, not views earned only within the posting month." />
               </CardHeader>
-              <CardContent className="space-y-4 text-sm">
-                <div className="flex items-center justify-between border-b pb-3">
-                  <span className="text-muted-foreground">Best performing format</span>
-                  <span className="font-semibold text-foreground">{dashboard?.summary.topContentType || "-"}</span>
+              <CardContent>
+                {!topContent.length ? (
+                  <StateCard state="empty" title="Views not available" description="Meta did not return a supported view metric for content in this period." minHeight="min-h-[260px]" />
+                ) : (
+                <div className="h-[300px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={topContent.slice(0, 6)} layout="vertical" margin={{ left: 12, right: 8 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal={false} />
+                      <XAxis type="number" stroke="var(--muted-foreground)" tickLine={false} axisLine={false} />
+                      <YAxis type="category" dataKey="caption" width={156} tickFormatter={(value) => String(value || "Untitled post").slice(0, 24)} stroke="var(--muted-foreground)" tickLine={false} axisLine={false} />
+                      <RechartsTooltip formatter={(value: number) => [formatNumber(value), "Views"]} />
+                      <Bar dataKey="views" name="Views" fill="var(--chart-1)" radius={[0, 6, 6, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
                 </div>
-                <div className="flex items-center justify-between border-b pb-3">
-                  <span className="text-muted-foreground">Profile visits from reach</span>
-                  <span className="font-semibold text-foreground">{formatAvailablePercent(dashboard?.summary.profileVisitRate)}</span>
-                </div>
-                <div className="flex items-center justify-between border-b pb-3">
-                  <span className="text-muted-foreground">Save intent rate</span>
-                  <span className="font-semibold text-foreground">{formatAvailablePercent(dashboard?.summary.saveRate)}</span>
-                </div>
-                <div className="flex items-center justify-between border-b pb-3">
-                  <span className="text-muted-foreground">Share amplification rate</span>
-                  <span className="font-semibold text-foreground">{formatAvailablePercent(dashboard?.summary.shareRate)}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground">Synced content analyzed</span>
-                  <span className="font-semibold text-foreground">{formatNumber(dashboard?.summary.contentCount || 0)}</span>
-                </div>
+                )}
               </CardContent>
             </Card>
           </div>

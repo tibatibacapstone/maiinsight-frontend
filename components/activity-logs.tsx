@@ -21,6 +21,14 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle, CardTitleTooltip } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { getApiUrl } from "@/lib/api"
 import { getAuthHeaders } from "@/lib/roles"
 
@@ -224,18 +232,23 @@ useEffect(() => {
                 )
               })}
             </div>
-            <div className="flex flex-wrap gap-2">
-              {(["all", "success", "warning", "error"] as const).map((status) => (
-                <Button
-                  key={status}
-                  variant={filterStatus === status ? "secondary" : "outline"}
-                  size="sm"
-                  onClick={() => setFilterStatus(status)}
-                  className="capitalize"
-                >
-                  {status}
-                </Button>
-              ))}
+            <div className="flex items-center gap-2">
+              <Label htmlFor="status-filter" className="whitespace-nowrap text-sm text-muted-foreground">
+                Status
+              </Label>
+              <Select
+                value={filterStatus}
+                onValueChange={(value) => setFilterStatus(value as ActivityStatus | "all")}
+              >
+                <SelectTrigger id="status-filter" size="sm" className="w-[140px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All</SelectItem>
+                  <SelectItem value="success">Success</SelectItem>
+                  <SelectItem value="error">Error</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
         </CardContent>

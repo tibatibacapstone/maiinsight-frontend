@@ -578,38 +578,44 @@ export function SegmentVisualization() {
     avgMScore: cluster.avgMScore,
   }))
 
-  const radarData = useMemo(() => {
+  const normalizedClusterRadars = useMemo(() => {
     const maxRecency = Math.max(...clusters.map((cluster) => cluster.avgRecency), 1)
     const maxFrequency = Math.max(...clusters.map((cluster) => cluster.avgFrequency), 1)
     const maxMonetary = Math.max(...clusters.map((cluster) => cluster.avgMonetary), 1)
 
-    return [
-      {
-        metric: "Recency",
-        value: selectedCluster ? Math.max(10, 100 - (selectedCluster.avgRecency / maxRecency) * 100) : 0,
+    return clusters.map((cluster) => ({
+      segmentName: cluster.segmentName,
+      color: CUSTOMER_SEGMENT_COLORS[cluster.segmentName] || "var(--chart-5)",
+      values: {
+        Recency: Math.max(10, 100 - (cluster.avgRecency / maxRecency) * 100),
+        Frequency: Math.max(10, (cluster.avgFrequency / maxFrequency) * 100),
+        Monetary: Math.max(10, (cluster.avgMonetary / maxMonetary) * 100),
+        "R Score": Math.max(10, (cluster.avgRScore / 5) * 100),
+        "F Score": Math.max(10, (cluster.avgFScore / 5) * 100),
+        "M Score": Math.max(10, (cluster.avgMScore / 5) * 100),
       },
-      {
-        metric: "Frequency",
-        value: selectedCluster ? Math.max(10, (selectedCluster.avgFrequency / maxFrequency) * 100) : 0,
-      },
-      {
-        metric: "Monetary",
-        value: selectedCluster ? Math.max(10, (selectedCluster.avgMonetary / maxMonetary) * 100) : 0,
-      },
-      {
-        metric: "R Score",
-        value: selectedCluster ? Math.max(10, (selectedCluster.avgRScore / 5) * 100) : 0,
-      },
-      {
-        metric: "F Score",
-        value: selectedCluster ? Math.max(10, (selectedCluster.avgFScore / 5) * 100) : 0,
-      },
-      {
-        metric: "M Score",
-        value: selectedCluster ? Math.max(10, (selectedCluster.avgMScore / 5) * 100) : 0,
-      },
-    ]
-  }, [clusters, selectedCluster])
+    }))
+  }, [clusters])
+
+  const RADAR_METRICS = ["Recency", "Frequency", "Monetary", "R Score", "F Score", "M Score"] as const
+
+  // "All Segments" overlays every segment's radar shape on the same chart
+  // instead of a single line, so segments can be compared at a glance.
+  const radarSeries = selectedCluster
+    ? normalizedClusterRadars.filter((cluster) => cluster.segmentName === selectedCluster.segmentName)
+    : normalizedClusterRadars
+
+  const radarData = useMemo(
+    () =>
+      RADAR_METRICS.map((metric) => {
+        const row: Record<string, string | number> = { metric }
+        radarSeries.forEach((cluster) => {
+          row[cluster.segmentName] = cluster.values[metric]
+        })
+        return row
+      }),
+    [radarSeries]
+  )
   const chartHeightClass =
     viewMode === "radar" ? "h-[clamp(320px,52vw,520px)]" : "h-[clamp(300px,48vw,440px)]"
   const selectedCustomerCount = totalCustomerRows
@@ -728,17 +734,19 @@ export function SegmentVisualization() {
             <CardTitleTooltip title="Customer Value Segments" tooltip={buildBusinessSegmentationMessage(latestData)} />
           </CardHeader>
           <CardContent>
-            <div className="flex flex-wrap gap-3">
+            <div className="flex flex-wrap gap-2 sm:flex-nowrap">
               <button
                 onClick={() => setSelectedSegment(null)}
-                className={`flex items-center gap-2 rounded-xl border-2 px-4 py-2 transition-all ${
+                className={`flex min-w-0 flex-1 basis-[45%] flex-col items-start gap-1.5 rounded-xl border-2 px-3 py-2 transition-all sm:basis-0 ${
                   selectedSegment === null
                     ? "border-primary bg-primary/10 shadow-md shadow-primary/10"
                     : "border-border bg-secondary/50 hover:border-primary/50"
                 }`}
               >
-                <span className="h-3 w-3 rounded-full bg-slate-400" />
-                <span className="font-medium">All Segments</span>
+                <span className="flex w-full items-center gap-2">
+                  <span className="h-3 w-3 shrink-0 rounded-full bg-slate-400" />
+                  <span className="truncate font-medium">All Segments</span>
+                </span>
                 <Badge variant="secondary" className="text-xs">
                   {formatNumber(latestData.totalCustomers, 0)} customers
                 </Badge>
@@ -747,14 +755,16 @@ export function SegmentVisualization() {
                 <button
                   key={cluster.segmentName}
                   onClick={() => setSelectedSegment(cluster.segmentName)}
-                  className={`flex items-center gap-2 rounded-xl border-2 px-4 py-2 transition-all ${
+                  className={`flex min-w-0 flex-1 basis-[45%] flex-col items-start gap-1.5 rounded-xl border-2 px-3 py-2 transition-all sm:basis-0 ${
                     selectedCluster?.segmentName === cluster.segmentName
                       ? "border-primary bg-primary/10 shadow-md shadow-primary/10"
                       : "border-border bg-secondary/50 hover:border-primary/50"
                   }`}
                 >
-                  <span className="h-3 w-3 rounded-full" style={{ backgroundColor: cluster.color }} />
-                  <span className="font-medium">{cluster.segmentName}</span>
+                  <span className="flex w-full items-center gap-2">
+                    <span className="h-3 w-3 shrink-0 rounded-full" style={{ backgroundColor: cluster.color }} />
+                    <span className="truncate font-medium">{cluster.segmentName}</span>
+                  </span>
                   <Badge variant="secondary" className="text-xs">
                     {formatNumber(cluster.customerCount, 0)} customers
                   </Badge>
@@ -772,7 +782,7 @@ export function SegmentVisualization() {
                   <div className="flex items-center gap-2">
                     <CardTitleTooltip
                       title={viewMode === "distribution" ? "Segment Distribution" : viewMode === "profile" ? "Segment Profile Comparison" : "Segment Radar Analysis"}
-                      tooltip={viewMode === "distribution" ? "How customers are split across the main business segments" : viewMode === "profile" ? "Compare booking recency, frequency, and value across segments" : "A compact radar view of the selected segment"}
+                      tooltip={viewMode === "distribution" ? "How customers are split across the main business segments" : viewMode === "profile" ? "Compare booking recency, frequency, and value across segments" : selectedCluster ? "A compact radar view of the selected segment" : "Overlaid radar shapes for every segment, for quick comparison"}
                     />
                   </div>
                 </div>
@@ -824,17 +834,20 @@ export function SegmentVisualization() {
                       <PolarGrid stroke="var(--border)" />
                       <PolarAngleAxis dataKey="metric" tick={{ fill: "var(--muted-foreground)", fontSize: 12 }} />
                       <PolarRadiusAxis angle={30} domain={[0, 100]} tick={{ fill: "var(--muted-foreground)", fontSize: 10 }} />
-                      <Radar
-                        name={selectedCluster?.segmentName || "Selected Segment"}
-                        dataKey="value"
-                        stroke="var(--chart-1)"
-                        fill="var(--chart-1)"
-                        fillOpacity={0.25}
-                        strokeWidth={2}
-                      />
+                      {radarSeries.map((cluster) => (
+                        <Radar
+                          key={cluster.segmentName}
+                          name={cluster.segmentName}
+                          dataKey={cluster.segmentName}
+                          stroke={cluster.color}
+                          fill={cluster.color}
+                          fillOpacity={selectedCluster ? 0.25 : 0.12}
+                          strokeWidth={2}
+                        />
+                      ))}
                       <Legend />
                       <RechartsTooltip
-                        formatter={(value) => [`${Number(value).toFixed(1)}%`, selectedCluster?.segmentName || "Selected Segment"]}
+                        formatter={(value: number, name: string) => [`${Number(value).toFixed(1)}%`, name]}
                       />
                     </RadarChart>
                   )}

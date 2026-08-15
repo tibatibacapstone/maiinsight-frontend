@@ -139,3 +139,26 @@ export const getRecommendedCustomers = async (params: {
 
   return readApiResponse<RecommendedCustomersResponse>(response)
 }
+
+export const generateOutreachMessage = async (params: {
+  customerName: string
+  rfmSegmentName: string | null
+  customerTypeLabel: string
+  preferredSession: string | null
+  courtType: string
+  suggestedAction: string
+  recencyDays: number
+  totalBookingCount: number
+}) => {
+  const response = await fetch(getApiUrl("/targeting/generate-message"), {
+    method: "POST",
+    cache: "no-store",
+    headers: {
+      ...getAuthHeaders(),
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(params),
+  })
+
+  return readApiResponse<{ provider: string; model: string; message: string }>(response)
+}
