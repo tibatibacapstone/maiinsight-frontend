@@ -244,6 +244,18 @@ interface MetaSyncResponse {
   }
 }
 
+interface GeminiCheckResponse {
+  success?: boolean
+  message?: string
+  data?: {
+    gemini: {
+      status: "not_configured" | "disabled" | "valid" | "error"
+      error?: string
+    }
+    checkedAt?: string
+  }
+}
+
 interface MlSummary {
   lastRun: string
   records: number
@@ -418,6 +430,20 @@ const getMetaSourceStatus = (metaStatusResult: MetaSyncResponse | null): DataSou
 
   if (metaStatusResult.data.connectionState === "syncing") {
     return "syncing"
+  }
+
+  return "connected"
+}
+
+const getGeminiSourceStatus = (geminiCheckResult: GeminiCheckResponse | null): DataSource["status"] => {
+  const status = geminiCheckResult?.data?.gemini?.status
+
+  if (!geminiCheckResult?.success || !status || status === "not_configured" || status === "disabled") {
+    return "disconnected"
+  }
+
+  if (status === "error") {
+    return "error"
   }
 
   return "connected"
@@ -614,7 +640,7 @@ const [mlSummary, setMlSummary] = useState<MlSummary>({
       return
     }
 
-    const [summaryResponse, metaStatusResponse] = await Promise.all([
+    const [summaryResponse, metaStatusResponse, geminiCheckResponse] = await Promise.all([
       fetch(getApiUrl("/dashboard/data-center"), {
         method: "GET",
         cache: "no-store",
@@ -629,10 +655,19 @@ const [mlSummary, setMlSummary] = useState<MlSummary>({
           ...getAuthHeaders(),
         },
       }),
+      fetch(getApiUrl("/system/check-gemini"), {
+        method: "POST",
+        headers: {
+          ...getAuthHeaders(),
+        },
+      }),
     ])
 
     const summaryResult = await summaryResponse.json().catch(() => null)
     const metaStatusResult = await metaStatusResponse.json().catch(() => null)
+    const geminiCheckResult: GeminiCheckResponse | null = await geminiCheckResponse
+      .json()
+      .catch(() => null)
 
     if (!summaryResponse.ok || !summaryResult?.success || !summaryResult?.data) {
       console.warn("Invalid data center summary response:", {
@@ -651,6 +686,10 @@ const [mlSummary, setMlSummary] = useState<MlSummary>({
     setMetaConfigured(metaConfigured)
     const latestMetaSync = getMetaSyncTimestamp(metaStatusResult)
     const metaSourceStatus = getMetaSourceStatus(metaStatusResult)
+    const geminiSourceStatus = getGeminiSourceStatus(geminiCheckResult)
+    const geminiConfigured =
+      geminiSourceStatus === "connected" || geminiSourceStatus === "error"
+    const geminiCheckedAt = geminiCheckResult?.data?.checkedAt || null
 
     setDataSources([
       {
@@ -675,8 +714,8 @@ const [mlSummary, setMlSummary] = useState<MlSummary>({
         id: "3",
         name: "AI Strategy Engine",
         type: "api",
-        status: "connected",
-        lastSync: latestBatchTime ? formatDisplaySyncTime(latestBatchTime) : "Ready when data is available",
+        status: geminiSourceStatus,
+        lastSync: geminiConfigured ? formatDisplaySyncTime(geminiCheckedAt) : "Not connected",
         records: Number(summaryResult.data.aiStrategySuggestionCount || 0),
       },
     ])
@@ -800,14 +839,29 @@ if (!response.ok) {
         }
 
         if (sourceId === "3") {
-          const response = await fetch(getApiUrl("/ai-strategy/status"), {
-            method: "GET",
-            cache: "no-store",
+          const response = await fetch(getApiUrl("/system/check-gemini"), {
+            method: "POST",
             headers: getAuthHeaders(),
           })
 
-          if (!response.ok) {
-            throw new Error("Failed to refresh AI Strategy Engine status.")
+          const result: GeminiCheckResponse = await response.json()
+
+          if (!response.ok || result.success === false) {
+            throw new Error(result.message || "Failed to check Gemini AI connection.")
+          }
+
+          const geminiStatus = result.data?.gemini?.status
+
+          if (geminiStatus === "not_configured") {
+            throw new Error("Gemini API key is not configured yet. Please set it up in System Settings.")
+          }
+
+          if (geminiStatus === "disabled") {
+            throw new Error("Gemini integration is disabled in System Settings.")
+          }
+
+          if (geminiStatus === "error") {
+            throw new Error(result.data?.gemini?.error || "Gemini API connection failed.")
           }
         }
 

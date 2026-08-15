@@ -80,10 +80,13 @@ interface OverviewKpiData {
   revenueChange: number
   lowSessionLabel: string
   lowSessionCount: number
+  lowSessionRate?: number
+  lowSessionRevenue?: number
   lowSessionBasis?: "selected_period" | "previous_month" | "no_data"
   lowSessionDetail?: string
   peakSessionLabel: string
   peakSessionRevenue: number
+  peakSessionRate?: number
   totalBookedSessions: number
   availableSessions: number
 }
@@ -416,11 +419,13 @@ const buildFallbackBusinessInsight = ({
   reportData,
   topSegment,
   metaDashboard,
+  planningMonthLabel,
 }: {
   overviewKpi: OverviewKpiData | null
   reportData: RevenueReportData | null
   topSegment: { name: string; percentage: number } | null
   metaDashboard: MetaDashboardData | null
+  planningMonthLabel: string
 }): BusinessInsightState => {
   if (!overviewKpi || !reportData) {
     return {
@@ -455,12 +460,12 @@ const buildFallbackBusinessInsight = ({
     generatedAt: null,
     providerLabel: null,
     strategy: {
-      campaignObjective: `Plan June growth around ${focusSession} while keeping revenue healthy.`,
-      targetCustomerGroup: `Main focus for June is ${topSegmentLabel}.`,
+      campaignObjective: `Plan ${planningMonthLabel} growth around ${focusSession} while keeping revenue healthy.`,
+      targetCustomerGroup: `Main focus for ${planningMonthLabel} is ${topSegmentLabel}.`,
       customerReasoning: `${reportData.insights.occupancyInsight} ${reportData.insights.segmentationInsight}`,
-      suggestedOffer: `Create a small promotion or bundle for June around ${focusSession} that appeals to the priority audience.`,
+      suggestedOffer: `Create a small promotion or bundle for ${planningMonthLabel} around ${focusSession} that appeals to the priority audience.`,
       whatsappMessage: "This overview doesn't generate messages. Use GenAI Workspace to draft messages.",
-      followUpPlan: `${metaContext} Then review if the June promotions improved bookings and revenue.`,
+      followUpPlan: `${metaContext} Then review if the ${planningMonthLabel} promotions improved bookings and revenue.`,
       expectedBusinessImpact: `${reportData.insights.revenueInsight} Promotions work best when targeting the weakest time slots for the next month.`,
       dataLimitation: "This insight comes from uploaded historical data and doesn't show real-time availability.",
     },
@@ -1047,12 +1052,15 @@ if ((periodType || "MTD") === "MTD") {
     [metaDashboard, reportData]
   )
 
+  const planningMonthLabel = useMemo(() => {
+    const currentMonthIndex = months.indexOf(selectedMonth)
+    const planningMonthDate = new Date(Number(selectedYear), (currentMonthIndex >= 0 ? currentMonthIndex : new Date().getMonth()) + 1, 1)
+    return new Intl.DateTimeFormat("en-US", { month: "long", year: "numeric" }).format(planningMonthDate)
+  }, [selectedMonth, selectedYear])
+
   const businessInsightRequest = useMemo(() => {
     if (!overviewKpi || !reportData) return null
 
-    const currentMonthIndex = months.indexOf(selectedMonth)
-    const planningMonthDate = new Date(Number(selectedYear), (currentMonthIndex >= 0 ? currentMonthIndex : new Date().getMonth()) + 1, 1)
-    const planningMonthLabel = new Intl.DateTimeFormat("en-US", { month: "long", year: "numeric" }).format(planningMonthDate)
     const dominantPlaytimeLabel = dominantPlaytime?.name || playtimeLegend[0]?.name || null
     const dominantPlaytimeSharePct = dominantPlaytime ? Number(dominantPlaytime.percentage.toFixed(1)) : null
     const dominantBookingType = bookingTypeMixLegend[0] || null
@@ -1117,7 +1125,7 @@ if ((periodType || "MTD") === "MTD") {
         revenueDefinition: "Revenue is based on the facility play date.",
       },
     }
-  }, [bookingTypeMixLegend, dominantPlaytime, metaComparisonInsight, metaDashboard?.summary.engagementRate, metaDashboard?.summary.totalReach, metaDashboard?.summary.totalViews, overviewKpi, periodType, playtimeBehaviorInsight, playtimeLegend, reportData, segmentChartTotal, selectedBookingType, selectedMonth, selectedVenue, selectedYear, topSegment])
+  }, [bookingTypeMixLegend, dominantPlaytime, metaComparisonInsight, metaDashboard?.summary.engagementRate, metaDashboard?.summary.totalReach, metaDashboard?.summary.totalViews, overviewKpi, periodType, planningMonthLabel, playtimeBehaviorInsight, playtimeLegend, reportData, segmentChartTotal, selectedBookingType, selectedMonth, selectedVenue, selectedYear, topSegment])
 
   const businessInsightKey = useMemo(
     () => (businessInsightRequest ? JSON.stringify(businessInsightRequest) : null),
@@ -1131,8 +1139,9 @@ if ((periodType || "MTD") === "MTD") {
         reportData,
         topSegment,
         metaDashboard,
+        planningMonthLabel,
       }),
-    [metaDashboard, overviewKpi, reportData, topSegment]
+    [metaDashboard, overviewKpi, planningMonthLabel, reportData, topSegment]
   )
 
   const handleGenerateBusinessInsight = useCallback(async () => {
@@ -1155,7 +1164,7 @@ if ((periodType || "MTD") === "MTD") {
     setIsLoadingBusinessInsight(true)
 
     try {
-      const response = await fetch(getApiUrl("/ai-strategy/generate"), {
+      const response = await fetch(getApiUrl("/dashboard/business-insight"), {
         method: "POST",
         cache: "no-store",
         headers: {
@@ -1169,7 +1178,7 @@ if ((periodType || "MTD") === "MTD") {
       const strategy = result?.data?.strategy || result?.strategy
 
       if (!response.ok || !result?.success || !strategy) {
-        throw new Error(result?.message || "AI strategy could not be generated.")
+        throw new Error(result?.message || "Business insight could not be generated.")
       }
 
       const aiInsight: BusinessInsightState = {
@@ -1620,9 +1629,16 @@ const revenueXAxisTicks = useMemo(() => {
                 <div className="flex items-end justify-between">
                   <div>
                     <p className="text-xl font-bold">{overviewKpi?.lowSessionLabel || "No data"}</p>
-                    <p className="mt-2 text-xs text-muted-foreground">
+                    {overviewKpi?.lowSessionLabel && overviewKpi?.lowSessionLabel !== "-" && overviewKpi?.lowSessionRevenue != null && (
+                      <p className="mt-2 text-xs text-muted-foreground">
+                        Revenue: {formatCurrency(overviewKpi.lowSessionRevenue)}
+                      </p>
+                    )}
+                    <p className="mt-1 text-xs text-muted-foreground">
                       {overviewKpi?.lowSessionLabel && overviewKpi?.lowSessionLabel !== "-"
-                        ? "Lowest booking volume among all sessions"
+                        ? overviewKpi?.lowSessionRate != null
+                          ? `Occupancy: ${overviewKpi.lowSessionRate}% of available hours booked`
+                          : ""
                         : "Session data will be available after transactions are imported."}
                     </p>
                   </div>
@@ -1633,7 +1649,7 @@ const revenueXAxisTicks = useMemo(() => {
             <Card className="border-border bg-card shadow-sm">
               <CardHeader>
                 <CardTitleTooltip
-                    title="Peak Session Revenue"
+                    title="Peak Session"
                     tooltip="The time slot generating the highest total revenue — your most valuable session."
                     className="text-sm font-medium text-muted-foreground"
                   />
@@ -1647,6 +1663,11 @@ const revenueXAxisTicks = useMemo(() => {
                         ? formatCurrency(overviewKpi?.peakSessionRevenue || 0)
                         : "No revenue data available"}
                     </p>
+                    {(overviewKpi?.peakSessionRevenue || 0) > 0 && overviewKpi?.peakSessionRate != null && (
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Occupancy: {overviewKpi.peakSessionRate}% of available hours booked
+                      </p>
+                    )}
                   </div>
                   <Zap className="h-5 w-5 text-primary" />
                 </div>
