@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react"
 import { Bell, CheckCheck, Download, Loader2, X } from "lucide-react"
+import { toast } from "sonner"
 
 import { getApiUrl } from "@/lib/api"
 import { getAuthHeaders } from "@/lib/roles"
@@ -10,7 +11,6 @@ import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { useToast } from "@/components/ui/use-toast"
 import type { PageId } from "./dashboard-sidebar"
 
 export interface NotificationItem {
@@ -51,7 +51,6 @@ const getStoredDismissed = (): string[] => {
 }
 
 export function NotificationBell({ onNavigate }: NotificationBellProps) {
-  const { toast } = useToast()
   const [open, setOpen] = useState(false)
   const [items, setItems] = useState<NotificationItem[]>([])
   const [unreadCount, setUnreadCount] = useState(0)
@@ -97,10 +96,10 @@ export function NotificationBell({ onNavigate }: NotificationBellProps) {
         })
         const result = await response.json().catch(() => null)
         if (!response.ok) {
-          toast({ title: result?.message || "Could not remove the notification." })
+          toast.error(result?.message || "Could not remove the notification.")
         }
       } catch {
-        toast({ title: "Could not remove the notification." })
+        toast.error("Could not remove the notification.")
       } finally {
         setDismissingId(null)
       }
@@ -150,7 +149,7 @@ export function NotificationBell({ onNavigate }: NotificationBellProps) {
       setItems((current) => current.map((item) => ({ ...item, read: true })))
       setUnreadCount(0)
     } catch {
-      toast({ title: "Could not mark notifications as read." })
+      toast.error("Could not mark notifications as read.")
     }
   }
 
@@ -192,7 +191,7 @@ export function NotificationBell({ onNavigate }: NotificationBellProps) {
         fileData: result.data.fileData,
       })
     } catch (error) {
-      toast({ title: error instanceof Error ? error.message : "The file could not be opened." })
+      toast.error(error instanceof Error ? error.message : "The file could not be opened.")
     } finally {
       setPreviewLoading(false)
     }
