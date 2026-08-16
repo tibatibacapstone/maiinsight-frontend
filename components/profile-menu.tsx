@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react"
 import { Camera, Loader2, LogOut, Trash2 } from "lucide-react"
+import { toast } from "sonner"
 
 import { getApiUrl } from "@/lib/api"
 import { getAuthHeaders, getRoleDisplayName, UserRole } from "@/lib/roles"
@@ -15,7 +16,6 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
 import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp"
-import { useToast } from "@/components/ui/use-toast"
 
 interface ProfileMenuProps {
   userRole: UserRole
@@ -67,7 +67,6 @@ const downscaleImage = (file: File): Promise<string> =>
   })
 
 export function ProfileMenu({ userRole, onLogout }: ProfileMenuProps) {
-  const { toast } = useToast()
   const { user, updateProfile } = useAuth()
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -91,7 +90,7 @@ export function ProfileMenu({ userRole, onLogout }: ProfileMenuProps) {
     if (!file) return
 
     if (!file.type.startsWith("image/")) {
-      toast({ title: "Please choose an image file." })
+      toast.error("Please choose an image file.")
       return
     }
 
@@ -107,11 +106,9 @@ export function ProfileMenu({ userRole, onLogout }: ProfileMenuProps) {
       }
       const error = await updateProfile({ avatar: dataUrl })
       if (error) throw new Error(error)
-      toast({ title: "Profile photo updated." })
+      toast.success("Profile photo updated.")
     } catch (error) {
-      toast({
-        title: error instanceof Error ? error.message : "The photo could not be uploaded.",
-      })
+      toast.error(error instanceof Error ? error.message : "The photo could not be uploaded.")
     } finally {
       setAvatarBusy(false)
     }
@@ -122,11 +119,9 @@ export function ProfileMenu({ userRole, onLogout }: ProfileMenuProps) {
     try {
       const error = await updateProfile({ avatar: null })
       if (error) throw new Error(error)
-      toast({ title: "Profile photo removed." })
+      toast.success("Profile photo removed.")
     } catch (error) {
-      toast({
-        title: error instanceof Error ? error.message : "The photo could not be removed.",
-      })
+      toast.error(error instanceof Error ? error.message : "The photo could not be removed.")
     } finally {
       setAvatarBusy(false)
     }
@@ -135,30 +130,28 @@ export function ProfileMenu({ userRole, onLogout }: ProfileMenuProps) {
   const handleSaveName = async () => {
     const trimmed = nameValue.trim()
     if (!trimmed) {
-      toast({ title: "Name cannot be empty." })
+      toast.error("Name cannot be empty.")
       return
     }
     setNameBusy(true)
     try {
       const error = await updateProfile({ name: trimmed })
       if (error) throw new Error(error)
-      toast({ title: "Name updated." })
+      toast.success("Name updated.")
     } catch (error) {
-      toast({
-        title: error instanceof Error ? error.message : "The name could not be saved.",
-      })
+      toast.error(error instanceof Error ? error.message : "The name could not be saved.")
     } finally {
       setNameBusy(false)
     }
   }
 
   const handleRequestCode = async () => {
-    if (newPassword.length < 6) {
-      toast({ title: "New password must be at least 6 characters." })
+    if (newPassword.length < 8) {
+      toast.error("New password must be at least 8 characters.")
       return
     }
     if (newPassword !== confirmPassword) {
-      toast({ title: "Passwords do not match." })
+      toast.error("Passwords do not match.")
       return
     }
     setPasswordBusy(true)
@@ -172,11 +165,9 @@ export function ProfileMenu({ userRole, onLogout }: ProfileMenuProps) {
         throw new Error(result?.error || "The code could not be sent.")
       }
       setCodeSent(true)
-      toast({ title: result?.message || "Confirmation code sent to your email." })
+      toast.success(result?.message || "Confirmation code sent to your email.")
     } catch (error) {
-      toast({
-        title: error instanceof Error ? error.message : "The code could not be sent.",
-      })
+      toast.error(error instanceof Error ? error.message : "The code could not be sent.")
     } finally {
       setPasswordBusy(false)
     }
@@ -198,11 +189,9 @@ export function ProfileMenu({ userRole, onLogout }: ProfileMenuProps) {
       setConfirmPassword("")
       setCode("")
       setCodeSent(false)
-      toast({ title: result?.message || "Password updated successfully." })
+      toast.success(result?.message || "Password updated successfully.")
     } catch (error) {
-      toast({
-        title: error instanceof Error ? error.message : "The password could not be updated.",
-      })
+      toast.error(error instanceof Error ? error.message : "The password could not be updated.")
     } finally {
       setPasswordBusy(false)
     }
@@ -219,7 +208,6 @@ export function ProfileMenu({ userRole, onLogout }: ProfileMenuProps) {
         </Avatar>
         <span className="min-w-0">
           <span className="block truncate text-sm font-semibold">{displayName || getRoleDisplayName(userRole)}</span>
-          <span className="block truncate text-xs text-muted-foreground">{user?.email || ""}</span>
           <span className="block text-[11px] capitalize text-muted-foreground/80">
             {getRoleDisplayName(userRole)}
           </span>

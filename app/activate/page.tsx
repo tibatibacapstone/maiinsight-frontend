@@ -10,10 +10,12 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { getApiUrl } from "@/lib/api"
+import { useAuth } from "@/lib/auth-context"
 
 function ActivateForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
+  const { login } = useAuth()
   const inviteToken = searchParams.get("token") ?? ""
   const [password, setPassword] = useState("")
   const [confirmPassword, setConfirmPassword] = useState("")
@@ -65,9 +67,7 @@ function ActivateForm() {
       setMessage("Account activated successfully. You can now sign in.")
       setPassword("")
       setConfirmPassword("")
-      window.localStorage.setItem("maiinToken", payload.token)
-      window.localStorage.setItem("maiinRole", payload.user?.role || "operational")
-      window.localStorage.setItem("maiinUser", JSON.stringify(payload.user))
+      login(payload.token, payload.user)
       router.replace("/")
     } catch {
       setError("Unable to connect to the API. Please try again.")
