@@ -252,6 +252,12 @@ contentList: Array<{
 }>
 
 contentListTotal: number
+contentInsightsAvailability: {
+  totalMedia: number
+  mediaWithInsights: number
+  mediaWithoutInsights: number
+  outsideInsightRetention: number
+}
   }
 }
 
@@ -680,6 +686,46 @@ return (
     </div>
   </CardContent>
 </Card>
+      {dashboard?.contentInsightsAvailability &&
+      dashboard.contentInsightsAvailability.mediaWithoutInsights > 0 ? (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          <div className="flex items-start gap-2">
+            <svg
+              className="mt-0.5 h-4 w-4 shrink-0"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <circle cx="12" cy="12" r="10" />
+              <path d="M12 16v-4" />
+              <path d="M12 8h.01" />
+            </svg>
+            <div className="space-y-1">
+              <p className="font-semibold">Data tidak lengkap untuk periode ini</p>
+              {dashboard.contentInsightsAvailability.outsideInsightRetention > 0 ? (
+                <p>
+                  Dari {dashboard.contentInsightsAvailability.totalMedia} konten di periode ini,
+                  hanya {dashboard.contentInsightsAvailability.mediaWithInsights} yang memiliki data
+                  metrik. Meta (Instagram) hanya menyimpan metrik performa konten selama sekitar 24
+                  bulan terakhir, sehingga {dashboard.contentInsightsAvailability.mediaWithoutInsights}{" "}
+                  konten yang lebih lama tetap ditampilkan tetapi tanpa views, reach, likes, dan
+                  metrik lainnya.
+                </p>
+              ) : (
+                <p>
+                  {dashboard.contentInsightsAvailability.mediaWithoutInsights} dari{" "}
+                  {dashboard.contentInsightsAvailability.totalMedia} konten di periode ini belum
+                  memiliki data metrik. Jalankan sync Meta agar data terbaru tersimpan.
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
       {hasRealData && (status?.connectionState === "error" || status?.configured === false) ? (
         <BusinessErrorAlert
           title="Meta synchronization warning"
@@ -1293,7 +1339,7 @@ return (
       >
                         <td className="px-4 py-4">
                           <div className="flex items-center gap-3">
-                            <div className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-lg bg-secondary">
+                            <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-secondary">
                               {item.mediaUrl ? (
                                 // eslint-disable-next-line @next/next/no-img-element
                                 <img src={item.mediaUrl} alt={item.caption || "Instagram content"} className="h-full w-full object-cover" />
