@@ -24,7 +24,7 @@ test("Meta Metrics Trend explains historical account semantics and preserves nul
 })
 
 test("filter changes load stored dashboard data and do not invoke sync", () => {
-  const loader = source.match(/const loadMetaDashboard[\s\S]*?const handleSync/)?.[0] || ""
+  const loader = source.match(/const loadMetaDashboard[\s\S]*?const topContent/)?.[0] || ""
   assert.match(loader, /\/meta\/dashboard/)
   assert.doesNotMatch(loader, /\/meta\/sync/)
 })

@@ -2,13 +2,14 @@
 
 import { useEffect, useMemo, useState, useCallback } from "react"
 import {
-  AlertTriangle,
   ArrowDown,
   ArrowUp,
   ExternalLink,
+  Eye,
   GitGraph,
-  Loader2,
-  RefreshCw,
+  Heart,
+  MessageCircle,
+  Share2,
   Users,
 } from "lucide-react"
 import {
@@ -214,6 +215,7 @@ newFollowsChangePct: number | null
   mediaType: string | null
   mediaProductType: string | null
   mediaUrl: string | null
+  thumbnailUrl: string | null
   permalink: string | null
   postedAt: string | null
   views: number | null
@@ -234,6 +236,7 @@ contentList: Array<{
   mediaType: string | null
   mediaProductType: string | null
   mediaUrl: string | null
+  thumbnailUrl: string | null
   permalink: string | null
   postedAt: string | null
   views: number | null
@@ -352,6 +355,16 @@ const CoverageNote = ({
     </p>
   )
 }
+const formatUploadDate = (value?: string | null) => {
+  if (!value) return "-"
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return "-"
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  }).format(date)
+}
 const formatSnapshotDate = (value?: string | null) => {
   if (!value) return "Not available"
   const date = new Date(value)
@@ -425,9 +438,7 @@ const YEAR_OPTIONS = Array.from({ length: 5 }, (_, index) =>
   const [status, setStatus] = useState<MetaStatusResponse["data"] | null>(null)
   const [dashboard, setDashboard] = useState<MetaDashboardResponse["data"] | null>(null)
   const [isLoading, setIsLoading] = useState(true)
-  const [isSyncing, setIsSyncing] = useState(false)
   const [error, setError] = useState<{ message: string; suggestion?: string | null; technical?: string | null } | null>(null)
-  const [syncWarning, setSyncWarning] = useState<string | null>(null)
 
 const [contentPage, setContentPage] = useState(1)
 const [contentSortBy, setContentSortBy] = useState("latest")
@@ -503,47 +514,6 @@ useEffect(() => {
 useEffect(() => {
   void loadMetaStatus()
 }, [loadMetaStatus])
-
-  const handleSync = async () => {
-    try {
-      setIsSyncing(true)
-      setError(null)
-      setSyncWarning(null)
-
-const response = await fetch(getApiUrl("/meta/sync"), {
-  method: "POST",
-  headers: {
-    ...getAuthHeaders(),
-    "Content-Type": "application/json",
-  },
-  body: JSON.stringify({}),
-})
-
-      const result = await response.json().catch(() => null)
-      if (!response.ok || !result?.success) {
-        const isMetaConfigured = status?.configured
-        await Promise.all([loadMetaDashboard(), loadMetaStatus()])
-        setSyncWarning(
-          isMetaConfigured
-            ? "Meta synchronization failed. Showing data from the last successful sync."
-            : "Meta synchronization failed because the integration is not configured."
-        )
-        return
-      }
-
-      await Promise.all([loadMetaDashboard(), loadMetaStatus()])
-    } catch {
-      const isMetaConfigured = status?.configured
-      await Promise.all([loadMetaDashboard(), loadMetaStatus()])
-      setSyncWarning(
-        isMetaConfigured
-          ? "Meta synchronization failed. Showing data from the last successful sync."
-          : "Meta synchronization failed because the integration is not configured."
-      )
-    } finally {
-      setIsSyncing(false)
-    }
-  }
 
   const topContent = useMemo(() => dashboard?.topContent || [], [dashboard])
   const contentMix = useMemo(() => dashboard?.contentMix || [], [dashboard])
@@ -656,10 +626,6 @@ return (
             <Users className="h-4 w-4" />
             View Audience Demographic
           </Button>
-          <Button className="gap-2" onClick={() => void handleSync()} disabled={isSyncing || !status?.configured}>
-            {isSyncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-            Sync Meta Data
-          </Button>
         </div>
       </div>
      <Card className="border-border bg-card shadow-sm">
@@ -714,10 +680,10 @@ return (
     </div>
   </CardContent>
 </Card>
-      {hasRealData && (syncWarning || status?.connectionState === "error" || status?.configured === false) ? (
+      {hasRealData && (status?.connectionState === "error" || status?.configured === false) ? (
         <BusinessErrorAlert
           title="Meta synchronization warning"
-          message={syncWarning || "Meta synchronization is currently unavailable or not configured. Showing stored InstaSight data."}
+          message="Meta synchronization is currently unavailable or not configured. Showing stored InstaSight data."
           suggestion={`Last successfully synced: ${dashboard?.lastSyncedAt ? new Date(dashboard.lastSyncedAt).toLocaleString() : "Not available"}`}
           technicalDetails={canViewTechnicalDetails ? status?.connectionError : null}
           showTechnicalDetails={canViewTechnicalDetails}
@@ -737,13 +703,6 @@ return (
           state="error"
           title="Meta connection error"
           description={status.connectionError}
-          minHeight="min-h-[220px]"
-        />
-      ) : syncWarning && !hasRealData ? (
-        <StateCard
-          state="error"
-          title="Meta synchronization failed"
-          description="No synchronized Instagram data is available yet. Retry after the Meta connection is restored."
           minHeight="min-h-[220px]"
         />
       ) : error ? (
@@ -772,7 +731,7 @@ return (
             {status?.connectionState === "error" && status?.connectionError ? (
               <p className="text-red-600">{status.connectionError}</p>
             ) : null}
-            <p>Use <span className="font-medium text-foreground">Sync Meta Data</span> to get the latest Instagram performance data.</p>
+            <p>Instagram data will appear here after the first Meta synchronization completes.</p>
             <p>Last sync status: <span className="font-medium text-foreground">{status?.latestSync?.status || "Not synced"}</span></p>
           </CardContent>
         </Card>
@@ -1175,16 +1134,56 @@ return (
                 {!topContent.length ? (
                   <StateCard state="empty" title="Views not available" description="Meta did not return a supported view metric for content in this period." minHeight="min-h-[260px]" />
                 ) : (
-                <div className="h-[300px]">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={topContent.slice(0, 6)} layout="vertical" margin={{ left: 12, right: 8 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal={false} />
-                      <XAxis type="number" stroke="var(--muted-foreground)" tickLine={false} axisLine={false} />
-                      <YAxis type="category" dataKey="caption" width={156} tickFormatter={(value) => String(value || "Untitled post").slice(0, 24)} stroke="var(--muted-foreground)" tickLine={false} axisLine={false} />
-                      <RechartsTooltip formatter={(value: number) => [formatNumber(value), "Views"]} />
-                      <Bar dataKey="views" name="Views" fill="var(--chart-1)" radius={[0, 6, 6, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                  {topContent.slice(0, 6).map((item) => (
+                    <div key={item.id} className="group relative overflow-hidden rounded-lg border border-border/50 bg-card">
+                      <div className="relative aspect-square overflow-hidden bg-secondary">
+                        {item.thumbnailUrl || item.mediaUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={item.thumbnailUrl || item.mediaUrl || ""}
+                            alt={item.caption || "Instagram content"}
+                            className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-105"
+                          />
+                        ) : (
+                          <div className="flex h-full w-full items-center justify-center">
+                            <GitGraph className="h-6 w-6 text-muted-foreground" />
+                          </div>
+                        )}
+                        {item.permalink ? (
+                          <a
+                            href={item.permalink}
+                            target="_blank"
+                            rel="noreferrer"
+                            aria-label="Open Instagram"
+                            className="absolute inset-0"
+                          />
+                        ) : null}
+
+                        <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-center gap-1.5 bg-gradient-to-t from-black/80 via-black/40 to-transparent p-2.5">
+                          <div className="flex items-center gap-1 rounded-full bg-black/50 px-2 py-1 backdrop-blur-sm">
+                            <Heart className="h-3 w-3 fill-rose-500 text-rose-500" />
+                            <span className="text-xs font-semibold text-white">{formatNumber(item.likes)}</span>
+                          </div>
+                          <div className="flex items-center gap-1 rounded-full bg-black/50 px-2 py-1 backdrop-blur-sm">
+                            <MessageCircle className="h-3 w-3 text-sky-400" />
+                            <span className="text-xs font-semibold text-white">{formatNumber(item.comments)}</span>
+                          </div>
+                          <div className="flex items-center gap-1 rounded-full bg-black/50 px-2 py-1 backdrop-blur-sm">
+                            <Share2 className="h-3 w-3 text-emerald-400" />
+                            <span className="text-xs font-semibold text-white">{formatAvailableNumber(item.shares)}</span>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-between px-3 py-2">
+                        <p className="text-[0.68rem] text-muted-foreground">{formatUploadDate(item.postedAt)}</p>
+                        <div className="flex items-center gap-1 text-[0.68rem] text-muted-foreground">
+                          <Eye className="h-3 w-3" />
+                          <span>{formatNumber(item.views ?? 0)}</span>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
                 )}
               </CardContent>
@@ -1260,13 +1259,18 @@ return (
                   <thead>
                     <tr className="border-b border-border/50 text-left text-muted-foreground">
                       <th className="px-4 py-3">Content</th>
+                      <th className="px-4 py-3 text-left">Upload Date</th>
                       <th className="px-4 py-3 text-left">Label</th>
                       <th className="px-4 py-3">Type</th>
                       <th className="px-4 py-3 text-right">Views</th>
-                      <th className="px-4 py-3 text-right">Reach</th>
+                      <th className="px-4 py-3 text-right">
+                        Reach<sup className="ml-0.5 text-primary" aria-label="see note below">*</sup>
+                      </th>
                       <th className="px-4 py-3 text-right">Likes</th>
                       <th className="px-4 py-3 text-right">Comments</th>
-                      <th className="px-4 py-3 text-right">Saves</th>
+                      <th className="px-4 py-3 text-right">
+                        Saves<sup className="ml-0.5 text-primary" aria-label="see note below">*</sup>
+                      </th>
                       <th className="px-4 py-3 text-right">Shares</th>
                       <th className="px-4 py-3 text-right">Engagement</th>
                     </tr>
@@ -1275,7 +1279,7 @@ return (
   {paginatedContent.length === 0 ? (
     <tr>
       <td
-        colSpan={10}
+        colSpan={11}
         className="px-4 py-8 text-center text-sm text-muted-foreground"
       >
         No content found for the selected keyword.
@@ -1306,6 +1310,9 @@ return (
                               ) : null}
                             </div>
                           </div>
+                        </td>
+                        <td className="whitespace-nowrap px-4 py-4 align-top">
+                          {formatUploadDate(item.postedAt)}
                         </td>
                         <td className="px-4 py-4 align-top">
     <span
@@ -1353,6 +1360,18 @@ return (
   )}
                   </tbody>
                 </table>
+                <div className="border-t px-4 py-2.5">
+                  <p className="text-xs text-muted-foreground">
+                    <sup className="text-primary">*</sup> Reach and saves are fetched directly from Instagram&apos;s per-post insights API and reflect the{" "}
+                    <span className="font-medium text-foreground">finalized values recorded by Instagram</span> for
+                    that content. These numbers can differ from the live counters shown in the Instagram app,
+                    because the app keeps recalculating reach as more people discover a post (reels surfaced in
+                    Explore, feed recommendations, and shares keep adding reach), and the API only publishes the
+                    finalized snapshot with a processing delay of up to 48 hours. The values above are{" "}
+                    <span className="font-medium text-foreground">still fully usable</span> for comparing content
+                    performance against one another and tracking trends, since every post is measured the same way.
+                  </p>
+                </div>
                 <div className="flex flex-col gap-3 border-t px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
   <p className="text-sm text-muted-foreground">
     Showing{" "}

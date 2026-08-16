@@ -19,10 +19,9 @@ test("Month and Year scope the dashboard request while Content Type remains tabl
   assert.doesNotMatch(dashboardLoader, /\/meta\/sync/)
 });
 
-test("only the explicit Sync Meta Data action calls Meta synchronization without filter dates", () => {
-  assert.match(source, /getApiUrl\("\/meta\/sync"\)/)
-  assert.match(source, /body:\s*JSON\.stringify\(\{\}\)/)
-  assert.doesNotMatch(source, /body:\s*JSON\.stringify\(\{[\s\S]{0,200}since:/)
+test("InstaSight no longer triggers Meta synchronization from this page", () => {
+  assert.doesNotMatch(source, /getApiUrl\("\/meta\/sync"\)/)
+  assert.doesNotMatch(source, /Sync Meta Data/)
 })
 
 test("unavailable metrics and accurate KPI labels are rendered", () => {
@@ -32,9 +31,8 @@ test("unavailable metrics and accurate KPI labels are rendered", () => {
   assert.match(source, /Views not available/);
 });
 
-test("failed refresh preserves stored data and reports last successful sync", () => {
-  assert.match(source, /Showing data from the last successful sync/)
+test("stored data state preserves unavailable values and reports last successful sync", () => {
   assert.match(source, /Last successfully synced:/)
-  assert.match(source, /hasRealData && \(syncWarning/)
-  assert.match(source, /No synchronized Instagram data is available yet/)
+  assert.match(source, /hasRealData && \(status\?\.connectionState === "error" \|\| status\?\.configured === false\)/)
+  assert.match(source, /Meta API is not connected yet/)
 })
