@@ -18,10 +18,10 @@ test("General Strategy exposes canonical analysis periods with a three-month def
   }
   assert.match(source, /useState<AnalysisPeriodKey>\("three_months"\)/)
   assert.match(source, /analysisPeriodKey,/)
-  assert.match(source, /Periode Analisis/)
+  assert.match(source, /Analysis Period/)
   assert.doesNotMatch(
     source,
-    /workspaceMode === "general"[\s\S]{0,300}<span>Periode Analisis<\/span>/
+    /workspaceMode === "general"[\s\S]{0,300}<span>Analysis Period<\/span>/
   )
   const outreachPayload = source.slice(
     source.indexOf('workspaceModeKey: "low_occupancy_outreach"'),
@@ -31,19 +31,19 @@ test("General Strategy exposes canonical analysis periods with a three-month def
 })
 
 test("result preparation uses a light hierarchy with collapsed secondary data", () => {
-  assert.match(source, /Segmen Terpilih:/)
-  assert.match(source, /Rata-Rata Recency/)
-  assert.match(source, /Rata-Rata Frekuensi/)
-  assert.match(source, /Rata-Rata Monetary/)
+  assert.match(source, /Selected Segment:/)
+  assert.match(source, /Average Recency/)
+  assert.match(source, /Average Frequency/)
+  assert.match(source, /Average Monetary/)
   assert.match(source, /value="segment-details"/)
-  assert.match(source, /Lihat Detail Segmen/)
-  assert.match(source, /Peluang Utama/)
-  assert.match(source, /Alternatif Sesi/)
-  assert.match(source, /Ringkasan Peluang Bisnis/)
-  assert.match(source, /Data Pendukung Utama/)
+  assert.match(source, /View Segment Details/)
+  assert.match(source, /Primary Opportunity/)
+  assert.match(source, /Alternative Sessions/)
+  assert.match(source, /Business Opportunity Summary/)
+  assert.match(source, /Key Supporting Data/)
   assert.match(source, /value="complete-data"/)
-  assert.match(source, /Lihat Data Lengkap/)
-  assert.match(source, /formatIndonesianDate/)
+  assert.match(source, /View Full Data/)
+  assert.match(source, /formatDisplayDate/)
   assert.match(source, /grid gap-3 sm:grid-cols-2 xl:grid-cols-4/)
 })
 
@@ -68,7 +68,7 @@ test("workspace mode remains interactive and enforces only the outreach objectiv
   assert.match(source, /setSelectedObjective\(lastGeneralStrategyObjective \|\| DEFAULT_GENERAL_OBJECTIVE\)/)
   assert.match(source, /setStrategy\(null\)/)
   assert.match(source, /workspaceMode === "low_occupancy_outreach"/)
-  assert.match(source, /Objective otomatis untuk mode Low Occupancy Outreach/)
+  assert.match(source, /Objective is set automatically in Low Occupancy Outreach mode/)
   assert.match(source, /handleGeneralObjectiveChange/)
 })
 
@@ -111,9 +111,9 @@ test("offer framework is an optional AI-first manual override", () => {
 })
 
 test("missing supporting values use explanations instead of synthetic zeroes", () => {
-  assert.match(source, /Data recency tidak tersedia/)
-  assert.match(source, /Inventory lapangan belum tersedia/)
-  assert.match(source, /Promosi belum tercatat pada periode ini/)
-  assert.match(source, /Target revenue belum dikonfigurasi untuk scope ini/)
+  assert.match(source, /Recency data not available/)
+  assert.match(source, /Court inventory not available/)
+  assert.match(source, /No promotions recorded in this period/)
+  assert.match(source, /Revenue target is not configured for this scope/)
   assert.doesNotMatch(source, /\?\? 0/)
 })

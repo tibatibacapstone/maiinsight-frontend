@@ -5,6 +5,8 @@ import {
   Bell,
   CalendarDays,
   Check,
+  ChevronDown,
+  ChevronUp,
   Copy,
   Loader2,
   MessageSquare,
@@ -27,6 +29,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle, CardTitleTooltip, StateCard } from "@/components/ui/card"
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
 import { Skeleton } from "@/components/ui/skeleton"
+import { Textarea } from "@/components/ui/textarea"
 import {
   Dialog,
   DialogContent,
@@ -111,14 +114,6 @@ interface StrategyContext {
     preferredSessionLabel: string | null
   }
   membership_opportunity: { eligible: boolean; reason: string }
-  revenue_opportunity: {
-    available: boolean
-    currentRevenue: number | null
-    revenueTarget: number | null
-    revenueGap: number | null
-    revenueAchievementPct: number | null
-    reason?: string
-  }
   revenue_history: {
     available: boolean
     totalRevenue: number | null
@@ -134,15 +129,6 @@ interface StrategyContext {
     revenueAchievementPct: number | null
     reason?: string | null
   }
-  occupancy_opportunity: {
-    available: boolean
-    currentOccupancyRate: number | null
-    historicalAverageOccupancyRate: number | null
-    occupancyGapPercentagePoints: number | null
-    opportunityLevel: string | null
-    historicalBaseline: string | null
-    reason?: string
-  }
   occupancy_history: {
     available: boolean
     averageOccupancyRate: number | null
@@ -152,12 +138,6 @@ interface StrategyContext {
     analysisPeriodKey: string
     reason?: string
   } | null
-  future_slot_opportunity?: {
-    available: boolean
-    availabilityStatus: string
-    remainingCourtHours: number | null
-    reason?: string
-  }
   promotion_usage_context: {
     available: boolean
     validBookingCount: number | null
@@ -321,19 +301,23 @@ const copywritingTones = [
   "Urgent Promo Tone",
   "Professional Tone",
 ]
+const selectTriggerClassName =
+  "h-12 w-full rounded-2xl border border-border/70 bg-background/90 px-4 text-sm font-medium text-foreground shadow-sm outline-none transition hover:border-primary/35 hover:bg-background focus:ring-2 focus:ring-primary/15"
+const selectTriggerClassNameCompact =
+  "h-12 w-full rounded-xl border border-border/70 bg-background px-4 shadow-sm transition hover:border-primary/35 focus:ring-2 focus:ring-primary/15"
 export const analysisPeriods: ReadonlyArray<{
   key: AnalysisPeriodKey
   label: string
 }> = [
-  { key: "one_month", label: "1 Bulan" },
-  { key: "three_months", label: "3 Bulan" },
-  { key: "six_months", label: "6 Bulan" },
-  { key: "twelve_months", label: "12 Bulan" },
+  { key: "one_month", label: "1 Month" },
+  { key: "three_months", label: "3 Months" },
+  { key: "six_months", label: "6 Months" },
+  { key: "twelve_months", label: "12 Months" },
 ]
 
 const formatIdr = (value: number | null) =>
   value == null
-    ? "Data tidak tersedia"
+    ? "Not available"
     : new Intl.NumberFormat("id-ID", {
         style: "currency",
         currency: "IDR",
@@ -341,14 +325,14 @@ const formatIdr = (value: number | null) =>
       }).format(value)
 
 const formatMetric = (value: number | null, suffix = "") =>
-  value == null ? "Data tidak tersedia" : `${value}${suffix}`
+  value == null ? "Not available" : `${value}${suffix}`
 
-const formatIndonesianDate = (value?: string | null) => {
-  if (!value) return "Tanggal tidak tersedia"
+const formatDisplayDate = (value?: string | null) => {
+  if (!value) return "Date not available"
   const normalizedValue = /^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T00:00:00` : value
   const date = new Date(normalizedValue)
-  if (Number.isNaN(date.getTime())) return "Tanggal tidak tersedia"
-  return new Intl.DateTimeFormat("id-ID", {
+  if (Number.isNaN(date.getTime())) return "Date not available"
+  return new Intl.DateTimeFormat("en-GB", {
     day: "numeric",
     month: "short",
     year: "numeric",
@@ -357,8 +341,8 @@ const formatIndonesianDate = (value?: string | null) => {
 
 const formatAnalysisPeriod = (period: StrategyContext["analysis_period"]) =>
   period
-    ? `${formatIndonesianDate(period.startDate)}–${formatIndonesianDate(period.displayEndDate)} · ${period.label}`
-    : "Periode analisis tidak tersedia"
+    ? `${formatDisplayDate(period.startDate)}–${formatDisplayDate(period.displayEndDate)} · ${period.label}`
+    : "Analysis period not available"
 
 function MetricTile({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -379,25 +363,25 @@ const CONTENT_TYPE_LABELS: Record<string, string> = {
   REELS: "Reels",
   REEL: "Reels",
   FEED: "Feed",
-  IMAGE: "Feed (Foto)",
+  IMAGE: "Feed (Photo)",
   CAROUSEL_ALBUM: "Feed (Carousel)",
   VIDEO: "Video",
-  Unknown: "Tidak diketahui",
+  Unknown: "Unknown",
 }
 const formatContentTypeLabel = (value?: string | null) =>
-  (value && CONTENT_TYPE_LABELS[value]) || value || "Tidak diketahui"
+  (value && CONTENT_TYPE_LABELS[value]) || value || "Unknown"
 
 const CONTENT_LABEL_LABELS: Record<string, string> = {
-  content_promotion: "Promosi",
-  content_advertisement: "Konten Umum",
+  content_promotion: "Promotion",
+  content_advertisement: "General Content",
 }
 const formatContentLabelValue = (value?: string | null) =>
-  (value && CONTENT_LABEL_LABELS[value]) || (value ? formatOpportunityKey(value) : "Tidak diketahui")
+  (value && CONTENT_LABEL_LABELS[value]) || (value ? formatOpportunityKey(value) : "Unknown")
 
 const formatTargetDirection = (value: string) => ({
-  increase: "meningkat",
-  decrease: "menurun",
-  maintain: "dipertahankan",
+  increase: "increase",
+  decrease: "decrease",
+  maintain: "maintain",
 }[value] || value)
 
 const segmentKeys: Record<string, string> = {
@@ -502,6 +486,18 @@ export function GenAIWorkspace({ userRole: userRoleFromProps }: GenAIWorkspacePr
   const [copiedField, setCopiedField] = useState<string | null>(null)
   const [isLoadingStatus, setIsLoadingStatus] = useState(true)
   const [isGenerating, setIsGenerating] = useState(false)
+  const [refineNotes, setRefineNotes] = useState("")
+  const [refineMessage, setRefineMessage] = useState<string | null>(null)
+  const [showDetailedContext, setShowDetailedContext] = useState(false)
+  const [askPrompt, setAskPrompt] = useState("")
+  const [isAsking, setIsAsking] = useState(false)
+  const [askError, setAskError] = useState<string | null>(null)
+  const [askResult, setAskResult] = useState<{
+    provider: string
+    model: string
+    answer: string
+    generatedAt: string
+  } | null>(null)
   const [error, setError] = useState<{ message: string; suggestion?: string | null; technical?: string | null } | null>(null)
 
   useEffect(() => {
@@ -742,18 +738,19 @@ export function GenAIWorkspace({ userRole: userRoleFromProps }: GenAIWorkspacePr
     return () => controller.abort()
   }, [aiStatus?.configured, canViewPage, requestPayload])
 
-  const handleGenerateStrategy = async () => {
+  const handleGenerateStrategy = async (userNotes?: string) => {
     if (!canGenerateAi) {
       setError({
         message: "AI strategy generation is available to Marketing Operational and IT Support only.",
         suggestion: "Please sign in with a Marketing Operational or IT Support account.",
       })
-      return
+      return false
     }
 
     try {
       setIsGenerating(true)
       setError(null)
+      setRefineMessage(null)
 
       const response = await fetch(getApiUrl("/ai-strategy/generate"), {
         method: "POST",
@@ -761,7 +758,10 @@ export function GenAIWorkspace({ userRole: userRoleFromProps }: GenAIWorkspacePr
           ...getAuthHeaders(),
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(requestPayload),
+        body: JSON.stringify({
+          ...requestPayload,
+          ...(userNotes && userNotes.trim() ? { userNotes: userNotes.trim() } : {}),
+        }),
       })
 
       const result: StrategyResponse | null = await response.json().catch(() => null)
@@ -783,11 +783,12 @@ export function GenAIWorkspace({ userRole: userRoleFromProps }: GenAIWorkspacePr
           suggestion: result?.suggestion || "Please try again or contact IT Support if the issue continues.",
           technical: result?.technicalMessage || null,
         })
-        return
+        return false
       }
 
       setStrategy({ ...normalizedResult, strategy: normalizeLegacyStrategy(normalizedResult.strategy) })
       await loadWorkspaceStatus()
+      return true
     } catch (generationError) {
       setStrategy(null)
       setError({
@@ -795,8 +796,61 @@ export function GenAIWorkspace({ userRole: userRoleFromProps }: GenAIWorkspacePr
         suggestion: "Please try again or contact IT Support if the issue continues.",
         technical: generationError instanceof Error ? generationError.message : null,
       })
+      return false
     } finally {
       setIsGenerating(false)
+    }
+  }
+
+  const handleAskAi = async () => {
+    if (!canGenerateAi) {
+      setAskError("Ask the AI is available to Marketing Operational and IT Support only.")
+      return
+    }
+    if (!askPrompt.trim()) return
+    if (!aiStatus?.configured || !strategyContext) {
+      setAskError("AI assistant is not ready yet. Check AI configuration and selected segment profile.")
+      return
+    }
+
+    try {
+      setIsAsking(true)
+      setAskError(null)
+      setAskResult(null)
+
+      const response = await fetch(getApiUrl("/ai-strategy/ask"), {
+        method: "POST",
+        headers: {
+          ...getAuthHeaders(),
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          ...requestPayload,
+          prompt: askPrompt.trim(),
+        }),
+      })
+
+      const result: {
+        success: boolean
+        message?: string
+        suggestion?: string | null
+        data?: { provider: string; model: string; answer: string; generatedAt: string }
+      } | null = await response.json().catch(() => null)
+
+      if (!response.ok || !result?.success || !result?.data?.answer) {
+        setAskError(
+          result?.message ||
+            result?.suggestion ||
+            "The AI assistant could not answer right now. Please try again."
+        )
+        return
+      }
+
+      setAskResult(result.data)
+    } catch (askRequestError) {
+      setAskError("The AI assistant could not answer right now. Please try again.")
+    } finally {
+      setIsAsking(false)
     }
   }
 
@@ -947,7 +1001,7 @@ export function GenAIWorkspace({ userRole: userRoleFromProps }: GenAIWorkspacePr
                   </div>
                   <div className="min-w-0 text-sm">
                     <p className="text-xs font-medium text-muted-foreground">Reference Date</p>
-                    <p className="mt-1 font-semibold text-slate-900">{formatIndonesianDate(outreachContext.date)}</p>
+                    <p className="mt-1 font-semibold text-slate-900">{formatDisplayDate(outreachContext.date)}</p>
                   </div>
                 </div>
               </CardContent>
@@ -965,7 +1019,7 @@ export function GenAIWorkspace({ userRole: userRoleFromProps }: GenAIWorkspacePr
       <label className="space-y-2 text-sm font-medium">
         <span>Workspace Mode</span>
         <Select value={workspaceMode} disabled={!canGenerateAi} onValueChange={(value) => handleWorkspaceModeChange(value as WorkspaceModeKey)}>
-          <SelectTrigger className="h-12 w-full rounded-xl border border-border/70 bg-background px-4 shadow-sm transition hover:border-primary/35 focus:ring-2 focus:ring-primary/15"><SelectValue placeholder="Select workspace mode" /></SelectTrigger>
+          <SelectTrigger className={selectTriggerClassNameCompact}><SelectValue placeholder="Select workspace mode" /></SelectTrigger>
           <SelectContent position="popper" className="w-[var(--radix-select-trigger-width)] rounded-xl border bg-background shadow-lg">
             <SelectItem value="general_strategy">General Strategy</SelectItem>
             <SelectItem value="low_occupancy_outreach">Low Occupancy Outreach</SelectItem>
@@ -974,7 +1028,7 @@ export function GenAIWorkspace({ userRole: userRoleFromProps }: GenAIWorkspacePr
       </label>
 
       <label className="space-y-2 text-sm font-medium">
-          <span>Periode Analisis</span>
+          <span>Analysis Period</span>
           <Select
             value={analysisPeriodKey}
             disabled={!canGenerateAi}
@@ -982,8 +1036,8 @@ export function GenAIWorkspace({ userRole: userRoleFromProps }: GenAIWorkspacePr
               setAnalysisPeriodKey(value as AnalysisPeriodKey)
             }
           >
-            <SelectTrigger className="h-12 w-full rounded-2xl border border-border/70 bg-background/90 px-4 text-sm font-medium text-foreground shadow-sm outline-none transition hover:border-primary/35 hover:bg-background focus:ring-2 focus:ring-primary/15">
-              <SelectValue placeholder="Pilih periode analisis" />
+            <SelectTrigger className={selectTriggerClassName}>
+              <SelectValue placeholder="Select analysis period" />
             </SelectTrigger>
             <SelectContent
               position="popper"
@@ -1009,7 +1063,7 @@ export function GenAIWorkspace({ userRole: userRoleFromProps }: GenAIWorkspacePr
             setSelectedVenueType(value as (typeof venueTypes)[number])
           }
         >
-          <SelectTrigger className="h-12 w-full rounded-2xl border border-border/70 bg-background/90 px-4 text-sm font-medium text-foreground shadow-sm outline-none transition hover:border-primary/35 hover:bg-background focus:ring-2 focus:ring-primary/15">
+          <SelectTrigger className={selectTriggerClassName}>
             <SelectValue placeholder="Select venue type" />
           </SelectTrigger>
 
@@ -1031,7 +1085,7 @@ export function GenAIWorkspace({ userRole: userRoleFromProps }: GenAIWorkspacePr
         <span>Customer Segment</span>
 
         <Select value={selectedSegment} onValueChange={setSelectedSegment} disabled={!canGenerateAi}>
-          <SelectTrigger className="h-12 w-full rounded-2xl border border-border/70 bg-background/90 px-4 text-sm font-medium text-foreground shadow-sm outline-none transition hover:border-primary/35 hover:bg-background focus:ring-2 focus:ring-primary/15">
+          <SelectTrigger className={selectTriggerClassName}>
             <SelectValue placeholder="Select customer segment" />
           </SelectTrigger>
 
@@ -1054,14 +1108,14 @@ export function GenAIWorkspace({ userRole: userRoleFromProps }: GenAIWorkspacePr
           <span>Campaign Objective</span>
           <div className="rounded-xl border border-primary/15 bg-primary/5 px-4 py-2.5">
             <p className="text-sm font-medium text-primary">Maximize Off-Peak Occupancy</p>
-            <p className="mt-0.5 text-xs font-normal text-muted-foreground">Objective otomatis untuk mode Low Occupancy Outreach.</p>
+            <p className="mt-0.5 text-xs font-normal text-muted-foreground">Objective is set automatically in Low Occupancy Outreach mode.</p>
           </div>
         </div>
       ) : (
         <label className="space-y-2 text-sm font-medium">
           <span>Campaign Objective</span>
           <Select value={selectedObjective} onValueChange={(value) => handleGeneralObjectiveChange(value as CampaignObjectiveKey)} disabled={!canGenerateAi}>
-          <SelectTrigger className="h-12 w-full rounded-2xl border border-border/70 bg-background/90 px-4 text-sm font-medium text-foreground shadow-sm outline-none transition hover:border-primary/35 hover:bg-background focus:ring-2 focus:ring-primary/15">
+          <SelectTrigger className={selectTriggerClassName}>
             <SelectValue placeholder="Select campaign objective" />
           </SelectTrigger>
 
@@ -1089,14 +1143,14 @@ export function GenAIWorkspace({ userRole: userRoleFromProps }: GenAIWorkspacePr
       >
         <AccordionItem value="advanced-settings" className="rounded-xl border border-border/70 bg-secondary/20 px-4">
           <AccordionTrigger className="py-3.5 text-foreground hover:no-underline">
-            <span><span className="block">Advanced Strategy Settings</span><span className="mt-0.5 block text-xs font-normal text-muted-foreground">Opsional · AI Recommended digunakan saat pengaturan ini ditutup</span></span>
+            <span><span className="block">Advanced Strategy Settings</span><span className="mt-0.5 block text-xs font-normal text-muted-foreground">Optional · AI Recommended is used while this panel is closed</span></span>
           </AccordionTrigger>
           <AccordionContent>
             <div className="grid gap-4 pt-1 md:grid-cols-2">
               <label className="space-y-2 text-sm font-medium">
                 <span>Offer Framework</span>
                 <Select value={selectedIncentive} onValueChange={setSelectedIncentive} disabled={!canGenerateAi}>
-                  <SelectTrigger className="h-12 w-full rounded-xl border border-border/70 bg-background px-4 shadow-sm"><SelectValue placeholder="Select offer framework" /></SelectTrigger>
+                  <SelectTrigger className={selectTriggerClassNameCompact}><SelectValue placeholder="Select offer framework" /></SelectTrigger>
                   <SelectContent position="popper" className="w-[var(--radix-select-trigger-width)] rounded-xl border bg-background shadow-lg">
                     {incentiveFrameworks.map((option) => <SelectItem key={option.key} value={option.key}>{option.label}</SelectItem>)}
                   </SelectContent>
@@ -1105,7 +1159,7 @@ export function GenAIWorkspace({ userRole: userRoleFromProps }: GenAIWorkspacePr
               <label className="space-y-2 text-sm font-medium">
                 <span>Message Tone</span>
                 <Select value={selectedTone} onValueChange={setSelectedTone} disabled={!canGenerateAi}>
-                  <SelectTrigger className="h-12 w-full rounded-xl border border-border/70 bg-background px-4 shadow-sm"><SelectValue placeholder="Select message tone" /></SelectTrigger>
+                  <SelectTrigger className={selectTriggerClassNameCompact}><SelectValue placeholder="Select message tone" /></SelectTrigger>
                   <SelectContent position="popper" className="w-[var(--radix-select-trigger-width)] rounded-xl border bg-background shadow-lg">
                     {copywritingTones.map((option) => <SelectItem key={option} value={option}>{option}</SelectItem>)}
                   </SelectContent>
@@ -1118,12 +1172,24 @@ export function GenAIWorkspace({ userRole: userRoleFromProps }: GenAIWorkspacePr
     </div>
 
     <section className="space-y-5" aria-labelledby="selected-segment-heading">
-      <div>
-        <p className="text-xs font-medium uppercase tracking-[0.12em] text-primary">Profil Audiens</p>
-        <h2 id="selected-segment-heading" className="mt-1 text-lg font-semibold text-foreground">Segmen Terpilih: {selectedSegment}</h2>
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="text-xs font-medium uppercase tracking-[0.12em] text-primary">Audience Profile</p>
+          <h2 id="selected-segment-heading" className="mt-1 text-lg font-semibold text-foreground">Selected Segment: {selectedSegment}</h2>
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          className="w-fit gap-2 rounded-full"
+          onClick={() => setShowDetailedContext((current) => !current)}
+          disabled={!strategyContext || Boolean(contextError)}
+        >
+          {showDetailedContext ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+          {showDetailedContext ? "Hide details" : "Show details"}
+        </Button>
       </div>
       {isLoadingContext ? (
-        <div className="space-y-5" aria-label="Memuat ringkasan segmen">
+        <div className="space-y-5" aria-label="Loading segment summary">
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{Array.from({ length: 4 }).map((_, index) => <Skeleton key={index} className="h-24 rounded-xl" />)}</div>
           <Skeleton className="h-44 rounded-2xl" />
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{Array.from({ length: 4 }).map((_, index) => <Skeleton key={index} className="h-24 rounded-xl" />)}</div>
@@ -1134,178 +1200,137 @@ export function GenAIWorkspace({ userRole: userRoleFromProps }: GenAIWorkspacePr
         <div className="space-y-6">
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <MetricTile label="Customers" value={strategyContext.selected_segment_history.customerCount} />
-            <MetricTile label="Rata-Rata Recency" value={strategyContext.selected_segment_history.averageRecencyDays == null ? "Data recency tidak tersedia" : `${strategyContext.selected_segment_history.averageRecencyDays} hari`} />
-            <MetricTile label="Rata-Rata Frekuensi" value={strategyContext.selected_segment_history.averageFrequency ?? "Data frekuensi tidak tersedia"} />
-            <MetricTile label="Rata-Rata Monetary" value={strategyContext.selected_segment_history.averageMonetary == null ? "Data monetary tidak tersedia" : formatIdr(strategyContext.selected_segment_history.averageMonetary)} />
+            <MetricTile label="Average Recency" value={strategyContext.selected_segment_history.averageRecencyDays == null ? "Recency data not available" : `${strategyContext.selected_segment_history.averageRecencyDays} days`} />
+            <MetricTile label="Average Frequency" value={strategyContext.selected_segment_history.averageFrequency ?? "Frequency data not available"} />
+            <MetricTile label="Average Monetary" value={strategyContext.selected_segment_history.averageMonetary == null ? "Monetary data not available" : formatIdr(strategyContext.selected_segment_history.averageMonetary)} />
           </div>
 
           {strategyContext.membership_opportunity.eligible ? (
             <div className="flex flex-col gap-2 rounded-xl border border-emerald-200 bg-emerald-50/60 p-4 sm:flex-row sm:items-center sm:justify-between">
-              <div><p className="text-sm font-semibold text-emerald-900">Peluang Membership</p><p className="text-xs text-emerald-800">{strategyContext.membership_opportunity.reason}</p></div>
+              <div><p className="text-sm font-semibold text-emerald-900">Membership Opportunity</p><p className="text-xs text-emerald-800">{strategyContext.membership_opportunity.reason}</p></div>
               <Badge className="w-fit bg-emerald-700 text-white">Eligible</Badge>
             </div>
           ) : null}
 
+          {showDetailedContext ? (
           <Accordion type="single" collapsible>
             <AccordionItem value="segment-details" className="rounded-xl border border-border/70 bg-secondary/15 px-4">
-              <AccordionTrigger className="py-3.5 hover:no-underline">Lihat Detail Segmen</AccordionTrigger>
+              <AccordionTrigger className="py-3.5 hover:no-underline">View Segment Details</AccordionTrigger>
               <AccordionContent>
                 <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                  <MetricTile label="Membership" value={strategyContext.selected_segment_history.membershipSharePct == null ? "Data membership tidak tersedia" : `${strategyContext.selected_segment_history.membershipSharePct}%`} />
-                  <MetricTile label="Non-membership" value={strategyContext.selected_segment_history.nonMembershipSharePct == null ? "Data non-membership tidak tersedia" : `${strategyContext.selected_segment_history.nonMembershipSharePct}%`} />
-                  <MetricTile label="Preferred Venue" value={strategyContext.selected_segment_history.preferredVenueLabel || "Preferensi venue belum tersedia"} />
-                  <MetricTile label="Preferred Session" value={strategyContext.selected_segment_history.preferredSessionLabel || "Preferensi sesi belum tersedia"} />
-                  <MetricTile label="Jumlah Penggunaan Promosi" value={strategyContext.promotion_usage_context.promotionUsageCount ?? "Data penggunaan tidak tersedia"} />
+                  <MetricTile label="Membership" value={strategyContext.selected_segment_history.membershipSharePct == null ? "Membership data not available" : `${strategyContext.selected_segment_history.membershipSharePct}%`} />
+                  <MetricTile label="Non-membership" value={strategyContext.selected_segment_history.nonMembershipSharePct == null ? "Non-membership data not available" : `${strategyContext.selected_segment_history.nonMembershipSharePct}%`} />
+                  <MetricTile label="Preferred Venue" value={strategyContext.selected_segment_history.preferredVenueLabel || "Venue preference not available"} />
+                  <MetricTile label="Preferred Session" value={strategyContext.selected_segment_history.preferredSessionLabel || "Session preference not available"} />
+                  <MetricTile label="Promotion Usage Count" value={strategyContext.promotion_usage_context.promotionUsageCount ?? "Usage data not available"} />
                 </div>
-                {!strategyContext.membership_opportunity.eligible ? <p className="mt-3 text-xs text-muted-foreground">Membership conversion tidak relevan untuk segmen ini. {strategyContext.membership_opportunity.reason}</p> : null}
-                {!strategyContext.promotion_usage_context.available ? <p className="mt-1 text-xs text-muted-foreground">{strategyContext.promotion_usage_context.reason || "Penggunaan promosi belum tercatat untuk segmen dan periode ini."}</p> : null}
+                {!strategyContext.membership_opportunity.eligible ? <p className="mt-3 text-xs text-muted-foreground">Membership conversion is not relevant for this segment. {strategyContext.membership_opportunity.reason}</p> : null}
+                {!strategyContext.promotion_usage_context.available ? <p className="mt-1 text-xs text-muted-foreground">{strategyContext.promotion_usage_context.reason || "No promotion usage is recorded for this segment and period."}</p> : null}
               </AccordionContent>
             </AccordionItem>
           </Accordion>
+          ) : null}
           {selectedObjective === "maximize_off_peak_occupancy" ? (
             <section aria-labelledby="primary-opportunity-heading" className="overflow-hidden rounded-2xl border border-emerald-200/80 bg-emerald-50/55 shadow-sm">
               <div className="border-b border-emerald-200/70 px-5 py-4 sm:px-6">
-                <div className="flex items-center gap-2 text-emerald-900"><Target className="h-4 w-4" aria-hidden="true" /><h3 id="primary-opportunity-heading" className="font-semibold">Peluang Utama</h3></div>
-                <p className="mt-1 flex items-center gap-1.5 text-xs text-emerald-800/80"><CalendarDays className="h-3.5 w-3.5" aria-hidden="true" />Periode Analisis: {formatAnalysisPeriod(strategyContext.analysis_period)}</p>
+                <div className="flex items-center gap-2 text-emerald-900"><Target className="h-4 w-4" aria-hidden="true" /><h3 id="primary-opportunity-heading" className="font-semibold">Primary Opportunity</h3></div>
+                <p className="mt-1 flex items-center gap-1.5 text-xs text-emerald-800/80"><CalendarDays className="h-3.5 w-3.5" aria-hidden="true" />Analysis Period: {formatAnalysisPeriod(strategyContext.analysis_period)}</p>
               </div>
               {strategyContext.off_peak_opportunity?.available && strategyContext.off_peak_opportunity.recommendedPrimaryWindow ? (
                 <div className="grid gap-5 px-5 py-5 sm:px-6 lg:grid-cols-[1.4fr_1fr] lg:items-center">
                   <div>
-                    <div className="flex flex-wrap items-center gap-2"><p className="text-2xl font-semibold tracking-tight text-emerald-950">{strategyContext.off_peak_opportunity.recommendedPrimaryWindow.dayLabel} · Sesi {strategyContext.off_peak_opportunity.recommendedPrimaryWindow.sessionLabel}</p><Badge variant="outline" className="border-orange-200 bg-orange-50 text-orange-700">Okupansi rendah</Badge></div>
-                    <p className="mt-2 text-sm text-emerald-900/75">Sesi ini menjadi prioritas utama untuk campaign off-peak.</p>
+                    <div className="flex flex-wrap items-center gap-2"><p className="text-2xl font-semibold tracking-tight text-emerald-950">{strategyContext.off_peak_opportunity.recommendedPrimaryWindow.dayLabel} · Session {strategyContext.off_peak_opportunity.recommendedPrimaryWindow.sessionLabel}</p><Badge variant="outline" className="border-orange-200 bg-orange-50 text-orange-700">Low occupancy</Badge></div>
+                    <p className="mt-2 text-sm text-emerald-900/75">This session is the top priority for the off-peak campaign.</p>
                   </div>
                   <div className="grid grid-cols-2 gap-3">
-                    <div><p className="text-2xl font-semibold text-emerald-950">{strategyContext.off_peak_opportunity.recommendedPrimaryWindow.occupancyRate}%</p><p className="text-xs text-emerald-900/65">okupansi</p></div>
-                    <div><p className="text-2xl font-semibold text-emerald-950">{strategyContext.off_peak_opportunity.recommendedPrimaryWindow.emptyCourtHours} Slot</p><p className="text-xs text-emerald-900/65">lapangan kosong</p></div>
+                    <div><p className="text-2xl font-semibold text-emerald-950">{strategyContext.off_peak_opportunity.recommendedPrimaryWindow.occupancyRate}%</p><p className="text-xs text-emerald-900/65">occupancy</p></div>
+                    <div><p className="text-2xl font-semibold text-emerald-950">{strategyContext.off_peak_opportunity.recommendedPrimaryWindow.emptyCourtHours} Slots</p><p className="text-xs text-emerald-900/65">empty courts</p></div>
                   </div>
                 </div>
-              ) : <p className="px-5 py-6 text-sm text-muted-foreground">Data okupansi historis belum cukup.</p>}
+              ) : <p className="px-5 py-6 text-sm text-muted-foreground">Historical occupancy data is not sufficient yet.</p>}
             </section>
           ) : null}
 
           <div className="rounded-xl border border-border/70 bg-sky-50/40 p-4">
-            <p className="font-semibold">Ringkasan Peluang Bisnis</p>
+            <p className="font-semibold">Business Opportunity Summary</p>
             <p className="mt-1 text-sm">
               {formatOpportunityKey(strategyContext.business_opportunity_summary.primaryOpportunity)}
               {" · "}
               {formatOpportunityKey(strategyContext.business_opportunity_summary.opportunityLevel)}
             </p>
-            <p className="mt-2 text-sm text-muted-foreground">{selectedSegment} memiliki nilai strategis, dengan peluang off-peak teratas sebagai fokus campaign berikutnya.</p>
+            <p className="mt-2 text-sm text-muted-foreground">{selectedSegment} holds strategic value, with the top off-peak window as the focus for the next campaign.</p>
           </div>
-          {strategyContext && strategyContext.off_peak_opportunity?.recommendedPrimaryWindow && Boolean(0) ? (
-            <div className="mt-4 border-t pt-4" aria-hidden="true">
-              <p className="font-semibold">
-                Peluang Off-Peak Historis
-              </p>
-              {strategyContext.off_peak_opportunity?.available &&
-              strategyContext.off_peak_opportunity.recommendedPrimaryWindow ? (
-                <>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {strategyContext.analysis_period
-                      ? `Periode Analisis: ${strategyContext.analysis_period.startDate}–${strategyContext.analysis_period.displayEndDate}`
-                      : "Periode analisis tidak tersedia"}
-                  </p>
-                  <div className="mt-3 grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
-                    {[
-                      ["Hari Tersepi", strategyContext.off_peak_opportunity.recommendedPrimaryWindow.dayLabel],
-                      ["Sesi Tersepi", strategyContext.off_peak_opportunity.recommendedPrimaryWindow.sessionLabel],
-                      ["Tingkat Okupansi", `${strategyContext.off_peak_opportunity.recommendedPrimaryWindow.occupancyRate}%`],
-                      ["Jam Lapangan Kosong", strategyContext.off_peak_opportunity.recommendedPrimaryWindow.emptyCourtHours],
-                    ].map(([label, value]) => (
-                      <div key={String(label)} className="rounded-xl border bg-background p-3">
-                        <p className="text-xs text-muted-foreground">{label}</p>
-                        <p className="mt-1 font-medium">{value}</p>
-                      </div>
-                    ))}
-                  </div>
-                  <ol className="mt-3 space-y-1 text-xs text-muted-foreground">
-                    {strategyContext.off_peak_opportunity.lowestOccupancyWindows.map((window) => (
-                      <li key={`${window.dayKey}-${window.sessionKey}`}>
-                        {window.rank}. {window.dayLabel}, sesi {window.sessionLabel}: {window.occupancyRate}% okupansi,{" "}
-                        {window.emptyCourtHours} Slot kosong
-                      </li>
-                    ))}
-                  </ol>
-                </>
-              ) : (
-                <p className="mt-2 text-sm text-muted-foreground">
-                  Data okupansi historis belum cukup untuk menentukan sesi tersepi.
-                </p>
-              )}
-            </div>
-          ) : null}
 
-          {strategyContext.off_peak_opportunity?.available && strategyContext.off_peak_opportunity.lowestOccupancyWindows.length > 1 ? (
+          {showDetailedContext && strategyContext.off_peak_opportunity?.available && strategyContext.off_peak_opportunity.lowestOccupancyWindows.length > 1 ? (
             <section aria-labelledby="alternative-heading">
-              <h3 id="alternative-heading" className="text-base font-semibold">Alternatif Sesi</h3>
+              <h3 id="alternative-heading" className="text-base font-semibold">Alternative Sessions</h3>
               <div className="mt-3 divide-y rounded-xl border border-border/70 bg-background px-4">
                 {strategyContext.off_peak_opportunity.lowestOccupancyWindows.filter((window) => window.dayKey !== strategyContext.off_peak_opportunity?.recommendedPrimaryWindow?.dayKey || window.sessionKey !== strategyContext.off_peak_opportunity?.recommendedPrimaryWindow?.sessionKey).slice(0, 2).map((window) => (
-                  <div key={`${window.dayKey}-${window.sessionKey}`} className="grid gap-1 py-3 text-sm sm:grid-cols-[2rem_1fr_auto_auto] sm:items-center sm:gap-4"><span className="font-semibold text-primary">{window.rank}.</span><span className="font-medium">{window.dayLabel} · {window.sessionLabel}</span><span className="text-muted-foreground">{window.occupancyRate}% okupansi</span><span className="text-muted-foreground">{window.emptyCourtHours} Slot kosong</span></div>
+                  <div key={`${window.dayKey}-${window.sessionKey}`} className="grid gap-1 py-3 text-sm sm:grid-cols-[2rem_1fr_auto_auto] sm:items-center sm:gap-4"><span className="font-semibold text-primary">{window.rank}.</span><span className="font-medium">{window.dayLabel} · {window.sessionLabel}</span><span className="text-muted-foreground">{window.occupancyRate}% occupancy</span><span className="text-muted-foreground">{window.emptyCourtHours} empty slots</span></div>
                 ))}
               </div>
               {strategyContext.off_peak_opportunity.lowestOccupancyWindows.length > 3 ? (
-                <Accordion type="single" collapsible className="mt-2"><AccordionItem value="all-sessions"><AccordionTrigger className="py-3 text-primary hover:no-underline">Lihat Semua Sesi</AccordionTrigger><AccordionContent><div className="space-y-2">{strategyContext.off_peak_opportunity.lowestOccupancyWindows.filter((window) => window.dayKey !== strategyContext.off_peak_opportunity?.recommendedPrimaryWindow?.dayKey || window.sessionKey !== strategyContext.off_peak_opportunity?.recommendedPrimaryWindow?.sessionKey).slice(2).map((window) => <div key={`${window.dayKey}-${window.sessionKey}`} className="flex flex-col gap-1 rounded-lg bg-secondary/25 px-3 py-2 text-sm sm:flex-row sm:justify-between"><span>{window.rank}. {window.dayLabel} · {window.sessionLabel}</span><span className="text-muted-foreground">{window.occupancyRate}% · {window.emptyCourtHours} Slot kosong</span></div>)}</div></AccordionContent></AccordionItem></Accordion>
+                <Accordion type="single" collapsible className="mt-2"><AccordionItem value="all-sessions"><AccordionTrigger className="py-3 text-primary hover:no-underline">View All Sessions</AccordionTrigger><AccordionContent><div className="space-y-2">{strategyContext.off_peak_opportunity.lowestOccupancyWindows.filter((window) => window.dayKey !== strategyContext.off_peak_opportunity?.recommendedPrimaryWindow?.dayKey || window.sessionKey !== strategyContext.off_peak_opportunity?.recommendedPrimaryWindow?.sessionKey).slice(2).map((window) => <div key={`${window.dayKey}-${window.sessionKey}`} className="flex flex-col gap-1 rounded-lg bg-secondary/25 px-3 py-2 text-sm sm:flex-row sm:justify-between"><span>{window.rank}. {window.dayLabel} · {window.sessionLabel}</span><span className="text-muted-foreground">{window.occupancyRate}% · {window.emptyCourtHours} empty slots</span></div>)}</div></AccordionContent></AccordionItem></Accordion>
               ) : null}
             </section>
           ) : null}
 
-          {strategyContext && strategyContext.analysis_period && Boolean(0) ? (
-            <p className="mt-4 text-sm font-semibold">
-              Periode analisis: {strategyContext.analysis_period.startDate}–{strategyContext.analysis_period.displayEndDate}
-              {" "}({strategyContext.analysis_period.label})
-            </p>
+          {showDetailedContext ? (
+            <>
+              <section aria-labelledby="supporting-metrics-heading">
+                <h3 id="supporting-metrics-heading" className="text-base font-semibold">Key Supporting Data</h3>
+                <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  {(selectedObjective === "boost_social_media_conversion"
+                    ? [
+                        ["Posts Published", strategyContext.social_media_performance?.available ? `${strategyContext.social_media_performance.postCount} posts` : "No content in this period"],
+                        ["Average Engagement Rate", strategyContext.social_media_performance?.available ? formatMetric(strategyContext.social_media_performance.averageEngagementRate ?? null, "%") : "Data not available"],
+                        ["Best Content Type", strategyContext.social_media_performance?.contentTypeBreakdown?.[0] ? `${formatContentTypeLabel(strategyContext.social_media_performance.contentTypeBreakdown[0].key)} · ${formatMetric(strategyContext.social_media_performance.contentTypeBreakdown[0].averageEngagementRate, "%")}` : "Data not available"],
+                        ["Best Content Label", strategyContext.social_media_performance?.contentLabelBreakdown?.[0] ? `${formatContentLabelValue(strategyContext.social_media_performance.contentLabelBreakdown[0].key)} · ${formatMetric(strategyContext.social_media_performance.contentLabelBreakdown[0].averageEngagementRate, "%")}` : "Data not available"],
+                      ]
+                    : [
+                        ["Total Revenue", formatIdr(strategyContext.revenue_history?.totalRevenue ?? null)],
+                        ["Average Occupancy", formatMetric(strategyContext.occupancy_history?.averageOccupancyRate ?? null, "%")],
+                        ["Historical Empty Court Slots", strategyContext.occupancy_history?.emptyCourtHours == null ? "Court inventory not available" : `${strategyContext.occupancy_history.emptyCourtHours} slots`],
+                        ["Promotion Usage", strategyContext.promotion_usage_context.promotionUsagePct == null ? "No promotions recorded in this period" : `${strategyContext.promotion_usage_context.promotionUsagePct}%`],
+                      ]
+                  ).map(([label, value]) => (
+                    <MetricTile key={String(label)} label={String(label)} value={value} />
+                  ))}
+                </div>
+              </section>
+              {selectedObjective === "boost_social_media_conversion"
+                ? (!strategyContext.social_media_performance?.available ? <p className="text-xs text-muted-foreground">{strategyContext.social_media_performance?.reason || "Not enough Instagram performance data yet."}</p> : null)
+                : (!strategyContext.occupancy_history?.available ? <p className="text-xs text-muted-foreground">{strategyContext.occupancy_history?.reason || "Historical occupancy data is not sufficient yet."}</p> : null)}
+            </>
           ) : null}
-          <section aria-labelledby="supporting-metrics-heading">
-            <h3 id="supporting-metrics-heading" className="text-base font-semibold">Data Pendukung Utama</h3>
-          <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            {(selectedObjective === "boost_social_media_conversion"
-              ? [
-                  ["Jumlah Konten Terposting", strategyContext.social_media_performance?.available ? `${strategyContext.social_media_performance.postCount} konten` : "Belum ada konten pada periode ini"],
-                  ["Rata-Rata Engagement Rate", strategyContext.social_media_performance?.available ? formatMetric(strategyContext.social_media_performance.averageEngagementRate ?? null, "%") : "Data tidak tersedia"],
-                  ["Tipe Konten Terbaik", strategyContext.social_media_performance?.contentTypeBreakdown?.[0] ? `${formatContentTypeLabel(strategyContext.social_media_performance.contentTypeBreakdown[0].key)} · ${formatMetric(strategyContext.social_media_performance.contentTypeBreakdown[0].averageEngagementRate, "%")}` : "Data tidak tersedia"],
-                  ["Label Konten Terbaik", strategyContext.social_media_performance?.contentLabelBreakdown?.[0] ? `${formatContentLabelValue(strategyContext.social_media_performance.contentLabelBreakdown[0].key)} · ${formatMetric(strategyContext.social_media_performance.contentLabelBreakdown[0].averageEngagementRate, "%")}` : "Data tidak tersedia"],
-                ]
-              : [
-                  ["Total Revenue", formatIdr(strategyContext.revenue_history?.totalRevenue ?? null)],
-                  ["Rata-Rata Okupansi", formatMetric(strategyContext.occupancy_history?.averageOccupancyRate ?? null, "%")],
-                  ["Slot Lapangan Kosong Historis", strategyContext.occupancy_history?.emptyCourtHours == null ? "Inventory lapangan belum tersedia" : `${strategyContext.occupancy_history.emptyCourtHours} Slot`],
-                  ["Penggunaan Promosi", strategyContext.promotion_usage_context.promotionUsagePct == null ? "Promosi belum tercatat pada periode ini" : `${strategyContext.promotion_usage_context.promotionUsagePct}%`],
-                ]
-            ).map(([label, value]) => (
-              <MetricTile key={String(label)} label={String(label)} value={value} />
-            ))}
-          </div>
-          </section>
-          {selectedObjective === "boost_social_media_conversion"
-            ? (!strategyContext.social_media_performance?.available ? <p className="text-xs text-muted-foreground">{strategyContext.social_media_performance?.reason || "Data performa Instagram belum cukup."}</p> : null)
-            : (!strategyContext.occupancy_history?.available ? <p className="text-xs text-muted-foreground">{strategyContext.occupancy_history?.reason || "Data okupansi historis belum cukup."}</p> : null)}
 
+          {showDetailedContext ? (
           <Accordion type="single" collapsible>
             <AccordionItem value="complete-data" className="rounded-xl border border-border/70 bg-secondary/15 px-4">
-              <AccordionTrigger className="py-3.5 hover:no-underline">Lihat Data Lengkap</AccordionTrigger>
+              <AccordionTrigger className="py-3.5 hover:no-underline">View Full Data</AccordionTrigger>
               <AccordionContent>
                 {selectedObjective === "boost_social_media_conversion" ? (
                   strategyContext.social_media_performance?.available ? (
                     <div className="space-y-4">
                       <div className="grid gap-3 sm:grid-cols-2">
                         <div className="rounded-xl border bg-background p-3">
-                          <p className="text-xs font-semibold text-muted-foreground">Performa per Tipe Konten</p>
+                          <p className="text-xs font-semibold text-muted-foreground">Performance by Content Type</p>
                           <ul className="mt-2 space-y-1.5 text-sm">
                             {strategyContext.social_media_performance.contentTypeBreakdown?.map((group) => (
                               <li key={group.key} className="flex items-center justify-between gap-2">
                                 <span>{formatContentTypeLabel(group.key)}</span>
-                                <span className="text-muted-foreground">{group.postCount} konten · {formatMetric(group.averageEngagementRate, "% engagement")}</span>
+                                <span className="text-muted-foreground">{group.postCount} posts · {formatMetric(group.averageEngagementRate, "% engagement")}</span>
                               </li>
                             ))}
                           </ul>
                         </div>
                         <div className="rounded-xl border bg-background p-3">
-                          <p className="text-xs font-semibold text-muted-foreground">Performa per Label Konten</p>
+                          <p className="text-xs font-semibold text-muted-foreground">Performance by Content Label</p>
                           <ul className="mt-2 space-y-1.5 text-sm">
                             {strategyContext.social_media_performance.contentLabelBreakdown?.map((group) => (
                               <li key={group.key} className="flex items-center justify-between gap-2">
                                 <span>{formatContentLabelValue(group.key)}</span>
-                                <span className="text-muted-foreground">{group.postCount} konten · {formatMetric(group.averageEngagementRate, "% engagement")}</span>
+                                <span className="text-muted-foreground">{group.postCount} posts · {formatMetric(group.averageEngagementRate, "% engagement")}</span>
                               </li>
                             ))}
                           </ul>
@@ -1313,14 +1338,14 @@ export function GenAIWorkspace({ userRole: userRoleFromProps }: GenAIWorkspacePr
                       </div>
 
                       <div>
-                        <p className="text-xs font-semibold text-muted-foreground">Konten Berkinerja Terbaik</p>
+                        <p className="text-xs font-semibold text-muted-foreground">Best Performing Content</p>
                         <div className="mt-2 divide-y rounded-xl border border-border/70 bg-background px-3">
                           {strategyContext.social_media_performance.topPerformingContent?.map((post, index) => (
                             <div key={`top-${post.postedAt}-${index}`} className="py-2.5 text-sm">
                               <div className="flex flex-wrap items-center gap-2">
                                 <span className="font-medium">{formatContentTypeLabel(post.mediaType)}</span>
                                 <Badge variant="outline" className="text-xs">{formatContentLabelValue(post.contentLabel)}</Badge>
-                                <span className="text-xs text-muted-foreground">{formatIndonesianDate(post.postedAt)}</span>
+                                <span className="text-xs text-muted-foreground">{formatDisplayDate(post.postedAt)}</span>
                               </div>
                               {post.captionExcerpt ? <p className="mt-1 text-xs text-muted-foreground">{post.captionExcerpt}</p> : null}
                               <p className="mt-1 text-xs text-muted-foreground">
@@ -1333,14 +1358,14 @@ export function GenAIWorkspace({ userRole: userRoleFromProps }: GenAIWorkspacePr
 
                       {strategyContext.social_media_performance.lowestPerformingContent?.length ? (
                         <div>
-                          <p className="text-xs font-semibold text-muted-foreground">Konten Berkinerja Terendah (Hindari Pola Ini)</p>
+                          <p className="text-xs font-semibold text-muted-foreground">Lowest Performing Content (Avoid This Pattern)</p>
                           <div className="mt-2 divide-y rounded-xl border border-border/70 bg-background px-3">
                             {strategyContext.social_media_performance.lowestPerformingContent.map((post, index) => (
                               <div key={`low-${post.postedAt}-${index}`} className="py-2.5 text-sm">
                                 <div className="flex flex-wrap items-center gap-2">
                                   <span className="font-medium">{formatContentTypeLabel(post.mediaType)}</span>
                                   <Badge variant="outline" className="text-xs">{formatContentLabelValue(post.contentLabel)}</Badge>
-                                  <span className="text-xs text-muted-foreground">{formatIndonesianDate(post.postedAt)}</span>
+                                  <span className="text-xs text-muted-foreground">{formatDisplayDate(post.postedAt)}</span>
                                 </div>
                                 <p className="mt-1 text-xs text-muted-foreground">
                                   {formatMetric(post.engagementRate, "% engagement")} · {post.views ?? "-"} views · {post.reach ?? "-"} reach
@@ -1352,26 +1377,26 @@ export function GenAIWorkspace({ userRole: userRoleFromProps }: GenAIWorkspacePr
                       ) : null}
                     </div>
                   ) : (
-                    <p className="text-sm text-muted-foreground">{strategyContext.social_media_performance?.reason || "Data performa Instagram belum cukup untuk periode ini."}</p>
+                    <p className="text-sm text-muted-foreground">{strategyContext.social_media_performance?.reason || "Not enough Instagram performance data for this period."}</p>
                   )
                 ) : (
                   <>
                     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                      <MetricTile label="Rata-Rata Revenue per Bulan" value={formatIdr(strategyContext.revenue_history?.averageMonthlyRevenue ?? null)} />
-                      <MetricTile label="Slot Lapangan Terisi" value={formatMetric(strategyContext.occupancy_history?.occupiedCourtHours ?? null, " Slot")} />
-                      <MetricTile label="Slot Lapangan Tersedia" value={formatMetric(strategyContext.occupancy_history?.availableCourtHours ?? null, " Slot")} />
-                      <MetricTile label="Promosi Terpopuler" value={strategyContext.promotion_usage_context.mostUsedPromotion || "Promosi belum tercatat pada periode ini"} />
-                      <MetricTile label="Booking Valid" value={strategyContext.promotion_usage_context.validBookingCount ?? "Data booking tidak tersedia"} />
-                      <MetricTile label="Jumlah Penggunaan Promosi" value={strategyContext.promotion_usage_context.promotionUsageCount ?? "Data penggunaan tidak tersedia"} />
-                      <MetricTile label="Cakupan Historis" value={strategyContext.revenue_history ? `${strategyContext.revenue_history.analysisMonths} bulan · ${strategyContext.revenue_history.validRevenueTransactionCount} transaksi` : "Cakupan historis tidak tersedia"} />
-                      <MetricTile label="Status Target Revenue" value={strategyContext.revenue_target_context.available ? `${formatMetric(strategyContext.revenue_target_context.revenueAchievementPct, "%")} tercapai` : "Belum dikonfigurasi"} />
+                      <MetricTile label="Average Revenue per Month" value={formatIdr(strategyContext.revenue_history?.averageMonthlyRevenue ?? null)} />
+                      <MetricTile label="Occupied Court Slots" value={formatMetric(strategyContext.occupancy_history?.occupiedCourtHours ?? null, " slots")} />
+                      <MetricTile label="Available Court Slots" value={formatMetric(strategyContext.occupancy_history?.availableCourtHours ?? null, " slots")} />
+                      <MetricTile label="Most Used Promotion" value={strategyContext.promotion_usage_context.mostUsedPromotion || "No promotions recorded in this period"} />
+                      <MetricTile label="Valid Bookings" value={strategyContext.promotion_usage_context.validBookingCount ?? "Booking data not available"} />
+                      <MetricTile label="Historical Coverage" value={strategyContext.revenue_history ? `${strategyContext.revenue_history.analysisMonths} months · ${strategyContext.revenue_history.validRevenueTransactionCount} transactions` : "Historical coverage not available"} />
+                      <MetricTile label="Revenue Target Status" value={strategyContext.revenue_target_context.available ? `${formatMetric(strategyContext.revenue_target_context.revenueAchievementPct, "%")} achieved` : "Not configured"} />
                     </div>
-                    {!strategyContext.revenue_target_context.available ? <p className="mt-3 text-xs text-muted-foreground">Target revenue belum dikonfigurasi untuk scope ini.</p> : null}
+                    {!strategyContext.revenue_target_context.available ? <p className="mt-3 text-xs text-muted-foreground">Revenue target is not configured for this scope.</p> : null}
                   </>
                 )}
               </AccordionContent>
             </AccordionItem>
           </Accordion>
+          ) : null}
         </div>
       ) : null}
     </section>
@@ -1403,6 +1428,63 @@ export function GenAIWorkspace({ userRole: userRoleFromProps }: GenAIWorkspacePr
   </CardContent>
 </Card>
 
+          <Card className="border-border bg-card shadow-sm">
+            <CardHeader>
+              <CardTitleTooltip title="Ask the AI" tooltip="Ask a business question; Gemini answers using the selected segment's historical data." />
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Ask a free-form business question. Gemini answers using historical data for the current segment and the configured business scope.
+              </p>
+              <div className="space-y-2">
+                <label htmlFor="ask-prompt" className="text-sm font-medium">Your question</label>
+                <Textarea
+                  id="ask-prompt"
+                  value={askPrompt}
+                  onChange={(event) => setAskPrompt(event.target.value)}
+                  placeholder="e.g. What is the best time slot to run a discount campaign for this segment?"
+                  rows={3}
+                  disabled={isAsking}
+                  className="resize-none"
+                />
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  onClick={() => void handleAskAi()}
+                  disabled={isAsking || !askPrompt.trim() || !canGenerateAi || !aiStatus?.configured || !strategyContext || Boolean(contextError)}
+                  className="h-11 gap-2 rounded-xl px-5"
+                >
+                  {isAsking ? <Loader2 className="h-4 w-4 animate-spin" /> : <MessageSquare className="h-4 w-4" />}
+                  {isAsking ? "Analyzing historical data..." : "Ask Gemini"}
+                </Button>
+                {askPrompt || askResult ? (
+                  <Button
+                    variant="ghost"
+                    className="gap-2 rounded-xl"
+                    onClick={() => {
+                      setAskPrompt("")
+                      setAskResult(null)
+                      setAskError(null)
+                    }}
+                    disabled={isAsking}
+                  >
+                    Clear
+                  </Button>
+                ) : null}
+              </div>
+              {askError ? <p className="text-sm text-destructive">{askError}</p> : null}
+              {askResult ? (
+                <div className="rounded-2xl border border-border bg-gradient-to-br from-background to-secondary/20 p-4 shadow-sm">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Answer</p>
+                    <span className="text-xs text-muted-foreground">{askResult.provider} · {askResult.model} · {formatExactDateTime(askResult.generatedAt)}</span>
+                  </div>
+                  <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-foreground">{askResult.answer}</p>
+                </div>
+              ) : null}
+            </CardContent>
+          </Card>
+
           {!strategy ? (
             <StateCard
               state="empty"
@@ -1411,6 +1493,7 @@ export function GenAIWorkspace({ userRole: userRoleFromProps }: GenAIWorkspacePr
               icon={Sparkles}
             />
           ) : (
+            <>
             <Card className="border-border bg-card shadow-sm">
               <CardHeader>
                 <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
@@ -1443,40 +1526,40 @@ export function GenAIWorkspace({ userRole: userRoleFromProps }: GenAIWorkspacePr
                 </div>
 
                 <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                  <StrategyFieldCard label="Tujuan Campaign" value={strategy.strategy.campaignObjective} accent="blue" />
-                  <StrategyFieldCard label="Segmen Terpilih" value={strategy.strategy.targetSegmentLabel || selectedSegment} accent="emerald" />
+                  <StrategyFieldCard label="Campaign Objective" value={strategy.strategy.campaignObjective} accent="blue" />
+                  <StrategyFieldCard label="Selected Segment" value={strategy.strategy.targetSegmentLabel || selectedSegment} accent="emerald" />
                   {strategy.strategy.targetDayLabel ? (
-                    <StrategyFieldCard label="Hari Target" value={strategy.strategy.targetDayLabel} accent="emerald" />
+                    <StrategyFieldCard label="Target Day" value={strategy.strategy.targetDayLabel} accent="emerald" />
                   ) : null}
                   {strategy.strategy.targetSessionLabel ? (
-                    <StrategyFieldCard label="Sesi Target" value={strategy.strategy.targetSessionLabel} accent="emerald" />
+                    <StrategyFieldCard label="Target Session" value={strategy.strategy.targetSessionLabel} accent="emerald" />
                   ) : null}
-                  <StrategyFieldCard label="Penawaran yang Direkomendasikan" value={`${strategy.strategy.recommendedOfferType || "Penawaran"}: ${strategy.strategy.suggestedOffer}`} accent="rose" />
-                  <StrategyFieldCard label="Alasan Penawaran Ini Sesuai" value={strategy.strategy.offerReasoning || "Tidak tersedia"} accent="amber" />
-                  <StrategyFieldCard label="Alasan Memilih Segmen Ini" value={strategy.strategy.customerReasoning} accent="amber" />
-                  <StrategyFieldCard label="Rencana Tindak Lanjut" value={strategy.strategy.followUpPlan} accent="slate" />
-                  <StrategyFieldCard label="Kondisi Penghentian" value={strategy.strategy.stopCondition || "Tidak tersedia"} accent="slate" />
-                  <StrategyFieldCard label="Potensi Dampak Bisnis" value={strategy.strategy.expectedBusinessImpact} accent="blue" />
+                  <StrategyFieldCard label="Recommended Offer" value={`${strategy.strategy.recommendedOfferType || "Offer"}: ${strategy.strategy.suggestedOffer}`} accent="rose" />
+                  <StrategyFieldCard label="Why This Offer Fits" value={strategy.strategy.offerReasoning || "Not available"} accent="amber" />
+                  <StrategyFieldCard label="Why This Segment" value={strategy.strategy.customerReasoning} accent="amber" />
+                  <StrategyFieldCard label="Follow-Up Plan" value={strategy.strategy.followUpPlan} accent="slate" />
+                  <StrategyFieldCard label="Stop Condition" value={strategy.strategy.stopCondition || "Not available"} accent="slate" />
+                  <StrategyFieldCard label="Expected Business Impact" value={strategy.strategy.expectedBusinessImpact} accent="blue" />
                 </div>
 
                 <div className="grid gap-4 lg:grid-cols-2">
                   <div className="rounded-2xl border border-border p-4">
-                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Data Pendukung</p>
+                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Supporting Evidence</p>
                     {strategy.strategy.evidenceUsed?.length ? (
                       <ul className="mt-2 list-disc space-y-1 pl-5 text-sm">
                         {strategy.strategy.evidenceUsed.map((item) => <li key={item}>{item}</li>)}
                       </ul>
-                    ) : <p className="mt-2 text-sm text-muted-foreground">Tidak tersedia</p>}
+                    ) : <p className="mt-2 text-sm text-muted-foreground">Not available</p>}
                   </div>
                   <div className="rounded-2xl border border-border p-4">
-                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Rencana Pelaksanaan</p>
+                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Execution Plan</p>
                     {strategy.strategy.executionPlan?.length ? (
                       <ol className="mt-2 space-y-2 text-sm">
                         {strategy.strategy.executionPlan.map((item) => (
                           <li key={`${item.timing}-${item.action}`}><strong>{item.timing}:</strong> {item.action}<br /><span className="text-muted-foreground">{item.successCondition}</span></li>
                         ))}
                       </ol>
-                    ) : <p className="mt-2 text-sm text-muted-foreground">Tidak tersedia</p>}
+                    ) : <p className="mt-2 text-sm text-muted-foreground">Not available</p>}
                   </div>
                   <div className="rounded-2xl border border-border p-4 lg:col-span-2">
                     <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">KPI</p>
@@ -1484,18 +1567,18 @@ export function GenAIWorkspace({ userRole: userRoleFromProps }: GenAIWorkspacePr
                       <div className="mt-2 grid gap-2 md:grid-cols-3">
                         {strategy.strategy.kpis.map((kpi) => <div key={kpi.name}><p className="font-medium">{kpi.name}</p><p className="text-sm text-muted-foreground">{kpi.definition} ({formatTargetDirection(kpi.targetDirection)})</p></div>)}
                       </div>
-                    ) : <p className="mt-2 text-sm text-muted-foreground">Tidak tersedia</p>}
+                    ) : <p className="mt-2 text-sm text-muted-foreground">Not available</p>}
                   </div>
                 </div>
 
                 {strategy.strategy.dataLimitation ? <div className="rounded-2xl border border-border bg-gradient-to-br from-background to-secondary/20 p-4 shadow-sm">
-                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Keterbatasan Data</p>
+                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Data Limitations</p>
                   <p className="mt-2 text-sm leading-6 text-muted-foreground">{strategy.strategy.dataLimitation}</p>
                 </div> : null}
 
                 <div className="rounded-2xl border border-border bg-gradient-to-br from-slate-50 to-background p-4 shadow-sm">
                   <div className="mb-2 flex items-center justify-between gap-2">
-                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Draft Pesan WhatsApp</p>
+                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">WhatsApp Message Draft</p>
                     <div className="flex flex-wrap items-center gap-2">
                       <Button
                         variant="ghost"
@@ -1526,6 +1609,65 @@ export function GenAIWorkspace({ userRole: userRoleFromProps }: GenAIWorkspacePr
                 </div>
               </CardContent>
             </Card>
+
+            <Card className="border-border bg-card shadow-sm">
+              <CardHeader>
+                <CardTitleTooltip title="Refine Strategy" tooltip="Add extra instructions, then regenerate the strategy with your adjustments included as the highest priority." />
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <p className="text-sm text-muted-foreground">
+                  Add extra instructions to adjust the generated strategy (e.g. change the offer type, target a different day or session, or adjust the tone). Your notes are injected into the prompt as the highest priority.
+                </p>
+                <div className="space-y-2">
+                  <label htmlFor="refine-notes" className="text-sm font-medium">Your instructions</label>
+                  <Textarea
+                    id="refine-notes"
+                    value={refineNotes}
+                    onChange={(event) => setRefineNotes(event.target.value)}
+                    placeholder="e.g. Use a 30% discount for this campaign and keep the tone casual."
+                    rows={3}
+                    disabled={isGenerating}
+                    className="resize-none"
+                  />
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    variant="outline"
+                    className="h-11 gap-2 rounded-xl px-5"
+                    onClick={() => {
+                      setRefineNotes("")
+                      setRefineMessage(null)
+                    }}
+                    disabled={isGenerating || !refineNotes.trim()}
+                  >
+                    Clear
+                  </Button>
+                  <Button
+                    className="h-11 gap-2 rounded-xl px-5"
+                    onClick={() => {
+                      void (async () => {
+                        const generated = await handleGenerateStrategy(refineNotes)
+                        if (generated) {
+                          setRefineMessage("Strategy regenerated with your instructions.")
+                          setRefineNotes("")
+                        }
+                      })()
+                    }}
+                    disabled={isGenerating || !refineNotes.trim() || !canGenerateAi || !aiStatus?.configured || !strategyContext || Boolean(contextError)}
+                  >
+                    {isGenerating ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                    Regenerate with Instructions
+                  </Button>
+                </div>
+                {refineMessage ? (
+                  <p className="flex items-center gap-1.5 text-sm text-emerald-700">
+                    <Check className="h-4 w-4" aria-hidden="true" />
+                    {refineMessage}
+                  </p>
+                ) : null}
+              </CardContent>
+            </Card>
+            </>
           )}
         </>
       )}
