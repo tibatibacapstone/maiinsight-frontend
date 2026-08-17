@@ -588,6 +588,7 @@ const [mlSummary, setMlSummary] = useState<MlSummary>({
 })
   const [dataSources, setDataSources] = useState<DataSource[]>(defaultDataSources)
   const [syncJobs, setSyncJobs] = useState<SyncJob[]>(initialSyncJobs)
+  const visibleUploadJobs = syncJobs.filter((job) => job.type === "file")
 
   const [uploadModalOpen, setUploadModalOpen] = useState(false)
   const [isDragging, setIsDragging] = useState(false)
@@ -1110,6 +1111,19 @@ if (!response.ok) {
   ): Promise<UploadImportResponse> => {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest()
+      let processingTimer: ReturnType<typeof setInterval> | null = null
+      const stopProcessingTimer = () => {
+        if (processingTimer) {
+          clearInterval(processingTimer)
+          processingTimer = null
+        }
+      }
+      const startProcessingTimer = () => {
+        if (processingTimer) return
+        processingTimer = setInterval(() => {
+          setUploadProgress((current) => Math.min(Math.max(current + 1, 40), 95))
+        }, 500)
+      }
       xhr.open("POST", url)
 
       Object.entries(headers).forEach(([key, value]) => {
@@ -1121,11 +1135,14 @@ if (!response.ok) {
       xhr.upload.onprogress = (event) => {
         if (event.lengthComputable) {
           const percent = Math.round((event.loaded / event.total) * 100)
-          setUploadProgress(Math.min(Math.max(percent, 0), 100))
+          const uploadPercent = Math.min(Math.max(Math.round(percent * 0.4), 0), 40)
+          setUploadProgress(uploadPercent)
+          if (percent >= 100) startProcessingTimer()
         }
       }
 
       xhr.onload = () => {
+        stopProcessingTimer()
         if (xhr.status >= 200 && xhr.status < 300) {
           try {
             resolve(JSON.parse(xhr.responseText))
@@ -1165,8 +1182,14 @@ if (!response.ok) {
         reject(friendlyError)
       }
 
-      xhr.onerror = () => reject(new Error("Upload request failed."))
-      xhr.onabort = () => reject(new Error("Upload aborted."))
+      xhr.onerror = () => {
+        stopProcessingTimer()
+        reject(new Error("Upload request failed."))
+      }
+      xhr.onabort = () => {
+        stopProcessingTimer()
+        reject(new Error("Upload aborted."))
+      }
       xhr.send(formData)
     })
   }
@@ -1722,7 +1745,7 @@ if (!canAccessDataCenter) {
                   <div className="space-y-2">
                     <div className="flex justify-between text-sm">
                       <span>
-                        {uploadProgress < 100 ? "Uploading..." : "Finalizing import..."}
+                        {uploadProgress < 40 ? "Uploading transaction file..." : uploadProgress < 55 ? "Validating transaction data..." : uploadProgress < 70 ? "Matching customer profiles..." : uploadProgress < 88 ? "Saving transaction records..." : uploadProgress < 100 ? "Finalizing business data..." : "Import complete"}
                       </span>
                       <span>{uploadProgress}%</span>
                     </div>
@@ -2096,33 +2119,33 @@ if (!canAccessDataCenter) {
         <Card className="border-border bg-card shadow-sm">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              Recent Activity
+              Recent Upload Activity
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Info className="h-4 w-4 cursor-help text-muted-foreground" />
                 </TooltipTrigger>
                 <TooltipContent>
-                  <p>Track the status of data synchronization tasks</p>
+                  <p>Review recent transaction file uploads and their processing status</p>
                 </TooltipContent>
               </Tooltip>
             </CardTitle>
             <CardDescription>
-              Monitor data import and synchronization progress
+              Review imported transaction files and their processing status.
             </CardDescription>
           </CardHeader>
 
           <CardContent>
             {isLoadingJobs ? (
               <p className="text-sm text-muted-foreground">
-                Loading sync history...
+                Loading upload history...
               </p>
-            ) : syncJobs.length === 0 ? (
+            ) : visibleUploadJobs.length === 0 ? (
               <p className="text-sm text-muted-foreground">
-                No sync history found.
+                No upload history found.
               </p>
             ) : (
               <div className="space-y-4">
-                {syncJobs.map((job) => {
+                {visibleUploadJobs.map((job) => {
                   const config = statusConfig[job.status]
                   const StatusIcon = config.icon
                   const isFileJob =
@@ -2223,7 +2246,7 @@ if (!canAccessDataCenter) {
                           </Tooltip>
                         )}
 
-                        {isFileJob && job.status !== "failed" ? (
+                        {isFileJob ? (
                           <Tooltip>
                             <TooltipTrigger asChild>
                               <Button
@@ -2245,7 +2268,7 @@ if (!canAccessDataCenter) {
                               )}
                               </Button>
                             </TooltipTrigger>
-                            <TooltipContent>Remove</TooltipContent>
+                            <TooltipContent>Delete upload activity and data</TooltipContent>
                           </Tooltip>
                         ) : null}
                       </div>
@@ -2285,7 +2308,7 @@ if (!canAccessDataCenter) {
         <AlertDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>Delete this import?</AlertDialogTitle>
+              <AlertDialogTitle>Delete this upload activity?</AlertDialogTitle>
               <AlertDialogDescription>
                 {isLoadingImpact ? (
                   "Checking what will be deleted..."

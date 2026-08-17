@@ -68,6 +68,23 @@ interface MetaStatusResponse {
   }
 }
 
+interface CampaignInsight {
+  internalKey: string
+  promoName: string
+  startDate: string | null
+  endDate: string | null
+  contentCount: number
+  uniqueCustomerCount: number
+  totalBookingCount: number
+  revenue: number
+  customerSharePct: number | null
+  totalCustomers: number
+  insight: string | null
+}
+interface CampaignInsightsResponse {
+  success: boolean
+  data?: { campaigns: CampaignInsight[]; attribution: string }
+}
 interface MetaDashboardResponse {
   success: boolean
   errorCode?: string
@@ -443,6 +460,7 @@ const YEAR_OPTIONS = Array.from({ length: 5 }, (_, index) =>
   const canViewTechnicalDetails = userRole === USER_ROLES.IT_SUPPORT
   const [status, setStatus] = useState<MetaStatusResponse["data"] | null>(null)
   const [dashboard, setDashboard] = useState<MetaDashboardResponse["data"] | null>(null)
+  const [campaignInsights, setCampaignInsights] = useState<CampaignInsight[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<{ message: string; suggestion?: string | null; technical?: string | null } | null>(null)
 
@@ -502,6 +520,10 @@ query.set("until", monthRange.endDate)
     }
 
     setDashboard(dashboardResult.data)
+
+    const campaignResponse = await fetch(getApiUrl(`/meta/campaign-attribution?${query.toString()}`), { method: "GET", cache: "no-store", headers: getAuthHeaders() })
+    const campaignResult: CampaignInsightsResponse | null = await campaignResponse.json().catch(() => null)
+    setCampaignInsights(campaignResult?.success ? campaignResult.data?.campaigns || [] : [])
   } catch (loadError) {
     setDashboard(null)
     setError({
@@ -1125,33 +1147,42 @@ return (
               </CardContent>
             </Card>
 
-            <Card className="border-border bg-card shadow-sm">
-              <CardHeader>
-                <CardTitleTooltip title="Engagement Insights" tooltip="Quick reads that normally require checking Meta graphs manually." />
-              </CardHeader>
-              <CardContent className="space-y-4 text-sm">
-                <div className="flex items-center justify-between border-b pb-3">
-                  <span className="text-muted-foreground">Best performing format</span>
-                  <span className="font-semibold text-foreground">{dashboard?.summary.topContentType || "-"}</span>
-                </div>
-                <div className="flex items-center justify-between border-b pb-3">
-                  <span className="text-muted-foreground">Save intent rate</span>
-                  <span className="font-semibold text-foreground">{formatAvailablePercent(dashboard?.summary.saveRate)}</span>
-                </div>
-                <div className="flex items-center justify-between border-b pb-3">
-                  <span className="text-muted-foreground">Share amplification rate</span>
-                  <span className="font-semibold text-foreground">{formatAvailablePercent(dashboard?.summary.shareRate)}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground">Synced content analyzed</span>
-                  <span className="font-semibold text-foreground">{formatNumber(dashboard?.summary.contentCount || 0)}</span>
-                </div>
-              </CardContent>
-            </Card>
+             <Card className="border-border bg-card shadow-sm">
+  <CardHeader>
+    <div className="flex items-start justify-between gap-3">
+      <div>
+        <CardTitleTooltip title="Promotion Attribution" tooltip="Booking attribution uses normalized promotion tokens and valid play dates inside the extracted promotion period." />
+        <CardDescription className="mt-2">Instagram promotion content matched to customer bookings.</CardDescription>
+      </div>
+      {campaignInsights[0] ? <Badge className="bg-primary text-primary-foreground">Top Promotion</Badge> : null}
+    </div>
+  </CardHeader>
+  <CardContent className="space-y-4">
+    {!campaignInsights.length ? (
+      <StateCard state="empty" title="No promotion attribution yet" description="Run the scheduled campaign attribution extraction after syncing Instagram content." minHeight="min-h-[180px]" />
+    ) : campaignInsights.map((campaign, index) => (
+      <div key={campaign.internalKey} className={index === 0 ? "rounded-xl border border-primary/40 bg-primary/5 p-4" : "rounded-xl border border-border/60 bg-secondary/20 p-4"}>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <div className="flex items-center gap-2"><p className="font-semibold text-foreground">{campaign.promoName}</p>{index === 0 ? <Badge variant="secondary">Top Promotion</Badge> : null}</div>
+            <p className="mt-1 text-xs text-muted-foreground">{formatUploadDate(campaign.startDate)} – {formatUploadDate(campaign.endDate)} · {formatNumber(campaign.contentCount)} content</p>
+          </div>
+          <p className="text-sm font-semibold text-foreground">Rp {formatNumber(campaign.revenue)}</p>
+        </div>
+        <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
+          <div className="rounded-lg border bg-background/70 p-3"><p className="text-xs text-muted-foreground">Unique customers</p><p className="mt-1 text-lg font-semibold">{formatNumber(campaign.uniqueCustomerCount)}</p></div>
+          <div className="rounded-lg border bg-background/70 p-3"><p className="text-xs text-muted-foreground">Total bookings</p><p className="mt-1 text-lg font-semibold">{formatNumber(campaign.totalBookingCount)}</p></div>
+          <div className="rounded-lg border bg-background/70 p-3"><p className="text-xs text-muted-foreground">Customer share</p><p className="mt-1 text-lg font-semibold">{campaign.customerSharePct == null ? "Not available" : campaign.customerSharePct.toFixed(1) + "%"}</p></div>
+        </div>
+        <p className="mt-3 text-sm text-muted-foreground">{campaign.insight || (campaign.customerSharePct == null ? "Customer share is unavailable for the selected period." : campaign.customerSharePct.toFixed(1) + "% pelanggan periode ini teridentifikasi booking lewat promo dari Instagram; ini adalah observasi korelasi, bukan klaim sebab-akibat.")}</p>
+      </div>
+    ))}
+  </CardContent>
+</Card>
           </div>
 
-          <div className="grid gap-6 xl:grid-cols-2">
-            <Card className="border-border bg-card shadow-sm">
+<div className="grid gap-6 xl:grid-cols-2">
+                        <Card className="border-border bg-card shadow-sm">
               <CardHeader>
                 <CardTitleTooltip title="Content Type Engagement" tooltip="Which Instagram format is carrying views and interactions." />
               </CardHeader>

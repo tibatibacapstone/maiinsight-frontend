@@ -179,6 +179,7 @@ interface OverviewKpiData {
   lowSessionLabel: string
   peakSessionLabel: string
   peakSessionRevenue: number
+  peakSessionRate?: number
 }
 
 // ⬅️ NEW: mirrors OccupancyTrendPoint used in analytics-dashboard.tsx
@@ -1006,10 +1007,10 @@ export function ManagementReport() {
                 <p className="text-xl font-bold">{overviewKpi?.lowSessionLabel || "-"}</p>
               </div>
               <div className="rounded-xl border border-border p-4">
-                <p className="text-xs text-muted-foreground">Peak Session Revenue</p>
+                <p className="text-xs text-muted-foreground">Peak Session by Occupancy</p>
                 <p className="text-xl font-bold">{overviewKpi?.peakSessionLabel || "-"}</p>
                 <p className="text-xs text-muted-foreground">
-                  {(overviewKpi?.peakSessionRevenue || 0) > 0 ? formatCurrency(overviewKpi?.peakSessionRevenue || 0) : ""}
+                  {overviewKpi?.peakSessionRate != null ? `${overviewKpi.peakSessionRate}% occupancy` : ""}
                 </p>
               </div>
             </div>
@@ -1318,8 +1319,8 @@ export function ManagementReport() {
             <Card className="border-border bg-card shadow-sm">
               <CardHeader>
                 <CardTitleTooltip
-                  title="Peak Session Revenue"
-                  tooltip="The time slot generating the highest total revenue — your most valuable session."
+                  title="Peak Session by Occupancy"
+                  tooltip="The time slot with the highest occupancy rate — the most consistently booked session."
                   className="text-sm font-medium text-muted-foreground"
                 />
               </CardHeader>
@@ -1328,7 +1329,7 @@ export function ManagementReport() {
                   <div>
                     <p className="text-xl font-bold">{overviewKpi?.peakSessionLabel || "-"}</p>
                     <p className="mt-2 text-xs text-muted-foreground">
-                      {(overviewKpi?.peakSessionRevenue || 0) > 0 ? formatCurrency(overviewKpi?.peakSessionRevenue || 0) : "No revenue data available"}
+                      {overviewKpi?.peakSessionRate != null && overviewKpi.peakSessionRate > 0 ? `Occupancy: ${overviewKpi.peakSessionRate}% of available hours booked` : "No occupancy data available"}
                     </p>
                   </div>
                   <Zap className="h-5 w-5 text-primary" />

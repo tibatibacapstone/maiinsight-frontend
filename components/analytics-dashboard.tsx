@@ -1649,8 +1649,8 @@ const revenueXAxisTicks = useMemo(() => {
             <Card className="border-border bg-card shadow-sm">
               <CardHeader>
                 <CardTitleTooltip
-                    title="Peak Session"
-                    tooltip="The time slot generating the highest total revenue — your most valuable session."
+                    title="Peak Session by Occupancy"
+                    tooltip="The time slot with the highest occupancy rate — the most consistently booked session."
                     className="text-sm font-medium text-muted-foreground"
                   />
               </CardHeader>
@@ -1659,13 +1659,13 @@ const revenueXAxisTicks = useMemo(() => {
                   <div>
                     <p className="text-xl font-bold">{overviewKpi?.peakSessionLabel || "-"}</p>
                     <p className="mt-2 text-xs text-muted-foreground">
-                      {(overviewKpi?.peakSessionRevenue || 0) > 0
-                        ? formatCurrency(overviewKpi?.peakSessionRevenue || 0)
-                        : "No revenue data available"}
+                      {overviewKpi?.peakSessionRate != null && overviewKpi.peakSessionRate > 0
+                        ? `Occupancy: ${overviewKpi.peakSessionRate}% of available hours booked`
+                        : "No occupancy data available"}
                     </p>
-                    {(overviewKpi?.peakSessionRevenue || 0) > 0 && overviewKpi?.peakSessionRate != null && (
+                    {overviewKpi?.peakSessionRevenue != null && (
                       <p className="mt-1 text-xs text-muted-foreground">
-                        Occupancy: {overviewKpi.peakSessionRate}% of available hours booked
+                        Revenue: {formatCurrency(overviewKpi.peakSessionRevenue)}
                       </p>
                     )}
                   </div>
