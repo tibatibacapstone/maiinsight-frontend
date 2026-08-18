@@ -448,6 +448,66 @@ const getMonthDateRange = (year: string, month: string) => {
   }
 }
 
+// Instagram's own mediaUrl/thumbnailUrl are temporary, signed CDN links that
+// expire, so the backend caches the image bytes and serves them from
+// /meta/media/:id/image instead. That endpoint requires auth, so a plain
+// <img src> can't be used directly — fetch with the auth header and render
+// the result as a blob URL.
+function InstagramContentImage({
+  mediaId,
+  alt,
+  className,
+  fallbackIconClassName = "h-6 w-6",
+}: {
+  mediaId: string
+  alt: string
+  className?: string
+  fallbackIconClassName?: string
+}) {
+  const [objectUrl, setObjectUrl] = useState<string | null>(null)
+  const [failed, setFailed] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    let currentUrl: string | null = null
+    setObjectUrl(null)
+    setFailed(false)
+
+    fetch(getApiUrl(`/meta/media/${mediaId}/image`), {
+      headers: getAuthHeaders(),
+      cache: "no-store",
+    })
+      .then((response) => {
+        if (!response.ok) throw new Error("Image not available")
+        return response.blob()
+      })
+      .then((blob) => {
+        if (cancelled) return
+        currentUrl = URL.createObjectURL(blob)
+        setObjectUrl(currentUrl)
+      })
+      .catch(() => {
+        if (!cancelled) setFailed(true)
+      })
+
+    return () => {
+      cancelled = true
+      if (currentUrl) URL.revokeObjectURL(currentUrl)
+    }
+  }, [mediaId])
+
+  if (!objectUrl || failed) {
+    return (
+      <div className="flex h-full w-full items-center justify-center">
+        <GitGraph className={`${fallbackIconClassName} text-muted-foreground`} />
+      </div>
+    )
+  }
+
+  // eslint-disable-next-line @next/next/no-img-element
+  return <img src={objectUrl} alt={alt} className={className} />
+}
+
 export function InstaSightHub({ onViewAudience }: InstaSightHubProps) {
   
 const currentDate = new Date()
@@ -1221,18 +1281,12 @@ return (
                   {topContent.slice(0, 6).map((item) => (
                     <div key={item.id} className="group relative overflow-hidden rounded-lg border border-border/50 bg-card">
                       <div className="relative aspect-square overflow-hidden bg-secondary">
-                        {item.thumbnailUrl || item.mediaUrl ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img
-                            src={item.thumbnailUrl || item.mediaUrl || ""}
-                            alt={item.caption || "Instagram content"}
-                            className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-105"
-                          />
-                        ) : (
-                          <div className="flex h-full w-full items-center justify-center">
-                            <GitGraph className="h-6 w-6 text-muted-foreground" />
-                          </div>
-                        )}
+                        <InstagramContentImage
+                          mediaId={item.id}
+                          alt={item.caption || "Instagram content"}
+                          className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-105"
+                          fallbackIconClassName="h-6 w-6"
+                        />
                         {item.permalink ? (
                           <a
                             href={item.permalink}
@@ -1376,12 +1430,12 @@ return (
                         <td className="px-4 py-4">
                           <div className="flex items-center gap-3">
                             <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-secondary">
-                              {item.mediaUrl ? (
-                                // eslint-disable-next-line @next/next/no-img-element
-                                <img src={item.mediaUrl} alt={item.caption || "Instagram content"} className="h-full w-full object-cover" />
-                              ) : (
-                                <GitGraph className="h-4 w-4 text-muted-foreground" />
-                              )}
+                              <InstagramContentImage
+                                mediaId={item.id}
+                                alt={item.caption || "Instagram content"}
+                                className="h-full w-full object-cover"
+                                fallbackIconClassName="h-4 w-4"
+                              />
                             </div>
                             <div className="max-w-[320px]">
                               <p className="font-medium">{item.caption || "Untitled content"}</p>

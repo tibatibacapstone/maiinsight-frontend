@@ -50,9 +50,7 @@ import {
 } from "@/components/ui/dialog"
 import {
   generateOutreachMessage,
-  getLowOccupancySessions,
   getRecommendedCustomers,
-  type LowOccupancySessionCard,
   type RecommendedCustomersResponse,
   type RecommendedTargetCustomer,
 } from "@/lib/targeting"
@@ -299,12 +297,12 @@ const mapCustomerTypeToApiValue = (displayType: string) => {
 }
 
 const FILTER_HELP_TEXT = {
-  campaignDay: "Evaluate only historical activity occurring on this weekday.",
-  analysisPeriod: "Calendar months ending on the latest available play date.",
+  campaignDay: "Only shows customers who have actually booked this weekday and session combination before.",
+  analysisPeriod: "Calendar months ending on the latest available play date, used for the Historical Campaign Performance figures below.",
   courtType:
-    "Focus the promo opportunity on a specific court type or keep all courts included.",
+    "Only shows customers whose preferred (most-booked) court matches this type, or keep all courts included.",
   playSession:
-    "Choose the session bucket you want to promote: Morning, Afternoon, Evening, or Night.",
+    "Only shows customers who have booked this session bucket on the selected Campaign Day before: Morning, Afternoon, Evening, or Night.",
   customerType:
     "Narrow the target audience to membership, non-membership, or both depending on the promo goal.",
   rfmSegment:
@@ -376,14 +374,10 @@ const playtimeRequestRef = useRef(0)
   const [historicalSummary, setHistoricalSummary] = useState<RecommendedCustomersResponse["historicalSummary"]>(null)
   const [latestCampaignPlayDate, setLatestCampaignPlayDate] = useState<string | null>(null)
 
-  const [sessions, setSessions] = useState<LowOccupancySessionCard[]>([])
   const [customers, setCustomers] = useState<RecommendedTargetCustomer[]>([])
-  const [isLoadingSessions, setIsLoadingSessions] = useState(true)
   const [isLoadingCustomers, setIsLoadingCustomers] = useState(true)
-  const [sessionError, setSessionError] = useState<string | null>(null)
   const [customerError, setCustomerError] = useState<string | null>(null)
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
-  const [selectedCardKey, setSelectedCardKey] = useState<string | null>(null)
   const [messageDraftCustomer, setMessageDraftCustomer] = useState<RecommendedTargetCustomer | null>(null)
   const [generatedDraftMessage, setGeneratedDraftMessage] = useState<string | null>(null)
   const [isGeneratingDraftMessage, setIsGeneratingDraftMessage] = useState(false)
@@ -398,34 +392,9 @@ const playtimeRequestRef = useRef(0)
   const [customerPagination, setCustomerPagination] = useState<CustomerPagination | null>(null)
   // Historical Campaign Performance reflects whatever filters were last
   // applied, so keep it hidden until the user has actually asked for
-  // recommendations (button or session card) rather than showing it
-  // pre-filled from the page's default filters on first load.
+  // recommendations rather than showing it pre-filled from the page's
+  // default filters on first load.
   const [hasRequestedRecommendations, setHasRequestedRecommendations] = useState(false)
-
-  const loadSessions = async (nextStartDate = selectedStartDate, nextEndDate = selectedEndDate, nextCourtType = courtType) => {
-    setIsLoadingSessions(true)
-    setSessionError(null)
-
-    try {
-      const response = await getLowOccupancySessions({
-        startDate: nextStartDate,
-        endDate: nextEndDate,
-        campaignDay,
-        analysisPeriodMonths,
-        courtType: nextCourtType,
-      })
-      setSessions(response.sessions)
-    } catch (error) {
-      setSessionError(
-        error instanceof Error
-          ? error.message
-          : "Failed to load historical low-demand session summary."
-      )
-      setSessions([])
-    } finally {
-      setIsLoadingSessions(false)
-    }
-  }
 
   const loadCustomers = async (filters?: {
     nextCampaignDay?: string
@@ -617,32 +586,20 @@ const playtimeRequestRef = useRef(0)
 
   useEffect(() => {
     const initialize = async () => {
-      setIsLoadingSessions(true)
       setIsLoadingCustomers(true)
-      setSessionError(null)
       setCustomerError(null)
 
       try {
-        const [sessionResponse, customerResponse] = await Promise.all([
-          getLowOccupancySessions({
-            startDate: INITIAL_DATE_RANGE.startDate,
-            endDate: INITIAL_DATE_RANGE.endDate,
-            campaignDay: "Monday",
-            analysisPeriodMonths: 3,
-            courtType: INITIAL_COURT_TYPE,
-          }),
-          getRecommendedCustomers({
-            campaignDay: "Monday",
-            analysisPeriodMonths: 3,
-            courtType: INITIAL_COURT_TYPE,
-            sessionName: INITIAL_SESSION_NAME,
-            customerType: INITIAL_CUSTOMER_TYPE,
-            limit: 50,
-            offset: 0,
-          }),
-        ])
+        const customerResponse = await getRecommendedCustomers({
+          campaignDay: "Monday",
+          analysisPeriodMonths: 3,
+          courtType: INITIAL_COURT_TYPE,
+          sessionName: INITIAL_SESSION_NAME,
+          customerType: INITIAL_CUSTOMER_TYPE,
+          limit: 50,
+          offset: 0,
+        })
 
-        setSessions(sessionResponse.sessions)
         setCustomers(customerResponse.customers)
         setMonthlyPerformance(customerResponse.monthlyPerformance || [])
         setHistoricalSummary(customerResponse.historicalSummary)
@@ -650,12 +607,9 @@ const playtimeRequestRef = useRef(0)
       } catch (error) {
         const message =
           error instanceof Error ? error.message : "Failed to initialize Fill Sessions."
-        setSessionError(message)
         setCustomerError(message)
-        setSessions([])
         setCustomers([])
       } finally {
-        setIsLoadingSessions(false)
         setIsLoadingCustomers(false)
       }
     }
@@ -667,19 +621,7 @@ const playtimeRequestRef = useRef(0)
     setStatusMessage(null)
     setCurrentCustomerPage(1)
     setHasRequestedRecommendations(true)
-    await Promise.all([loadSessions(selectedStartDate, selectedEndDate, courtType), loadCustomers()])
-  }
-
-  const handleCardSelect = async (card: LowOccupancySessionCard) => {
-    setCourtType(card.courtType)
-    setSessionName(card.sessionName as (typeof SESSION_OPTIONS)[number])
-    setSelectedCardKey(`${card.courtType}:${card.sessionName}`)
-    setStatusMessage(null)
-
-    await loadCustomers({
-      nextCourtType: card.courtType,
-      nextSessionName: card.sessionName,
-    })
+    await loadCustomers()
   }
 
   useEffect(() => {
@@ -700,7 +642,6 @@ const playtimeRequestRef = useRef(0)
           nextVenue: selectedVenue,
           nextCustomerType: selectedBookingType,
         }),
-        loadSessions(selectedStartDate, selectedEndDate, nextCourtType),
         loadCustomers({
           nextCourtType,
           nextCustomerType: nextCustomerTypeVal,
@@ -763,12 +704,8 @@ const playtimeRequestRef = useRef(0)
   }
 
   const openGenAi = (customer: RecommendedTargetCustomer) => {
-    const selectedSessionCard = sessions.find(
-      (session) => session.courtType === courtType && session.sessionName === sessionName
-    )
-    const slotTimeLabel = selectedSessionCard
-      ? `${selectedSessionCard.sessionStartHour} - ${selectedSessionCard.sessionEndHour}`
-      : null
+    const [sessionStartHour, sessionEndHour] = (SESSION_HOUR_LABELS[sessionName] || "").split(" - ")
+    const slotTimeLabel = SESSION_HOUR_LABELS[sessionName] || null
 
     saveLowOccupancyOutreachContext({
       source: "low_occupancy_targeting",
@@ -781,8 +718,8 @@ const playtimeRequestRef = useRef(0)
       bookingTypeDominant: customer.bookingTypeDominant,
       courtType,
       sessionName,
-      sessionStartHour: selectedSessionCard?.sessionStartHour || null,
-      sessionEndHour: selectedSessionCard?.sessionEndHour || null,
+      sessionStartHour: sessionStartHour || null,
+      sessionEndHour: sessionEndHour || null,
       slotTimeLabel,
       date: INITIAL_DATE,
       preferredSession: customer.preferredSession,
@@ -804,7 +741,6 @@ const playtimeRequestRef = useRef(0)
     onNavigate("genai")
   }
 
-  const lowSessions = sessions.filter((session) => session.status === "Low")
   const playtimeChart = buildPlaytimeChart(playtimeMixData)
 const playtimeChartTotal = playtimeChart.reduce((sum, item) => sum + item.value, 0)
 const playtimeLegend = playtimeChart.map((item) => ({
@@ -1007,10 +943,10 @@ const dataMonthRangeLabel = buildMonthRangeLabel(dataMonthRange?.min ?? null, da
     <CardTitle className="flex items-center gap-2 text-xl">
       <Target className="h-5 w-5 text-primary" />
       Campaign Targeting
-      <InfoTooltip content="Choose the historical demand lens, then narrow the audience most worth targeting." />
+      <InfoTooltip content="Set the campaign day, session, and audience filters — customers are ranked from their entire booking history." />
     </CardTitle>
           <CardDescription>
-            Choose the historical demand lens, then narrow the audience most worth targeting.
+            Set the campaign day, session, and audience filters — customers are ranked from their entire booking history.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -1136,7 +1072,7 @@ const dataMonthRangeLabel = buildMonthRangeLabel(dataMonthRange?.min ?? null, da
 
           <div className="flex flex-col gap-2 md:flex-row md:items-center md:gap-3">
             <Button onClick={handleApply} className="h-11 gap-2 rounded-xl px-5">
-              {isLoadingSessions || isLoadingCustomers ? (
+              {isLoadingCustomers ? (
                 <>
                   <Loader2 className="h-4 w-4 animate-spin" />
                   Applying...
@@ -1149,7 +1085,7 @@ const dataMonthRangeLabel = buildMonthRangeLabel(dataMonthRange?.min ?? null, da
               )}
             </Button>
             <p className="text-sm text-muted-foreground md:whitespace-nowrap">
-              Recommendations are ranked from historical booking behavior and the latest available RFM segmentation.
+              Recommendations are ranked from each customer&apos;s entire booking history and the latest available RFM segmentation.
             </p>
           </div>
         </CardContent>
@@ -1217,96 +1153,12 @@ const dataMonthRangeLabel = buildMonthRangeLabel(dataMonthRange?.min ?? null, da
       </Card>
       )}
 
-      {hasRequestedRecommendations && (
-      <Card>
-        <CardHeader>
-          <CardTitleTooltip title="Historically Low-Demand Sessions" tooltip="Time slots with the weakest historical booking demand — strong candidates for promotions. Scoped to the selected campaign date range above." />
-          <CardDescription>
-            Use these session buckets as promo opportunities for the selected campaign date, then click a card to target the matching audience.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {sessionError ? (
-            <div className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-              <AlertCircle className="h-4 w-4" />
-              {sessionError}
-            </div>
-          ) : isLoadingSessions ? (
-            <div className="flex min-h-32 items-center justify-center text-sm text-muted-foreground">
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Loading historical session demand...
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {lowSessions.length === 0 && (
-                <div className="rounded-xl border border-dashed border-border px-4 py-5 text-sm text-muted-foreground">
-                  No low-demand session was detected for this selection. Try another date or court type to inspect a different historical pattern.
-                </div>
-              )}
-
-              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                {sessions.map((card) => {
-                  const cardKey = `${card.courtType}:${card.sessionName}`
-                  const isActive =
-                    selectedCardKey === cardKey ||
-                    (courtType === card.courtType && sessionName === card.sessionName)
-
-                  return (
-                    <button
-                      key={cardKey}
-                      type="button"
-                      onClick={() => void handleCardSelect(card)}
-                      className={`rounded-2xl border p-4 text-left transition hover:border-primary/50 hover:shadow-sm ${
-                        isActive
-                          ? "border-primary bg-primary/5"
-                          : "border-border bg-card"
-                      }`}
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <p className="text-sm text-muted-foreground">{card.courtTypeLabel}</p>
-                          <h3 className="text-lg font-semibold">{card.sessionName}</h3>
-                          <p className="text-xs text-muted-foreground">
-                            {card.sessionStartHour} - {card.sessionEndHour}
-                          </p>
-                        </div>
-                        <Badge
-                          variant="outline"
-                          className={
-                            card.status === "Low"
-                              ? "border-amber-300 text-amber-700"
-                              : "border-emerald-300 text-emerald-700"
-                          }
-                        >
-                          {card.status === "Low" ? "Promo opportunity" : "Healthy demand"}
-                        </Badge>
-                      </div>
-
-                      <div className="mt-4 space-y-2 text-sm text-slate-700">
-                        <p>Historical Occupancy Rate: {card.occupancyRate}%</p>
-                        <p>
-                          Occupied / Available Court-Hours: {card.occupiedCourtHours} / {card.availableCourtHours}
-                        </p>
-                        <p>Potential Audience Size: {card.potentialTargetCount}</p>
-                      </div>
-                    </button>
-                  )
-                })}
-              </div>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-      )}
 
       <Card className="overflow-hidden">
         <CardHeader>
-          <CardTitleTooltip title="Recommended Customers" tooltip="Customers whose historical behavior best matches the selected session and campaign filters. Uses a rolling analysis window from the latest available data, independent of the campaign date range above." />
+          <CardTitleTooltip title="Recommended Customers" tooltip="Only customers who have actually booked the selected Campaign Day + Play Session before, and whose preferred court, target customer type, and RFM segment match the other filters, are shown — ranked by their entire booking history." />
           <CardDescription>
-            Customers whose historical behavior best matches the selected session and campaign filters.
-            <span className="mt-1 block text-xs text-muted-foreground/80">
-              Note: this list looks back over the analysis period (a rolling window from the latest data), which is a different scope than the campaign date range used for the session cards above.
-            </span>
+            Customers with a proven history of booking the selected Campaign Day and Play Session, filtered further by court, target customer, and segment.
           </CardDescription>
         </CardHeader>
         <CardContent className="p-0">
@@ -1335,7 +1187,7 @@ const dataMonthRangeLabel = buildMonthRangeLabel(dataMonthRange?.min ?? null, da
                     <th className="min-w-[125px] px-3 py-3 text-center align-middle font-semibold">Phone</th>
                     <th className="min-w-[190px] px-3 py-3 text-center align-middle font-semibold">Email</th>
                     <th className="min-w-[130px] px-3 py-3 text-center align-middle font-semibold">Preferred Session</th>
-                    <th className="min-w-[105px] px-3 py-3 text-center align-middle font-semibold">Session Count</th>
+                    <th className="min-w-[120px] px-3 py-3 text-center align-middle font-semibold">Campaign Match</th>
                     <th className="min-w-[95px] px-3 py-3 text-center align-middle font-semibold">Court Count</th>
                     <th className="min-w-[120px] px-3 py-3 text-center align-middle font-semibold">Last Booking</th>
                     <th className="min-w-[125px] px-3 py-3 text-center align-middle font-semibold">Avg Spend</th>
