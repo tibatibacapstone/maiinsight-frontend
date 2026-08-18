@@ -41,7 +41,7 @@ export interface SegmentationRun {
 export interface ClusterProfile {
   clusterId: number
   segmentName: string
-  segmentDescription: string | null
+segmentDescription: string | null
   labelReason: string | null
   recommendedAction: string | null
   customerCount: number
@@ -65,6 +65,9 @@ export interface CustomerRfmScore {
   mScore: number
   clusterId: number
   segmentName: string
+  centroidDistance: number | null
+  centroidThreshold: number | null
+  clusterFit: "representative" | "reassigned" | "mixed_borderline" | null
 }
 
 export interface SegmentationSummaryData {

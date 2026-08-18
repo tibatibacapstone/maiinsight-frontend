@@ -1077,7 +1077,7 @@ export function SegmentVisualization() {
                   </label>
                 </div>
                 <div className="border-b border-border bg-gradient-to-r from-background to-secondary/20 px-4 py-3">
-                  <div className="grid grid-cols-[1.6fr_1fr_1fr_1fr_1fr_0.8fr] gap-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                  <div className="grid grid-cols-[1.6fr_1fr_1fr_1fr_1fr_0.8fr_1fr] gap-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <div>Customer</div>
@@ -1126,6 +1126,14 @@ export function SegmentVisualization() {
                         <p>Assigned customer segment from the latest model run.</p>
                       </TooltipContent>
                     </Tooltip>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <div>Cluster Fit</div>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>Distance from the customer to the assigned cluster centroid; larger outliers may be borderline.</p>
+                      </TooltipContent>
+                    </Tooltip>
                   </div>
                 </div>
                 <div className="max-h-[560px] overflow-y-auto">
@@ -1141,7 +1149,7 @@ export function SegmentVisualization() {
                       return (
                         <div
                           key={`${customer.customerKey}-${customer.segmentName}`}
-                          className={`grid grid-cols-[1.6fr_1fr_1fr_1fr_1fr_0.8fr] items-center gap-3 px-4 py-4 transition-all hover:-translate-y-[1px] hover:bg-gradient-to-r ${scoreTone}`}
+                          className={`grid grid-cols-[1.6fr_1fr_1fr_1fr_1fr_0.8fr_1fr] items-center gap-3 px-4 py-4 transition-all hover:-translate-y-[1px] hover:bg-gradient-to-r ${scoreTone}`}
                         >
                           <div className="flex items-center gap-3">
                             <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary">
@@ -1182,6 +1190,10 @@ export function SegmentVisualization() {
                             >
                               {customer.segmentName}
                             </Badge>
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            <span className="font-medium text-foreground">{customer.centroidDistance?.toFixed(2) ?? "-"}</span>
+                            {customer.clusterFit === "reassigned" ? " reassigned" : customer.clusterFit === "mixed_borderline" ? " borderline" : " fit"}
                           </div>
                         </div>
                       )

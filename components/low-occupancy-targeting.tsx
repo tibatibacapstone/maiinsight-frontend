@@ -133,7 +133,7 @@ const SESSION_HOUR_LABELS: Record<string, string> = {
   Morning: "06:00 - 10:59",
   Afternoon: "11:00 - 14:59",
   Evening: "15:00 - 18:59",
-  Night: "19:00 - 22:59",
+  Night: "19:00 - 23:59",
 }
 
 const PlaytimeAxisTick = ({ x, y, payload }: { x?: number; y?: number; payload?: { value?: string } }) => {
@@ -396,14 +396,22 @@ const playtimeRequestRef = useRef(0)
   const [currentCustomerPage, setCurrentCustomerPage] = useState(1)
   const [customerPageSize] = useState(INITIAL_CUSTOMER_PAGE_SIZE)
   const [customerPagination, setCustomerPagination] = useState<CustomerPagination | null>(null)
+  // Historical Campaign Performance reflects whatever filters were last
+  // applied, so keep it hidden until the user has actually asked for
+  // recommendations (button or session card) rather than showing it
+  // pre-filled from the page's default filters on first load.
+  const [hasRequestedRecommendations, setHasRequestedRecommendations] = useState(false)
 
-  const loadSessions = async (nextDate = INITIAL_DATE, nextCourtType = courtType) => {
+  const loadSessions = async (nextStartDate = selectedStartDate, nextEndDate = selectedEndDate, nextCourtType = courtType) => {
     setIsLoadingSessions(true)
     setSessionError(null)
 
     try {
       const response = await getLowOccupancySessions({
-        date: nextDate,
+        startDate: nextStartDate,
+        endDate: nextEndDate,
+        campaignDay,
+        analysisPeriodMonths,
         courtType: nextCourtType,
       })
       setSessions(response.sessions)
@@ -507,8 +515,16 @@ const playtimeRequestRef = useRef(0)
           }
         }
       } else {
+        // The query itself always covers the full selected start–end range
+        // (sent as explicit startDate/endDate below), so the caption must
+        // reflect that whole range too — not just the start date's month —
+        // otherwise a multi-month selection shows a misleadingly narrow
+        // "Data period" label next to data that actually spans further.
         const start = new Date(filters!.nextStartDate!)
-        monthLabel = MONTHS[start.getMonth()]
+        const end = new Date(filters!.nextEndDate!)
+        const startKey = `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, "0")}`
+        const endKey = `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, "0")}`
+        monthLabel = buildMonthRangeLabel(startKey, endKey) ?? MONTHS[start.getMonth()]
         year = String(start.getFullYear())
       }
 
@@ -609,7 +625,10 @@ const playtimeRequestRef = useRef(0)
       try {
         const [sessionResponse, customerResponse] = await Promise.all([
           getLowOccupancySessions({
-            date: INITIAL_DATE,
+            startDate: INITIAL_DATE_RANGE.startDate,
+            endDate: INITIAL_DATE_RANGE.endDate,
+            campaignDay: "Monday",
+            analysisPeriodMonths: 3,
             courtType: INITIAL_COURT_TYPE,
           }),
           getRecommendedCustomers({
@@ -630,7 +649,7 @@ const playtimeRequestRef = useRef(0)
         setLatestCampaignPlayDate(customerResponse.latestPlayDate)
       } catch (error) {
         const message =
-          error instanceof Error ? error.message : "Failed to initialize Promote Underbooked Sessions."
+          error instanceof Error ? error.message : "Failed to initialize Fill Sessions."
         setSessionError(message)
         setCustomerError(message)
         setSessions([])
@@ -647,7 +666,8 @@ const playtimeRequestRef = useRef(0)
   const handleApply = async () => {
     setStatusMessage(null)
     setCurrentCustomerPage(1)
-    await Promise.all([loadSessions(INITIAL_DATE, courtType), loadCustomers()])
+    setHasRequestedRecommendations(true)
+    await Promise.all([loadSessions(selectedStartDate, selectedEndDate, courtType), loadCustomers()])
   }
 
   const handleCardSelect = async (card: LowOccupancySessionCard) => {
@@ -680,7 +700,7 @@ const playtimeRequestRef = useRef(0)
           nextVenue: selectedVenue,
           nextCustomerType: selectedBookingType,
         }),
-        loadSessions(INITIAL_DATE, nextCourtType),
+        loadSessions(selectedStartDate, selectedEndDate, nextCourtType),
         loadCustomers({
           nextCourtType,
           nextCustomerType: nextCustomerTypeVal,
@@ -803,7 +823,7 @@ const dataMonthRangeLabel = buildMonthRangeLabel(dataMonthRange?.min ?? null, da
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold">Promote Underbooked Sessions</h1>
+        <h1 className="text-3xl font-bold">Fill Sessions</h1>
         <p className="text-base text-muted-foreground">
           Use uploaded historical transactions to spot weaker play sessions and build a targeted promo audience.
         </p>
@@ -1135,6 +1155,7 @@ const dataMonthRangeLabel = buildMonthRangeLabel(dataMonthRange?.min ?? null, da
         </CardContent>
       </Card>
 
+      {hasRequestedRecommendations && (
       <Card>
         <CardHeader>
           <CardTitleTooltip title="Historical Campaign Performance" tooltip="Facility occupancy and revenue for the selected weekday, court, and play session." />
@@ -1194,10 +1215,12 @@ const dataMonthRangeLabel = buildMonthRangeLabel(dataMonthRange?.min ?? null, da
           )}
         </CardContent>
       </Card>
+      )}
 
-      {false && <Card>
+      {hasRequestedRecommendations && (
+      <Card>
         <CardHeader>
-          <CardTitleTooltip title="Historically Low-Demand Sessions" tooltip="Time slots with the weakest historical booking demand — strong candidates for promotions." />
+          <CardTitleTooltip title="Historically Low-Demand Sessions" tooltip="Time slots with the weakest historical booking demand — strong candidates for promotions. Scoped to the selected campaign date range above." />
           <CardDescription>
             Use these session buckets as promo opportunities for the selected campaign date, then click a card to target the matching audience.
           </CardDescription>
@@ -1273,13 +1296,17 @@ const dataMonthRangeLabel = buildMonthRangeLabel(dataMonthRange?.min ?? null, da
             </div>
           )}
         </CardContent>
-      </Card>}
+      </Card>
+      )}
 
       <Card className="overflow-hidden">
         <CardHeader>
-          <CardTitleTooltip title="Recommended Customers" tooltip="Customers whose historical behavior best matches the selected session and campaign filters." />
+          <CardTitleTooltip title="Recommended Customers" tooltip="Customers whose historical behavior best matches the selected session and campaign filters. Uses a rolling analysis window from the latest available data, independent of the campaign date range above." />
           <CardDescription>
             Customers whose historical behavior best matches the selected session and campaign filters.
+            <span className="mt-1 block text-xs text-muted-foreground/80">
+              Note: this list looks back over the analysis period (a rolling window from the latest data), which is a different scope than the campaign date range used for the session cards above.
+            </span>
           </CardDescription>
         </CardHeader>
         <CardContent className="p-0">

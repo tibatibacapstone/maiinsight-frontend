@@ -575,7 +575,13 @@ export function GenAIWorkspace({ userRole: userRoleFromProps }: GenAIWorkspacePr
           headers: getAuthHeaders(),
           cache: "no-store",
         }),
-        fetch(getApiUrl("/ai-strategy/latest"), {
+        fetch(getApiUrl(`/ai-strategy/latest?${new URLSearchParams({
+          segmentKey: segmentKeys[selectedSegment] || selectedSegment,
+          venueKey: venueKeys[selectedVenueType] || "all",
+          sessionKey: "all",
+          campaignObjectiveKey: selectedObjective,
+          analysisPeriodKey: analysisPeriodKey || "",
+        }).toString()}`), {
           method: "GET",
           headers: getAuthHeaders(),
           cache: "no-store",
@@ -977,8 +983,8 @@ export function GenAIWorkspace({ userRole: userRoleFromProps }: GenAIWorkspacePr
                   }
                   tooltip={
                     outreachContext.intent === "campaign"
-                      ? "Context passed from Fill Empty Sessions to generate a session-level AI campaign strategy."
-                      : "Context passed from Fill Empty Sessions for outreach-focused AI strategy generation."
+                      ? "Context passed from Fill Sessions to generate a session-level AI campaign strategy."
+                      : "Context passed from Fill Sessions for outreach-focused AI strategy generation."
                   }
                   className="text-base"
                 />

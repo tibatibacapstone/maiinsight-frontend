@@ -278,6 +278,11 @@ contentInsightsAvailability: {
   }
 }
 
+// Hidden per business decision: the extraction backing this card is bottlenecked
+// by the Gemini API free-tier daily quota, so it's not ready for users yet. The
+// backend service, routes, and data are untouched — flip this back to re-enable.
+const SHOW_PROMOTION_ATTRIBUTION = false
+
 const formatNumber = (value: number) => value.toLocaleString("en-US")
 const formatPercent = (value: number | null | undefined) =>
   typeof value === "number" && Number.isFinite(value)
@@ -1147,6 +1152,7 @@ return (
               </CardContent>
             </Card>
 
+             {SHOW_PROMOTION_ATTRIBUTION && (
              <Card className="border-border bg-card shadow-sm">
   <CardHeader>
     <div className="flex items-start justify-between gap-3">
@@ -1179,9 +1185,8 @@ return (
     ))}
   </CardContent>
 </Card>
-          </div>
+             )}
 
-<div className="grid gap-6 xl:grid-cols-2">
                         <Card className="border-border bg-card shadow-sm">
               <CardHeader>
                 <CardTitleTooltip title="Content Type Engagement" tooltip="Which Instagram format is carrying views and interactions." />
@@ -1202,6 +1207,7 @@ return (
                 </div>
               </CardContent>
             </Card>
+          </div>
 
             <Card className="border-border bg-card shadow-sm">
               <CardHeader>
@@ -1265,7 +1271,6 @@ return (
                 )}
               </CardContent>
             </Card>
-          </div>
 
           <Card className="border-border bg-card shadow-sm">
   <CardHeader>

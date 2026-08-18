@@ -393,7 +393,7 @@ export function ManagementReport() {
   const [metaDashboard, setMetaDashboard] = useState<MetaDashboardData | null>(null)
   const [metaAudienceSummary, setMetaAudienceSummary] = useState<MetaAudienceSummary | null>(null)
 
-  // ⬅️ NEW: state for the visuals pulled in from Overview / Fill Empty Sessions / Segments
+  // ⬅️ NEW: state for the visuals pulled in from Overview / Fill Sessions / Segments
   const [overviewKpi, setOverviewKpi] = useState<OverviewKpiData | null>(null)
   const [occupancyTrend, setOccupancyTrend] = useState<OccupancyTrendPoint[]>([])
   // ⬅️ NEW: playtime + heatmap now come from actual-data endpoints, not ML

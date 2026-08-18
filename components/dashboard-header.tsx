@@ -14,7 +14,7 @@ const PAGE_TITLES: Record<PageId, string> = {
   reports: "Management Reports",
   segments: "Segments",
   data: "Data Center",
-  targeting: "Fill Empty Sessions",
+  targeting: "Fill Sessions",
   genai: "GenAI Workspace",
   instasight: "InstaSight",
   history: "History",

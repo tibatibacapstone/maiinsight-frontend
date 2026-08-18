@@ -107,6 +107,10 @@ const readApiResponse = async <T>(response: Response): Promise<T> => {
 
 export const getLowOccupancySessions = async (params: {
   date?: string
+  startDate?: string
+  endDate?: string
+  campaignDay?: string
+  analysisPeriodMonths?: number
   courtType?: string
   threshold?: number
 } = {}) => {

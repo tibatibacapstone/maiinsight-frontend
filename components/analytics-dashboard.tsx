@@ -586,7 +586,11 @@ export function AnalyticsDashboard() {
   const [selectedYear, setSelectedYear] = useState(defaultSelection.year)
   const [selectedVenue, setSelectedVenue] = useState("All Venue")
   const [selectedBookingType, setSelectedBookingType] = useState("All Type")
-  const [periodType, setPeriodType] = useState<"MTD" | "YTD" | null>("MTD")
+  // null = no toggle explicitly pressed yet; data-fetching treats this the
+  // same as "MTD" (see `periodType || "MTD"` below), but the MTD-specific
+  // "All Month" restriction only kicks in once the user actually presses
+  // the MTD button (periodType === "MTD" literally).
+  const [periodType, setPeriodType] = useState<"MTD" | "YTD" | null>(null)
   const [status, setStatus] = useState<DashboardStatus | null>(null)
   const [overviewKpi, setOverviewKpi] = useState<OverviewKpiData | null>(null)
   const [occupancyTrend, setOccupancyTrend] = useState<OccupancyTrendPoint[]>([])
@@ -641,6 +645,32 @@ export function AnalyticsDashboard() {
       setSelectedYear(latestYear)
     }
   }, [availableMonthValues])
+
+  useEffect(() => {
+    // "All Month" is disabled only once the user explicitly presses MTD
+    // (periodType === "MTD" literally — the default/unpressed null state
+    // still allows "All Month", matching the MTD/YTD buttons' own pressed
+    // styling). Whenever MTD becomes active and the month filter is still
+    // on "All Month" (right after pressing MTD, or a year change that
+    // reset the month), auto-select the latest available month so the
+    // filter never sits on a disabled option.
+    if (periodType !== "MTD") return
+    if (selectedMonth !== DEFAULT_MONTH_OPTION) return
+    if (availableMonthValues.length === 0) return
+
+    const availableInYear = availableMonthValues.filter((value) => value.startsWith(`${selectedYear}-`))
+    const candidates = availableInYear.length > 0 ? availableInYear : availableMonthValues
+    const fallbackValue = candidates.reduce((latest, value) => (value > latest ? value : latest))
+
+    const [fallbackYear, fallbackMonthNumber] = fallbackValue.split("-")
+    const monthIndex = Number(fallbackMonthNumber) - 1
+    if (monthIndex < 0 || monthIndex >= months.length) return
+
+    if (fallbackYear !== selectedYear) {
+      setSelectedYear(fallbackYear)
+    }
+    setSelectedMonth(months[monthIndex])
+  }, [periodType, selectedMonth, selectedYear, availableMonthValues])
 
   const loadDashboard = useCallback(async (options?: { background?: boolean }) => {
     try {
@@ -1348,7 +1378,7 @@ const revenueXAxisTicks = useMemo(() => {
                   </div>
                 </SelectTrigger>
                 <SelectContent position="popper" className="w-[var(--radix-select-trigger-width)] rounded-xl border bg-background shadow-lg">
-                  <SelectItem value={DEFAULT_MONTH_OPTION}>
+                  <SelectItem value={DEFAULT_MONTH_OPTION} disabled={periodType === "MTD"}>
                     {DEFAULT_MONTH_OPTION}
                   </SelectItem>
                   {months.map((month) => {
