@@ -671,6 +671,7 @@ export function SystemSettings() {
                 <div className="flex items-center justify-between rounded-xl border bg-secondary/20 p-3">
                   <div className="flex items-center gap-3">
                     {tokenCheckResult?.gemini.status === "valid" ? <Wifi className="h-4 w-4 text-green-500" />
+                      : tokenCheckResult?.gemini.status === "quota_exhausted" ? <AlertTriangle className="h-4 w-4 text-amber-500" />
                       : tokenCheckResult?.gemini.status === "not_configured" ? <CircleDashed className="h-4 w-4 text-muted-foreground" />
                       : <WifiOff className="h-4 w-4 text-red-500" />}
                     <div>
@@ -678,6 +679,7 @@ export function SystemSettings() {
                       {tokenCheckResult ? (
                         <p className="text-xs text-muted-foreground">
                           {tokenCheckResult.gemini.status === "valid" ? "Responded successfully"
+                            : tokenCheckResult.gemini.status === "quota_exhausted" ? "Daily free-tier quota exceeded — resets at midnight PT"
                             : tokenCheckResult.gemini.status === "not_configured" ? "Not configured"
                             : tokenCheckResult.gemini.error || "Error checking status"}
                         </p>
@@ -688,9 +690,11 @@ export function SystemSettings() {
                   </div>
                   <Badge variant={
                     tokenCheckResult?.gemini.status === "valid" ? "default"
+                    : tokenCheckResult?.gemini.status === "quota_exhausted" ? "secondary"
                     : "destructive"
                   } className="rounded-full px-3 shrink-0 ml-2">
                     {tokenCheckResult?.gemini.status === "valid" ? "Healthy"
+                      : tokenCheckResult?.gemini.status === "quota_exhausted" ? "Quota Exceeded"
                       : tokenCheckResult?.gemini.status === "not_configured" ? "N/A"
                       : "Error"}
                   </Badge>
